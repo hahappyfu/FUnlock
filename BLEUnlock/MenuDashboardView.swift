@@ -1,5 +1,5 @@
 // MenuDashboardView.swift
-// SwiftUI 控制中心 — 替代旧 NSMenu
+// SwiftUI 控制中心 — 毛玻璃风格 + 全中文化
 
 import SwiftUI
 import Combine
@@ -20,132 +20,252 @@ struct MenuDashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 1. 顶部：设备名与状态
+            // 1. 顶部：设备状态卡片
             headerSection
-            Divider()
+            Divider().padding(.horizontal, 12)
 
-            // 2. 中部：信号雷达
+            // 2. 中部：信号仪表
             signalSection
-            Divider()
+            Divider().padding(.horizontal, 12)
 
-            // 3. 下部：快捷开关
-            ScrollView {
-                VStack(spacing: 8) {
-                    toggleRow("Enabled", $enabled)
-                    toggleRow("Wake on Proximity", $wakeOnProximity)
-                    toggleRow("Wake without Unlocking", $wakeWithoutUnlocking)
-                    toggleRow("Pause Now Playing", $pauseItunes)
-                    toggleRow("Use Screensaver", $useScreensaver)
-                    toggleRow("Turn Off Screen", $sleepDisplay)
-                    toggleRow("Passive Mode", $passiveMode)
-                        .onChange(of: passiveMode) { newValue in
-                            ble.setPassiveMode(newValue)
-                        }
-                    toggleRow("Launch at Login", $launchAtLogin)
+            // 3. 下部：快捷开关卡片
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) {
+                    toggleSection
+                    otherSection
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
 
-            Divider()
+            Divider().padding(.horizontal, 12)
 
             // 4. 底部：操作按钮
             footerSection
         }
-        .frame(width: 320, height: 450)
+        .frame(width: 320, height: 480)
+        .background(.regularMaterial)
     }
 
-    // MARK: - Header
+    // MARK: - Header 设备状态卡片
 
     private var headerSection: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 10, height: 10)
+        HStack(spacing: 12) {
+            // 状态指示灯
+            Circle()
+                .fill(statusColor)
+                .frame(width: 12, height: 12)
+                .shadow(color: statusColor.opacity(0.6), radius: 4)
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(statusText)
                     .font(.headline)
                     .foregroundColor(.primary)
-                Spacer()
-            }
-            HStack {
-                Text(manager.rssi.map { "\($0) dBm" } ?? "No signal")
-                    .font(.system(.body, design: .monospaced))
+                Text(manager.rssi.map { "\($0) dBm" } ?? "未检测到信号")
+                    .font(.system(.subheadline, design: .monospaced))
                     .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            if manager.connected {
+                Text("已连接")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.12))
+                    .cornerRadius(6)
+            }
+        }
+        .padding(14)
+        .background(statusColor.opacity(0.06))
+    }
+
+    // MARK: - Signal 信号仪表卡片
+
+    private var signalSection: some View {
+        VStack(spacing: 12) {
+            // 圆形仪表
+            ZStack {
+                // 背景环
+                Circle()
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 10)
+                    .frame(width: 90, height: 90)
+
+                // 信号强度环
+                Circle()
+                    .trim(from: 0, to: signalStrength)
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [signalColor.opacity(0.4), signalColor]),
+                            center: .center,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(360 * signalStrength)
+                        ),
+                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                    )
+                    .frame(width: 90, height: 90)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.5), value: signalStrength)
+
+                // 中心数值
+                VStack(spacing: 1) {
+                    Text(manager.rssi.map { "\($0)" } ?? "—")
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                        .foregroundColor(.primary)
+                    Text("dBm")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+
+            // 锁定/解锁阈值
+            HStack(spacing: 0) {
+                Label {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("锁定阈值")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text("\(ble.lockRSSI) dBm")
+                            .font(.system(.caption, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
+                } icon: {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
                 Spacer()
-                if manager.connected {
-                    Text("Active")
+                Label {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("解锁阈值")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(ble.unlockRSSI == 1 ? "已禁用" : "\(ble.unlockRSSI) dBm")
+                            .font(.system(.caption, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
+                } icon: {
+                    Image(systemName: "lock.open.fill")
                         .font(.caption)
                         .foregroundColor(.green)
                 }
             }
         }
-        .padding(16)
-        .background(statusColor.opacity(0.08))
+        .padding(14)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
-    // MARK: - Signal
+    // MARK: - Toggles 快捷开关卡片
 
-    private var signalSection: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
-                    .frame(width: 80, height: 80)
-                Circle()
-                    .trim(from: 0, to: signalStrength)
-                    .stroke(signalColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 80, height: 80)
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 2) {
-                    Text(manager.rssi.map { "\($0)" } ?? "—")
-                        .font(.system(size: 24, weight: .bold, design: .monospaced))
-                    Text("dBm")
+    private var toggleSection: some View {
+        VStack(spacing: 0) {
+            toggleRow("启用", isOn: $enabled, icon: "power")
+            divider
+            toggleRow("靠近时唤醒", isOn: $wakeOnProximity, icon: "display")
+            divider
+            toggleRow("唤醒但不解锁", isOn: $wakeWithoutUnlocking, icon: "lock.open")
+            divider
+            toggleRow("锁定时暂停播放", isOn: $pauseItunes, icon: "pause.circle")
+            divider
+            toggleRow("使用屏幕保护程序", isOn: $useScreensaver, icon: "sparkles.tv")
+            divider
+            toggleRow("锁定时关闭屏幕", isOn: $sleepDisplay, icon: "display.sleep")
+            divider
+            toggleRow("被动模式", isOn: $passiveMode, icon: "antenna.radiowaves.left.and.right")
+                .onChange(of: passiveMode) { newValue in
+                    ble.setPassiveMode(newValue)
+                }
+            divider
+            toggleRow("开机自启动", isOn: $launchAtLogin, icon: "arrow.up.circle")
+        }
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    private var otherSection: some View {
+        VStack(spacing: 0) {
+            Button(action: { NSApp.orderFrontStandardAboutPanel(nil) }) {
+                HStack {
+                    Image(systemName: "info.circle")
+                        .frame(width: 20)
+                    Text("关于 BLEUnlock")
+                        .font(.callout)
+                    Spacer()
+                    Image(systemName: "chevron.right")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 12)
-
-            HStack {
-                Label("Lock: \(ble.lockRSSI) dBm", systemImage: "lock.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Label("Unlock: \(ble.unlockRSSI == 1 ? "Off" : "\(ble.unlockRSSI) dBm")", systemImage: "lock.open.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(10)
     }
 
     // MARK: - Footer
 
     private var footerSection: some View {
-        HStack {
-            Button("Lock Now") {
-                manager.lockNow()
+        HStack(spacing: 12) {
+            Button(action: { manager.lockNow() }) {
+                HStack {
+                    Image(systemName: "lock.fill")
+                    Text("立即锁定")
+                }
+                .font(.callout)
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            Spacer()
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
+            .tint(.orange)
+
+            Button(action: { NSApplication.shared.terminate(nil) }) {
+                HStack {
+                    Image(systemName: "power")
+                    Text("退出")
+                }
+                .font(.callout)
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .foregroundColor(.red)
+            .tint(.red)
         }
-        .padding(16)
+        .padding(14)
     }
 
-    // MARK: - Helpers
+    // MARK: - Components
 
-    private func toggleRow(_ title: String, _ binding: Binding<Bool>) -> some View {
-        Toggle(title, isOn: binding)
-            .toggleStyle(.switch)
-            .controlSize(.small)
+    private func toggleRow(_ title: String, isOn: Binding<Bool>, icon: String) -> some View {
+        Toggle(isOn: isOn) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 20)
+                Text(title)
+                    .font(.callout)
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
+
+    private var divider: some View {
+        Divider()
+            .padding(.leading, 44)
+    }
+
+    // MARK: - Status
 
     private var statusColor: Color {
         switch manager.state.screen {
@@ -158,22 +278,23 @@ struct MenuDashboardView: View {
 
     private var statusText: String {
         switch manager.state.screen {
-        case .unlocked: return "Unlocked"
+        case .unlocked: return "设备已解锁"
         case .locked(let reason):
             switch reason {
-            case .away: return "Locked — Device Away"
-            case .lost: return "Locked — Signal Lost"
-            case .manual: return "Locked — Manual"
-            case .timeout: return "Locked — Timeout"
+            case .away: return "已锁定 — 设备远离"
+            case .lost: return "已锁定 — 信号丢失"
+            case .manual: return "已锁定 — 手动锁定"
+            case .timeout: return "已锁定 — 信号超时"
             }
-        case .screensaver: return "Screensaver"
-        case .displaySleeping: return "Display Sleeping"
+        case .screensaver: return "屏幕保护中"
+        case .displaySleeping: return "显示器休眠"
         }
     }
 
+    // MARK: - Signal helpers
+
     private var signalStrength: CGFloat {
         guard let rssi = manager.rssi else { return 0 }
-        // Map -100..-30 to 0..1
         let normalized = CGFloat(rssi + 100) / 70.0
         return min(max(normalized, 0), 1)
     }
