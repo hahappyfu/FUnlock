@@ -24,12 +24,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     var connected = false
     var userNotification: NSUserNotification?
     var nowPlayingWasPlaying = false
+    var nowPlayingPauseCompleted = false
     var aboutBox: AboutBox? = nil
     var wakeTimer: Timer?
     var manualLock = false
     var unlockedAt = 0.0
     var inScreensaver = false
     var lastRSSI: Int? = nil
+    var wakeSucceeded = false
 
     func menuWillOpen(_ menu: NSMenu) {
         if menu == deviceMenu {
@@ -179,10 +181,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func pauseNowPlaying() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
+        nowPlayingPauseCompleted = false
         MRMediaRemoteGetNowPlayingApplicationIsPlaying(
             DispatchQueue.main,
             { (playing) in
                 self.nowPlayingWasPlaying = playing
+                self.nowPlayingPauseCompleted = true
                 if self.nowPlayingWasPlaying {
                     print("pause")
                     MRMediaRemoteSendCommand(MRCommandPause, nil)
@@ -190,9 +194,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             }
         )
     }
-    
+
     func playNowPlaying() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
+        guard nowPlayingPauseCompleted else { return }
         if nowPlayingWasPlaying {
             print("play")
             Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false, block: { _ in
@@ -204,7 +209,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func lockOrSaveScreen() {
         if prefs.bool(forKey: "screensaver") {
-            NSWorkspace.shared.launchApplication("ScreenSaverEngine")
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screensaver.ScreenSaverEngine") {
+                NSWorkspace.shared.openFile(url.path)
+            }
         } else {
             if SACLockScreenImmediate() != 0 {
                 print("Failed to lock screen")
@@ -227,7 +234,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                     print("Waking display")
                     wakeDisplay()
                     displaySleep = false
-                    wakeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
+                    wakeSucceeded = false
+                    wakeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { [weak self] _ in
+                        guard let self = self else { return }
+                        if self.wakeSucceeded {
+                            self.wakeTimer?.invalidate()
+                            self.wakeTimer = nil
+                            return
+                        }
                         print("Retrying waking display")
                         wakeDisplay()
                     })
@@ -241,7 +255,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 notifyUser(reason)
                 runScript(reason)
             }
-            manualLock = false
         }
     }
 
@@ -310,8 +323,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     @objc func onDisplayWake() {
         print("display wake")
-        //unlockedAt = Date().timeIntervalSince1970
         displaySleep = false
+        wakeSucceeded = true
         wakeTimer?.invalidate()
         wakeTimer = nil
         tryUnlockScreen()
@@ -492,12 +505,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     @objc func setLockRSSI(_ menuItem: NSMenuItem) {
         let value = menuItem.tag
+        if value == ble.LOCK_DISABLED && ble.unlockRSSI == ble.UNLOCK_DISABLED {
+            ble.unlockRSSI = -60
+            prefs.set(-60, forKey: "unlockRSSI")
+        }
         prefs.set(value, forKey: "lockRSSI")
         ble.lockRSSI = value
     }
-    
+
     @objc func setUnlockRSSI(_ menuItem: NSMenuItem) {
         let value = menuItem.tag
+        if value == ble.UNLOCK_DISABLED && ble.lockRSSI == ble.LOCK_DISABLED {
+            ble.lockRSSI = -80
+            prefs.set(-80, forKey: "lockRSSI")
+        }
         prefs.set(value, forKey: "unlockRSSI")
         ble.unlockRSSI = value
     }
@@ -732,5 +753,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        DistributedNotificationCenter.default.removeObserver(self)
     }
 }
