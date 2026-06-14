@@ -166,6 +166,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         }
     }
 
+    func logEvent(_ event: String) {
+        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
+        let logDir = dir.appendingPathComponent("BLEUnlock", isDirectory: true)
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        let logFile = logDir.appendingPathComponent("events.log")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let timestamp = formatter.string(from: Date())
+        let rssiStr = lastRSSI.map { String($0) } ?? "N/A"
+        let line = "\(timestamp) | \(event) | RSSI: \(rssiStr)\n"
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logFile.path) {
+                if let handle = try? FileHandle(forWritingTo: logFile) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: logFile)
+            }
+        }
+    }
+
     func runScript(_ arg: String) {
         guard let directory = try? FileManager.default.url(for: .applicationScriptsDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
         let file = directory.appendingPathComponent("event")
@@ -224,6 +247,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func updatePresence(presence: Bool, reason: String) {
+        guard prefs.bool(forKey: "enabled") else { return }
         if presence {
             if ble.unlockRSSI != ble.UNLOCK_DISABLED {
                 if !userNotificationId.isEmpty {
@@ -254,6 +278,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 lockOrSaveScreen()
                 notifyUser(reason)
                 runScript(reason)
+                logEvent("locked: \(reason)")
             }
         }
     }
@@ -318,6 +343,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             self.fakeKeyStrokes(password)
             self.playNowPlaying()
             self.runScript("unlocked")
+            self.logEvent("unlocked")
         })
     }
 
@@ -360,6 +386,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             if Date().timeIntervalSince1970 >= self.unlockedAt + 10 {
                 if self.ble.unlockRSSI != self.ble.UNLOCK_DISABLED {
                     self.runScript("intruded")
+                    self.logEvent("intruded")
                 }
                 self.playNowPlaying()
             }
@@ -421,7 +448,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else {
             let err = SecCopyErrorMessageString(status, nil)
-            errorModal("Failed to store password to Keychain", info: err as String? ?? "Status \(status)")
+            errorModal(t("failed_store_password"), info: err as String? ?? "Status \(status)")
             return
         }
     }
@@ -446,11 +473,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         }
         guard status == errSecSuccess else {
             let info = SecCopyErrorMessageString(status, nil)
-            errorModal("Failed to retrieve password", info: info as String? ?? "Status \(status)")
+            errorModal(t("failed_retrieve_password"), info: info as String? ?? "Status \(status)")
             return nil
         }
         guard let data = item as? Data else {
-            errorModal("Failed to convert password")
+            errorModal(t("failed_convert_password"))
             return nil
         }
         return String(data: data, encoding: .utf8)!
@@ -574,6 +601,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         menuItem.state = wakeWithoutUnlocking ? .on : .off
     }
 
+    @objc func toggleEnabled(_ menuItem: NSMenuItem) {
+        let enabled = !prefs.bool(forKey: "enabled")
+        prefs.set(enabled, forKey: "enabled")
+        menuItem.state = enabled ? .on : .off
+        if !enabled {
+            // When disabled, stop monitoring
+            ble.stopScanning()
+        }
+    }
+
     @objc func lockNow() {
         guard !isScreenLocked() else { return }
         manualLock = true
@@ -596,9 +633,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
     
     func constructMenu() {
-        monitorMenuItem = mainMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
-        
         var item: NSMenuItem
+        item = mainMenu.addItem(withTitle: t("enabled"), action: #selector(toggleEnabled), keyEquivalent: "")
+        item.state = prefs.bool(forKey: "enabled") ? .on : .off
+        mainMenu.addItem(NSMenuItem.separator())
+
+        monitorMenuItem = mainMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
 
         item = mainMenu.addItem(withTitle: t("lock_now"), action: #selector(lockNow), keyEquivalent: "")
         mainMenu.addItem(NSMenuItem.separator())
@@ -683,6 +723,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         statusItem.menu = mainMenu
     }
 
+    func showFirstLaunchGuide() {
+        let alert = NSAlert()
+        alert.messageText = "Welcome to BLEUnlock"
+        alert.informativeText = "BLEUnlock locks/unlocks your Mac based on your phone's proximity.\n\nRequired permissions:\n• Bluetooth — detect your device\n• Accessibility — auto-unlock screen\n• Keychain — store login password securely\n• Notifications — alert when locked\n\nPlease grant these when prompted."
+        alert.addButton(withTitle: t("ok"))
+        alert.window.title = "BLEUnlock"
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+        prefs.set(true, forKey: "hasShownGuide")
+    }
+
     func checkAccessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeRetainedValue() as String
         if (!AXIsProcessTrustedWithOptions([key: true] as CFDictionary)) {
@@ -742,6 +793,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         dnc.addObserver(self, selector: #selector(onScreensaverStart), name: NSNotification.Name(rawValue: "com.apple.screensaver.didstart"), object: nil)
         dnc.addObserver(self, selector: #selector(onScreensaverStop), name: NSNotification.Name(rawValue: "com.apple.screensaver.didstop"), object: nil)
 
+        if !prefs.bool(forKey: "hasShownGuide") {
+            prefs.set(true, forKey: "enabled")  // Default to enabled on first launch
+            showFirstLaunchGuide()
+        }
         if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && fetchPassword() == nil {
             askPassword()
         }
