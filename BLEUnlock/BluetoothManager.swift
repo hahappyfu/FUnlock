@@ -80,6 +80,9 @@ final class BluetoothManager: ObservableObject {
     @Published var connected: Bool = false
     @Published var discoveredDevices: [Device] = []
     @Published var monitoredDeviceName: String? = nil
+    @Published var lockRSSI: Int = -80
+    @Published var unlockRSSI: Int = -60
+    @Published var thresholdVersion: Int = 0
 
     // MARK: Dependencies
 
@@ -95,6 +98,24 @@ final class BluetoothManager: ObservableObject {
 
     init(ble: BLE) {
         self.ble = ble
+        self.lockRSSI = ble.lockRSSI
+        self.unlockRSSI = ble.unlockRSSI
+    }
+
+    // MARK: - 阈值同步
+
+    func setLockRSSI(_ value: Int) {
+        lockRSSI = value
+        ble.lockRSSI = value
+        UserDefaults.standard.set(value, forKey: "lockRSSI")
+        thresholdVersion += 1
+    }
+
+    func setUnlockRSSI(_ value: Int) {
+        unlockRSSI = value
+        ble.unlockRSSI = value
+        UserDefaults.standard.set(value, forKey: "unlockRSSI")
+        thresholdVersion += 1
     }
 
     // MARK: - 扫描控制

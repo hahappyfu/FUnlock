@@ -7,7 +7,7 @@ import Combine
 @available(macOS 12.0, *)
 struct MenuDashboardView: View {
     @ObservedObject var manager: BluetoothManager
-    let ble: BLE
+    @ObservedObject var ble: BLE
 
     @AppStorage("enabled") private var enabled = true
     @AppStorage("wakeOnProximity") private var wakeOnProximity = false
@@ -17,6 +17,9 @@ struct MenuDashboardView: View {
     @AppStorage("sleepDisplay") private var sleepDisplay = false
     @AppStorage("passiveMode") private var passiveMode = false
     @AppStorage("launchAtLogin") private var launchAtLogin = false
+    @State private var showCalibration = false
+    @State private var sliderLock: Double = 0
+    @State private var sliderUnlock: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +50,13 @@ struct MenuDashboardView: View {
         }
         .frame(width: 320, height: manager.monitoredDeviceName != nil ? 520 : 400)
         .background(.regularMaterial)
+        .onAppear {
+            sliderLock = Double(manager.lockRSSI)
+            sliderUnlock = Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
+        }
+        .sheet(isPresented: $showCalibration) {
+            CalibrationWizardView(manager: manager, isPresented: $showCalibration)
+        }
     }
 
     // MARK: - 设备区域
@@ -209,31 +219,72 @@ struct MenuDashboardView: View {
             }
             .padding(.vertical, 8)
 
-            HStack(spacing: 0) {
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("锁定阈值")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        Text("\(ble.lockRSSI) dBm")
-                            .font(.system(.caption, design: .monospaced))
-                            .fontWeight(.medium)
-                    }
-                } icon: {
-                    Image(systemName: "lock.fill").font(.caption).foregroundColor(.orange)
+            // 校准按钮
+            Button(action: { showCalibration = true }) {
+                HStack {
+                    Image(systemName: "wand.and.stars")
+                    Text("自动校准向导")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
-                Spacer()
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("解锁阈值")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        Text(ble.unlockRSSI == 1 ? "已禁用" : "\(ble.unlockRSSI) dBm")
-                            .font(.system(.caption, design: .monospaced))
-                            .fontWeight(.medium)
-                    }
-                } icon: {
-                    Image(systemName: "lock.open.fill").font(.caption).foregroundColor(.green)
+                .font(.callout)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color.accentColor.opacity(0.08))
+            .cornerRadius(8)
+
+            // 阈值调节
+            VStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .frame(width: 16)
+                    Text("锁定")
+                        .font(.caption)
+                        .frame(width: 30, alignment: .leading)
+                    Slider(value: $sliderLock, in: Double(-95)...Double(-30))
+                        .onChange(of: sliderLock) { manager.setLockRSSI(Int($0)) }
+                    Text("\(manager.lockRSSI)")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 35, alignment: .trailing)
+                    Text("dBm")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.open.fill")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                        .frame(width: 16)
+                    Text("解锁")
+                        .font(.caption)
+                        .frame(width: 30, alignment: .leading)
+                    Slider(value: $sliderUnlock, in: Double(-95)...Double(-30))
+                        .onChange(of: sliderUnlock) { manager.setUnlockRSSI(Int($0)) }
+                    Text(manager.unlockRSSI == 1 ? "关" : "\(manager.unlockRSSI)")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 35, alignment: .trailing)
+                    Text("dBm")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .onReceive(manager.$lockRSSI) { newValue in
+                if Int(sliderLock) != newValue {
+                    sliderLock = Double(newValue)
+                }
+            }
+            .onReceive(manager.$unlockRSSI) { newValue in
+                let expected = (newValue == 1 ? -95 : newValue)
+                if Int(sliderUnlock) != expected {
+                    sliderUnlock = Double(expected)
                 }
             }
         }
