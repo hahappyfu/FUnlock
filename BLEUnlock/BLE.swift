@@ -108,7 +108,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var delegate: BLEDelegate?
     var scanMode = false
     var monitoredUUID: UUID?
+    var monitoredUUIDs: Set<UUID> = []
     var monitoredPeripheral: CBPeripheral?
+    var devicePresence: [UUID: Bool] = [:]
     var proximityTimer : Timer?
     var signalTimer: Timer?
     var presence = false
@@ -122,6 +124,11 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var thresholdRSSI = -70
     var latestRSSIs: [Double] = []
     var latestN: Int = 5
+    // Kalman filter state
+    var kalmanEstimate: Double = -60.0  // initial estimate
+    var kalmanP: Double = 1.0           // error covariance
+    let kalmanQ: Double = 0.008         // process noise (small = smooth)
+    let kalmanR: Double = 0.5           // measurement noise (BLE RSSI noise)
     var activeModeTimer : Timer? = nil
     var connectionTimer : Timer? = nil
     var stableCount: Int = 0
@@ -174,7 +181,30 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         activePollInterval = 2.0
         lastEstimatedRSSI = 0
         signalLostCount = 0
+        kalmanEstimate = -60.0
+        kalmanP = 1.0
+        monitoredUUIDs = [uuid]
+        devicePresence.removeAll()
         scanForPeripherals()
+    }
+
+    func addMonitoredDevice(uuid: UUID) {
+        monitoredUUIDs.insert(uuid)
+        devicePresence[uuid] = false
+    }
+
+    func removeMonitoredDevice(uuid: UUID) {
+        monitoredUUIDs.remove(uuid)
+        devicePresence.removeValue(forKey: uuid)
+    }
+
+    func updateDevicePresence(_ uuid: UUID, present: Bool) {
+        devicePresence[uuid] = present
+        let anyPresent = devicePresence.values.contains(true)
+        if anyPresent != presence {
+            presence = anyPresent
+            delegate?.updatePresence(presence: presence, reason: present ? "close" : "away")
+        }
     }
 
     func resetSignalTimer() {
@@ -223,17 +253,16 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     func getEstimatedRSSI(rssi: Int) -> Int {
-        let alpha = 0.3
-        if let last = latestRSSIs.last {
-            let filtered = last * (1 - alpha) + Double(rssi) * alpha
-            latestRSSIs.append(filtered)
-        } else {
-            latestRSSIs.append(Double(rssi))
-        }
-        if latestRSSIs.count > latestN {
-            latestRSSIs.removeFirst()
-        }
-        return Int(latestRSSIs.last!)
+        // Kalman filter: predict + update
+        let predicted = kalmanEstimate
+        let predictedP = kalmanP + kalmanQ
+        let kalmanGain = predictedP / (predictedP + kalmanR)
+        kalmanEstimate = predicted + kalmanGain * (Double(rssi) - predicted)
+        kalmanP = (1 - kalmanGain) * predictedP
+        // Keep latestRSSIs for buffer limit tracking
+        latestRSSIs.append(Double(rssi))
+        if latestRSSIs.count > latestN { latestRSSIs.removeFirst() }
+        return Int(kalmanEstimate)
     }
 
     @discardableResult
@@ -335,13 +364,12 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                         rssi RSSI: NSNumber)
     {
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
-        if let uuid = monitoredUUID {
-            if peripheral.identifier.description == uuid.description {
+        if monitoredUUIDs.contains(peripheral.identifier) {
+            if peripheral.identifier == monitoredUUID {
                 if monitoredPeripheral == nil {
                     monitoredPeripheral = peripheral
                 }
                 if activeModeTimer == nil {
-                    //print("Discover \(rssi)dBm")
                     updateMonitoredPeripheral(rssi)
                     if !passiveMode {
                         connectMonitoredPeripheral()
