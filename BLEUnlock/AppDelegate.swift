@@ -29,11 +29,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     let prefs = UserDefaults.standard
     var cancellables = Set<AnyCancellable>()
 
-    // MARK: - BLEDelegate（纯 UI 更新）
+    // MARK: - BLEDelegate（UI 更新 + 转发设备事件）
 
-    func newDevice(device: Device) { }
-    func updateDevice(device: Device) { }
-    func removeDevice(device: Device) { }
+    func newDevice(device: Device) {
+        manager.onDeviceDiscovered(device)
+    }
+    func updateDevice(device: Device) {
+        manager.onDeviceUpdated(device)
+    }
+    func removeDevice(device: Device) {
+        manager.onDeviceRemoved(device)
+    }
 
     func updateRSSI(rssi: Int?, active: Bool) {
         manager.onRSSIUpdated(rssi: rssi, active: active)
@@ -79,21 +85,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @objc func togglePopover(_ sender: AnyObject?) {
         if popover.isShown {
             popover.performClose(sender)
+            ble.stopScanning()
         } else {
             if let button = statusItem.button {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                ble.startScanning()
             }
         }
     }
 
     // MARK: - Accessibility
 
+    /// 纯净检查（不弹窗），用于 UI 显示权限状态
+    var isAccessibilityGranted: Bool {
+        AXIsProcessTrusted()
+    }
+
+    /// 仅在确认未授权时请求弹窗，避免每次启动都弹
+    func requestAccessibilityIfNeeded() {
+        guard !isAccessibilityGranted else { return }
+        // 带 prompt 参数触发系统弹窗
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(opts)
+    }
+
+    /// 保留向后兼容的启动检查（仅首次运行时弹窗）
     func checkAccessibility() {
-        let key = kAXTrustedCheckOptionPrompt.takeRetainedValue() as String
-        if !AXIsProcessTrustedWithOptions([key: true] as CFDictionary) {
-            let src = CGEventSource(stateID: .hidSystemState)
-            CGEvent(keyboardEventSource: src, virtualKey: 63, keyDown: true)?.post(tap: .cghidEventTap)
-            CGEvent(keyboardEventSource: src, virtualKey: 63, keyDown: false)?.post(tap: .cghidEventTap)
+        if !isAccessibilityGranted {
+            // 首次运行才弹窗，后续启动只静默检查
+            let isFirstRun = !prefs.bool(forKey: "hasCheckedAccessibility")
+            if isFirstRun {
+                prefs.set(true, forKey: "hasCheckedAccessibility")
+                let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                AXIsProcessTrustedWithOptions(opts)
+            }
         }
     }
 
@@ -106,6 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 恢复已保存的设备
         if let str = prefs.string(forKey: "device"), let uuid = UUID(uuidString: str) {
             manager.updateConnected(false)
+            manager.monitoredDeviceName = prefs.string(forKey: "deviceName") ?? "已配对设备"
             ble.startMonitor(uuid: uuid)
         }
 
