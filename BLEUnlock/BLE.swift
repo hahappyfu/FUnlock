@@ -124,6 +124,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var latestN: Int = 5
     var activeModeTimer : Timer? = nil
     var connectionTimer : Timer? = nil
+    var stableCount: Int = 0
+    var activePollInterval: TimeInterval = 2.0
+    var lastEstimatedRSSI: Int = 0
+    var signalLostCount: Int = 0
 
     func scanForPeripherals() {
         guard !centralMgr.isScanning else { return }
@@ -170,13 +174,20 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func resetSignalTimer() {
+        signalLostCount = 0
         signalTimer?.invalidate()
         signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
-            print("Device is lost")
-            self.delegate?.updateRSSI(rssi: nil, active: false)
-            if self.presence {
-                self.presence = false
-                self.delegate?.updatePresence(presence: self.presence, reason: "lost")
+            self.signalLostCount += 1
+            if self.signalLostCount >= 3 {
+                print("Device is lost (3 consecutive timeouts)")
+                self.delegate?.updateRSSI(rssi: nil, active: false)
+                if self.presence {
+                    self.presence = false
+                    self.delegate?.updatePresence(presence: self.presence, reason: "lost")
+                }
+            } else {
+                print("Signal timeout \(self.signalLostCount)/3, waiting...")
+                self.resetSignalTimer()
             }
         })
         if let timer = signalTimer {
@@ -209,12 +220,17 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
     
     func getEstimatedRSSI(rssi: Int) -> Int {
-        if latestRSSIs.count >= latestN {
+        let alpha = 0.3
+        if let last = latestRSSIs.last {
+            let filtered = last * (1 - alpha) + Double(rssi) * alpha
+            latestRSSIs.append(filtered)
+        } else {
+            latestRSSIs.append(Double(rssi))
+        }
+        if latestRSSIs.count > latestN {
             latestRSSIs.removeFirst()
         }
-        latestRSSIs.append(Double(rssi))
-        let sum = latestRSSIs.reduce(0, +)
-        return Int(sum / Double(latestRSSIs.count))
+        return Int(latestRSSIs.last!)
     }
 
     func updateMonitoredPeripheral(_ rssi: Int) {
@@ -225,7 +241,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             DispatchQueue.main.async {
                 self.delegate?.updatePresence(presence: self.presence, reason: "close")
             }
-            latestRSSIs.removeAll() // Avoid bouncing
+            // Keep last 2 samples for debounce, avoid clearing all
+            while latestRSSIs.count > 2 { latestRSSIs.removeFirst() }
         }
 
         let estimatedRSSI = getEstimatedRSSI(rssi: rssi)
@@ -284,6 +301,24 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
         })
         RunLoop.main.add(connectionTimer!, forMode: .common)
+    }
+
+    private func restartActiveModeTimer(peripheral: CBPeripheral) {
+        activeModeTimer?.invalidate()
+        activeModeTimer = Timer.scheduledTimer(withTimeInterval: activePollInterval, repeats: true, block: { _ in
+            if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
+                print("Falling back to passive mode")
+                self.centralMgr.cancelPeripheralConnection(peripheral)
+                self.activeModeTimer?.invalidate()
+                self.activeModeTimer = nil
+                self.scanForPeripherals()
+            } else if peripheral.state == .connected {
+                peripheral.readRSSI()
+            } else {
+                self.connectMonitoredPeripheral()
+            }
+        })
+        RunLoop.main.add(activeModeTimer!, forMode: .common)
     }
 
     //MARK:- CBCentralManagerDelegate start
@@ -379,12 +414,30 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         updateMonitoredPeripheral(rssi)
         lastReadAt = Date().timeIntervalSince1970
 
+        // Track RSSI stability for adaptive polling
+        let estimated = getEstimatedRSSI(rssi: rssi)
+        let fluctuation = abs(estimated - lastEstimatedRSSI)
+        lastEstimatedRSSI = estimated
+        if fluctuation < 5 {
+            stableCount += 1
+        } else {
+            stableCount = 0
+        }
+        if stableCount >= 10 && activePollInterval < 8.0 {
+            activePollInterval = 8.0
+            restartActiveModeTimer(peripheral: peripheral)
+        } else if fluctuation >= 5 && activePollInterval > 2.0 {
+            activePollInterval = 2.0
+            stableCount = 0
+            restartActiveModeTimer(peripheral: peripheral)
+        }
+
         if activeModeTimer == nil && !passiveMode {
             print("Entering active mode")
             if !scanMode {
                 centralMgr.stopScan()
             }
-            activeModeTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true, block: { _ in
+            activeModeTimer = Timer.scheduledTimer(withTimeInterval: activePollInterval, repeats: true, block: { _ in
                 if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
                     print("Falling back to passive mode")
                     self.centralMgr.cancelPeripheralConnection(peripheral)
