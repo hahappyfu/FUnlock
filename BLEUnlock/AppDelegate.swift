@@ -1,13 +1,14 @@
 import Cocoa
 import Quartz
 import ServiceManagement
+import UserNotifications
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
 }
 
 @NSApplicationMain
-class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, NSUserNotificationCenterDelegate, BLEDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, UNUserNotificationCenterDelegate, BLEDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let ble = BLE()
     let mainMenu = NSMenu()
@@ -22,7 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     var displaySleep = false
     var systemSleep = false
     var connected = false
-    var userNotification: NSUserNotification?
+    var userNotificationId: String = ""
     var nowPlayingWasPlaying = false
     var nowPlayingPauseCompleted = false
     var aboutBox: AboutBox? = nil
@@ -140,29 +141,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func notifyUser(_ reason: String) {
-        let un = NSUserNotification()
-        un.title = "BLEUnlock"
+        let content = UNMutableNotificationContent()
+        content.title = "BLEUnlock"
         if reason == "lost" {
-            un.subtitle = t("notification_lost_signal")
+            content.subtitle = t("notification_lost_signal")
         } else if reason == "away" {
-            un.subtitle = t("notification_device_away")
+            content.subtitle = t("notification_device_away")
         }
-        un.informativeText = t("notification_locked")
-        un.deliveryDate = Date().addingTimeInterval(1)
-        NSUserNotificationCenter.default.scheduleNotification(un)
-        userNotification = un
+        content.body = t("notification_locked")
+        let req = UNNotificationRequest(identifier: "bleunlock-lock", content: content, trigger: nil)
+        userNotificationId = req.identifier
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 
-    func userNotificationCenter(_ center: NSUserNotificationCenter,
-                                shouldPresent notification: NSUserNotification) -> Bool {
-        return true
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) -> UNNotificationPresentationOptions {
+        return [.alert, .sound]
     }
 
-    func userNotificationCenter(_ center: NSUserNotificationCenter,
-                                didActivate notification: NSUserNotification) {
-        if notification != userNotification {
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        if response.notification.request.identifier != userNotificationId {
             NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/bleunlock/releases")!)
-            NSUserNotificationCenter.default.removeDeliveredNotification(notification)
         }
     }
 
@@ -226,9 +226,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     func updatePresence(presence: Bool, reason: String) {
         if presence {
             if ble.unlockRSSI != ble.UNLOCK_DISABLED {
-                if let un = userNotification {
-                    NSUserNotificationCenter.default.removeDeliveredNotification(un)
-                    userNotification = nil
+                if !userNotificationId.isEmpty {
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [userNotificationId])
+                    userNotificationId = ""
                 }
                 if displaySleep && !systemSleep && prefs.bool(forKey: "wakeOnProximity") {
                     print("Waking display")
@@ -414,6 +414,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             String(kSecAttrAccount): NSUserName(),
             String(kSecAttrService): Bundle.main.bundleIdentifier ?? "BLEUnlock",
             String(kSecAttrLabel): "BLEUnlock",
+            String(kSecAttrAccessible): kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             String(kSecValueData): pw,
         ]
         SecItemDelete(query as CFDictionary)
@@ -727,7 +728,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             ble.proximityTimeout = Double(lockDelay)
         }
 
-        NSUserNotificationCenter.default.delegate = self
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         let nc = NSWorkspace.shared.notificationCenter;
         nc.addObserver(self, selector: #selector(onDisplaySleep), name: NSWorkspace.screensDidSleepNotification, object: nil)
