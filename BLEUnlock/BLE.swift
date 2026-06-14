@@ -149,9 +149,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func stopScanning() {
         scanMode = false
-        if activeModeTimer != nil {
-            centralMgr.stopScan()
-        }
+        centralMgr.stopScan()
     }
 
     func setPassiveMode(_ mode: Bool) {
