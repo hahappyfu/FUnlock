@@ -241,7 +241,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     func lockOrSaveScreen() {
         if prefs.bool(forKey: "screensaver") {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screensaver.ScreenSaverEngine") {
-                NSWorkspace.shared.openFile(url.path)
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = false
+                NSWorkspace.shared.openApplication(at: url, configuration: config)
             }
         } else {
             if SACLockScreenImmediate() != 0 {
