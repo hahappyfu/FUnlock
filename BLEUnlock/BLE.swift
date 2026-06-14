@@ -1,6 +1,5 @@
 import Foundation
 import CoreBluetooth
-import Accelerate
 
 let DeviceInformation = CBUUID(string:"180A")
 let ManufacturerName = CBUUID(string:"2A29")
@@ -39,24 +38,9 @@ class Device: NSObject {
     
     override var description: String {
         get {
-            if macAddr == nil || blName == nil {
-                if let info = getLEDeviceInfoFromUUID(uuid.description) {
-                    blName = info.name
-                    macAddr = info.macAddr
-                }
-            }
-            if macAddr == nil {
-                macAddr = getMACFromUUID(uuid.description)
-            }
-            if let mac = macAddr {
-                if blName == nil {
-                    blName = getNameFromMAC(mac)
-                }
-                if let name = blName {
-                    // If it's just "iPhone" or "iPad", there's a chance we can get the model name in the following code
-                    if name != "iPhone" && name != "iPad" {
-                        return name
-                    }
+            if let name = blName {
+                if name != "iPhone" && name != "iPad" {
+                    return name
                 }
             }
             if let manu = manufacture {
@@ -95,7 +79,7 @@ class Device: NSObject {
                 return name
             }
             if let mac = macAddr {
-                return mac // better than uuid
+                return mac
             }
             return uuid.description
         }
@@ -118,6 +102,7 @@ protocol BLEDelegate {
 class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let UNLOCK_DISABLED = 1
     let LOCK_DISABLED = -100
+    let bleQueue = DispatchQueue(label: "com.bleunlock.ble")
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
     var delegate: BLEDelegate?
@@ -214,7 +199,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             signalTimer = nil
             if powerWarn {
                 powerWarn = false
-                delegate?.bluetoothPowerWarn()
+                DispatchQueue.main.async {
+                    self.delegate?.bluetoothPowerWarn()
+                }
             }
         default:
             break
@@ -226,10 +213,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             latestRSSIs.removeFirst()
         }
         latestRSSIs.append(Double(rssi))
-        var mean: Double = 0.0
-        var sddev: Double = 0.0
-        vDSP_normalizeD(latestRSSIs, 1, nil, 1, &mean, &sddev, vDSP_Length(latestRSSIs.count))
-        return Int(mean)
+        let sum = latestRSSIs.reduce(0, +)
+        return Int(sum / Double(latestRSSIs.count))
     }
 
     func updateMonitoredPeripheral(_ rssi: Int) {
@@ -237,12 +222,16 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) && !presence {
             print("Device is close")
             presence = true
-            delegate?.updatePresence(presence: presence, reason: "close")
+            DispatchQueue.main.async {
+                self.delegate?.updatePresence(presence: self.presence, reason: "close")
+            }
             latestRSSIs.removeAll() // Avoid bouncing
         }
 
         let estimatedRSSI = getEstimatedRSSI(rssi: rssi)
-        delegate?.updateRSSI(rssi: estimatedRSSI, active: activeModeTimer != nil)
+        DispatchQueue.main.async {
+            self.delegate?.updateRSSI(rssi: estimatedRSSI, active: self.activeModeTimer != nil)
+        }
 
         if estimatedRSSI >= (lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) {
             if let timer = proximityTimer {
@@ -337,14 +326,28 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                     device.peripheral = peripheral
                     device.rssi = rssi
                     device.advData = advertisementData["kCBAdvDataManufacturerData"] as? Data
+                    if let info = getLEDeviceInfoFromUUID(peripheral.identifier.description) {
+                        device.blName = info.name
+                        device.macAddr = info.macAddr
+                    }
+                    if device.macAddr == nil {
+                        device.macAddr = getMACFromUUID(peripheral.identifier.description)
+                    }
+                    if let mac = device.macAddr, device.blName == nil {
+                        device.blName = getNameFromMAC(mac)
+                    }
                     devices[peripheral.identifier] = device
                     central.connect(peripheral, options: nil)
-                    delegate?.newDevice(device: device)
+                    DispatchQueue.main.async {
+                        self.delegate?.newDevice(device: device)
+                    }
                 }
             } else {
                 device = dev!
                 device.rssi = rssi
-                delegate?.updateDevice(device: device)
+                DispatchQueue.main.async {
+                    self.delegate?.updateDevice(device: device)
+                }
             }
             resetScanTimer(device: device)
         }
@@ -432,11 +435,15 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 if let device = devices[peripheral.identifier] {
                     if characteristic.uuid == ManufacturerName {
                         device.manufacture = s
-                        delegate?.updateDevice(device: device)
+                        DispatchQueue.main.async {
+                            self.delegate?.updateDevice(device: device)
+                        }
                     }
                     if characteristic.uuid == ModelName {
                         device.model = s
-                        delegate?.updateDevice(device: device)
+                        DispatchQueue.main.async {
+                            self.delegate?.updateDevice(device: device)
+                        }
                     }
                     if device.model != nil && device.manufacture != nil && device.peripheral != monitoredPeripheral {
                         centralMgr.cancelPeripheralConnection(peripheral)
@@ -455,6 +462,6 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     override init() {
         super.init()
-        centralMgr = CBCentralManager(delegate: self, queue: nil)
+        centralMgr = CBCentralManager(delegate: self, queue: bleQueue)
     }
 }
