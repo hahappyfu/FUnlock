@@ -125,6 +125,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - 生命周期
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 先恢复设置到 ble（manager init 会同步 ble 的值）
+        let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { ble.lockRSSI = lockRSSI }
+        let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { ble.unlockRSSI = unlockRSSI }
+        let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { ble.signalTimeout = Double(timeout) }
+        ble.setPassiveMode(prefs.bool(forKey: "passiveMode"))
+        let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { ble.thresholdRSSI = thresholdRSSI }
+        let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { ble.proximityTimeout = Double(lockDelay) }
+
+        // 初始化 manager（此时 ble 已有正确的 UserDefaults 值）
         manager = BluetoothManager(ble: ble)
         ble.delegate = self
 
@@ -135,20 +144,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ble.startMonitor(uuid: uuid)
         }
 
-        // 恢复设置
-        let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { ble.lockRSSI = lockRSSI }
-        let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { ble.unlockRSSI = unlockRSSI }
-        let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { ble.signalTimeout = Double(timeout) }
-        ble.setPassiveMode(prefs.bool(forKey: "passiveMode"))
-        let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { ble.thresholdRSSI = thresholdRSSI }
-        let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { ble.proximityTimeout = Double(lockDelay) }
-
         // 初始化设置窗口
         let dashboard = MenuDashboardView(manager: manager, ble: ble)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "BLEUnlock"
-        settingsWindow.styleMask = [.titled]
+        settingsWindow.styleMask = [.titled, .closable, .resizable]
         settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
         settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
         settingsWindow.isReleasedWhenClosed = false

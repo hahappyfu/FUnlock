@@ -1,5 +1,6 @@
 import Foundation
 import CoreBluetooth
+import Combine
 
 let DeviceInformation = CBUUID(string:"180A")
 let ManufacturerName = CBUUID(string:"2A29")
@@ -99,7 +100,7 @@ protocol BLEDelegate {
     func bluetoothPowerWarn()
 }
 
-class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let UNLOCK_DISABLED = 1
     let LOCK_DISABLED = -100
     let bleQueue = DispatchQueue(label: "com.bleunlock.ble")
@@ -114,8 +115,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var proximityTimer : Timer?
     var signalTimer: Timer?
     var presence = false
-    var lockRSSI = -80
-    var unlockRSSI = -60
+    @Published var lockRSSI = -80
+    @Published var unlockRSSI = -60
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
     var lastReadAt = 0.0
