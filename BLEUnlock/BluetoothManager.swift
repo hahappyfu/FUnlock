@@ -1,13 +1,15 @@
-// BluetoothManager.swift — 状态机骨架（Phase 1: 仅定义状态和流转规则）
-//
-// 设计目标：用 enum 状态机替换 AppDelegate 中散落的布尔值标志
-// 暂不修改 BLE.swift 底层逻辑
+// BluetoothManager.swift
+// 核心状态机：收编所有锁屏/解锁决策逻辑
+// 使用 Combine 暴露状态，async/await 替代 Timer
 
 import Foundation
+import Combine
+import UserNotifications
+import Cocoa
+import Quartz
 
-// MARK: - 屏幕状态
+// MARK: - 状态枚举
 
-/// 屏幕状态：解锁 / 锁定 / 屏保 / 显示器休眠
 enum ScreenState: Equatable {
     case unlocked
     case locked(reason: LockReason)
@@ -15,201 +17,477 @@ enum ScreenState: Equatable {
     case displaySleeping
 
     enum LockReason: Equatable {
-        case away          // 设备远离
-        case lost          // 信号丢失
-        case manual        // 用户手动锁定
-        case timeout       // 超时
+        case away, lost, manual, timeout
     }
 }
 
-// MARK: - 系统状态
-
-/// 系统电源状态：唤醒 / 休眠
-enum SystemState: Equatable {
-    case awake
-    case sleeping
+enum SystemPowerState: Equatable {
+    case awake, sleeping
 }
 
-// MARK: - 锁定意图
-
-/// 锁定意图：区分自动锁和手动锁，影响解锁权限
 enum LockIntent: Equatable {
     case autoLock
-    case manualLock(until: Date)  // 手动锁在指定时间前禁止自动解锁
+    case manualLock(deadline: Date)
+
+    var isManualLockActive: Bool {
+        if case .manualLock(let deadline) = self { return Date() < deadline }
+        return false
+    }
 }
 
-// MARK: - 唤醒状态
-
-/// 显示器唤醒操作状态
-enum WakeState: Equatable {
-    case idle
-    case pending          // 已调用 wakeDisplay，等待系统回调
-    case succeeded
-    case failed
+enum WakePhase: Equatable {
+    case idle, pending, succeeded, failed
 }
 
-// MARK: - 媒体播放状态
-
-/// Now Playing 状态
-enum MediaState: Equatable {
-    case idle
-    case wasPlaying       // 锁屏前正在播放
-    case paused           // 已暂停，等待解锁后恢复
+enum MediaPlaybackState: Equatable {
+    case idle, wasPlaying, paused
 }
 
-// MARK: - 主状态机
+// MARK: - 聚合状态
 
-/// 屏幕锁定/解锁状态机
-/// 管理 ScreenState + SystemState + LockIntent + WakeState + MediaState 的组合
-struct ScreenLockState: Equatable {
+struct LockScreenState: Equatable {
     var screen: ScreenState = .unlocked
-    var system: SystemState = .awake
+    var system: SystemPowerState = .awake
     var intent: LockIntent = .autoLock
-    var wake: WakeState = .idle
-    var media: MediaState = .idle
+    var wake: WakePhase = .idle
+    var media: MediaPlaybackState = .idle
     var unlockedAt: Date = .distantPast
 
-    // MARK: - 合法状态流转
-
-    /// 设备远离/信号丢失 → 锁定
-    mutating func deviceLeft(reason: ScreenState.LockReason) {
-        guard screen == .unlocked || screen == .screensaver else { return }
-        guard intent != .manualLock(until: Date()) || Date() > intentManualLockDeadline else { return }
-        screen = .locked(reason: reason)
-        wake = .idle
-        // media 在外部设置（pauseNowPlaying 是异步的）
-    }
-
-    /// 设备靠近 → 唤醒/解锁
-    mutating func deviceApproached() {
-        switch screen {
-        case .displaySleeping:
-            // 靠近 → 唤醒显示器
-            wake = .pending
-            screen = .locked(reason: .away)  // 唤醒后仍是锁定状态，等待解锁
-        case .locked:
-            // 已锁定 → 尝试解锁（需验证密码）
-            break // 解锁逻辑在 tryUnlockScreen 中处理
-        case .screensaver:
-            // 屏保中 → 尝试解锁
-            break
-        case .unlocked:
-            break // 已解锁，无需操作
-        }
-    }
-
-    /// 系统休眠
-    mutating func systemSleep() {
-        system = .sleeping
-        // 不改变 screen 状态，唤醒后恢复
-    }
-
-    /// 系统唤醒
-    mutating func systemWake() {
-        system = .awake
-        // 唤醒后由 tryUnlockScreen 决定是否解锁
-    }
-
-    /// 显示器休眠
-    mutating func displaySleep() {
-        screen = .displaySleeping
-    }
-
-    /// 显示器唤醒
-    mutating func displayWake() {
-        wake = .succeeded
-        if screen == .displaySleeping {
-            screen = .locked(reason: .away) // 唤醒后回到锁定状态
-        }
-    }
-
-    /// 屏保启动
-    mutating func screensaverStart() {
-        screen = .screensaver
-    }
-
-    /// 屏保停止
-    mutating func screensaverStop() {
-        if screen == .screensaver {
-            screen = .locked(reason: .manual)
-        }
-    }
-
-    /// 用户手动锁屏
-    mutating func manualLock() {
-        intent = .manualLock(until: Date().addingTimeInterval(10))
-        screen = .locked(reason: .manual)
-    }
-
-    /// 自动解锁成功
-    mutating func autoUnlocked() {
-        screen = .unlocked
-        intent = .autoLock
-        wake = .idle
-        unlockedAt = Date()
-    }
-
-    /// 用户手动解锁（系统通知 com.apple.screenIsUnlocked）
-    mutating func userUnlocked() {
-        screen = .unlocked
-        intent = .autoLock
-        wake = .idle
-        unlockedAt = Date()
-    }
-
-    /// 是否允许自动解锁
     var canAutoUnlock: Bool {
-        // 手动锁定后 10 秒内禁止自动解锁
-        if case .manualLock(let deadline) = intent, Date() < deadline {
-            return false
-        }
-        // 系统休眠中禁止
+        if intent.isManualLockActive { return false }
         if system == .sleeping { return false }
-        // 显示器休眠中禁止
         if screen == .displaySleeping { return false }
         return true
     }
 
-    /// 是否处于锁定状态
-    var isLocked: Bool {
-        if case .locked = screen { return true }
-        return false
-    }
-
-    // MARK: - 辅助
-
-    private var intentManualLockDeadline: Date {
-        if case .manualLock(let until) = intent { return until }
-        return .distantPast
+    var isEffectivelyLocked: Bool {
+        switch screen {
+        case .locked, .screensaver, .displaySleeping: return true
+        case .unlocked: return false
+        }
     }
 }
 
-// MARK: - 状态机使用示例（伪代码）
+// MARK: - BluetoothManager
 
-/*
- 当前散落的布尔值 → 状态机映射：
+@MainActor
+final class BluetoothManager: ObservableObject {
 
- displaySleep = true       → state.screen = .displaySleeping
- systemSleep = true        → state.system = .sleeping
- inScreensaver = true      → state.screen = .screensaver
- manualLock = true         → state.intent = .manualLock(until: ...)
- wakeSucceeded = true      → state.wake = .succeeded
- nowPlayingWasPlaying=true → state.media = .wasPlaying
+    // MARK: Published state
 
- 当前的 if/else 判定 → 统一用 state.canAutoUnlock 代替：
-   guard !manualLock           → guard state.canAutoUnlock
-   guard !systemSleep          → guard state.system == .awake
-   guard !displaySleep         → guard state.screen != .displaySleeping
+    @Published private(set) var state = LockScreenState()
+    @Published var rssi: Int? = nil
+    @Published var connected: Bool = false
 
- 事件驱动入口：
-   onDisplaySleep()   → state.displaySleep()
-   onDisplayWake()    → state.displayWake()
-   onSystemSleep()    → state.systemSleep()
-   onSystemWake()     → state.systemWake()
-   onUnlock()         → state.userUnlocked()
-   onScreensaverStart→ state.screensaverStart()
-   onScreensaverStop()→ state.screensaverStop()
-   lockNow()          → state.manualLock()
-   updatePresence()   → state.deviceLeft() / state.deviceApproached()
-   tryUnlockScreen()  → state.autoUnlocked() (成功时)
-*/
+    // MARK: Dependencies
+
+    let ble: BLE
+    private let prefs = UserDefaults.standard
+    private var wakeTask: Task<Void, Never>?
+    private var unlockTask: Task<Void, Never>?
+    private var intrudeCheckTask: Task<Void, Never>?
+    private var userNotificationId = ""
+    private var cancellables = Set<AnyCancellable>()
+
+    // MARK: Init
+
+    init(ble: BLE) {
+        self.ble = ble
+    }
+
+    // MARK: - 系统事件入口
+
+    func onDisplaySleep() {
+        print("[SM] displaySleep")
+        state.screen = .displaySleeping
+    }
+
+    func onDisplayWake() {
+        print("[SM] displayWake")
+        state.wake = .succeeded
+        wakeTask?.cancel()
+        wakeTask = nil
+        if state.screen == .displaySleeping {
+            state.screen = .locked(reason: .away)
+        }
+        attemptAutoUnlock()
+    }
+
+    func onSystemSleep() {
+        print("[SM] systemSleep")
+        state.system = .sleeping
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    func onSystemWake() {
+        print("[SM] systemWake")
+        // 延迟 1 秒等待蓝牙栈恢复
+        Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            NSApp.setActivationPolicy(.accessory)
+            self.state.system = .awake
+            self.attemptAutoUnlock()
+        }
+    }
+
+    func onUnlock() {
+        print("[SM] userUnlocked")
+        state.unlockedAt = Date()
+        state.intent = .autoLock
+
+        // 2 秒后检查是否为入侵（非 BLE 自动解锁）
+        intrudeCheckTask?.cancel()
+        intrudeCheckTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            if Date().timeIntervalSince1970 >= state.unlockedAt.timeIntervalSince1970 + 10 {
+                if ble.unlockRSSI != ble.UNLOCK_DISABLED {
+                    runScript("intruded")
+                    logEvent("intruded")
+                }
+                playNowPlaying()
+            }
+            checkUpdate()
+        }
+    }
+
+    func onScreensaverStart() {
+        print("[SM] screensaverStart")
+        state.screen = .screensaver
+    }
+
+    func onScreensaverStop() {
+        print("[SM] screensaverStop")
+        if state.screen == .screensaver {
+            state.screen = .locked(reason: .manual)
+        }
+    }
+
+    // MARK: - BLE 设备事件
+
+    func onDeviceApproached() {
+        guard prefs.bool(forKey: "enabled") else { return }
+        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
+
+        // 清除锁屏通知
+        if !userNotificationId.isEmpty {
+            UNUserNotificationCenter.current()
+                .removeDeliveredNotifications(withIdentifiers: [userNotificationId])
+            userNotificationId = ""
+        }
+
+        // 显示器休眠中 → 唤醒
+        if state.screen == .displaySleeping && state.system == .awake
+            && prefs.bool(forKey: "wakeOnProximity") {
+            startWakeRetry()
+        }
+
+        attemptAutoUnlock()
+    }
+
+    func onDeviceLeft(reason: String) {
+        guard prefs.bool(forKey: "enabled") else { return }
+        guard !isScreenLocked() else { return }
+        guard ble.lockRSSI != ble.LOCK_DISABLED else { return }
+
+        pauseNowPlaying()
+        lockOrSaveScreen()
+        notifyUser(reason)
+        runScript(reason)
+        logEvent("locked: \(reason)")
+    }
+
+    func onRSSIUpdated(rssi: Int?, active: Bool) {
+        self.rssi = rssi
+        // connected 状态由 AppDelegate 的 UI 层处理
+    }
+
+    // MARK: - 用户操作
+
+    func lockNow() {
+        guard !isScreenLocked() else { return }
+        state.intent = .manualLock(deadline: Date().addingTimeInterval(10))
+        state.screen = .locked(reason: .manual)
+        pauseNowPlaying()
+        lockOrSaveScreen()
+    }
+
+    // MARK: - 核心：自动解锁
+
+    private func attemptAutoUnlock() {
+        guard state.canAutoUnlock else { return }
+        guard ble.presence else { return }
+        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
+
+        // 屏保中先按 Esc
+        if state.screen == .screensaver {
+            let src = CGEventSource(stateID: .hidSystemState)
+            CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: true)?.post(tap: .cghidEventTap)
+            CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+
+        guard !prefs.bool(forKey: "wakeWithoutUnlocking") else { return }
+
+        // 取消之前的解锁任务
+        unlockTask?.cancel()
+
+        unlockTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            guard !Task.isCancelled else { return }
+            guard isScreenLocked() else { return }
+            guard Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970 > 3 else {
+                print("[SM] recently unlocked by user, abort auto-unlock")
+                return
+            }
+            guard let password = fetchPassword(warn: true) else { return }
+
+            print("[SM] entering password")
+            self.state.unlockedAt = Date()
+            fakeKeyStrokes(password)
+            playNowPlaying()
+            runScript("unlocked")
+            logEvent("unlocked")
+        }
+    }
+
+    // MARK: - 显示器唤醒重试 (async/await 替代 Timer)
+
+    private func startWakeRetry() {
+        state.wake = .pending
+        state.screen = .locked(reason: .away) // 唤醒后仍为锁定
+
+        wakeTask?.cancel()
+        wakeTask = Task {
+            for attempt in 0..<10 {
+                guard !Task.isCancelled else { return }
+                if attempt > 0 {
+                    print("[SM] retrying wake #\(attempt)")
+                }
+                wakeDisplay()
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+                if state.wake == .succeeded {
+                    return
+                }
+            }
+            print("[SM] wake failed after 10 retries")
+            state.wake = .failed
+        }
+    }
+
+    // MARK: - Now Playing
+
+    private func pauseNowPlaying() {
+        guard prefs.bool(forKey: "pauseItunes") else { return }
+        state.media = .idle
+        MRMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { [weak self] playing in
+            guard let self = self else { return }
+            if playing {
+                self.state.media = .wasPlaying
+                MRMediaRemoteSendCommand(MRCommandPause, nil)
+            } else {
+                self.state.media = .paused
+            }
+        }
+    }
+
+    private func playNowPlaying() {
+        guard prefs.bool(forKey: "pauseItunes") else { return }
+        guard state.media == .wasPlaying else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            MRMediaRemoteSendCommand(MRCommandPlay, nil)
+            state.media = .idle
+        }
+    }
+
+    // MARK: - 屏幕操作
+
+    private func lockOrSaveScreen() {
+        if prefs.bool(forKey: "screensaver") {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screensaver.ScreenSaverEngine") {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = false
+                NSWorkspace.shared.openApplication(at: url, configuration: config)
+            }
+        } else {
+            if SACLockScreenImmediate() != 0 { print("[SM] failed to lock screen") }
+            if prefs.bool(forKey: "sleepDisplay") {
+                sleepDisplay()
+            }
+        }
+    }
+
+    private func isScreenLocked() -> Bool {
+        if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            return dict["CGSSessionScreenIsLocked"] as? Int == 1
+        }
+        return false
+    }
+
+    // MARK: - 键盘模拟
+
+    private func fakeKeyStrokes(_ string: String) {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let PER = 20
+        let uniCharCount = string.utf16.count
+        var strIndex = string.utf16.startIndex
+        for offset in stride(from: 0, to: uniCharCount, by: PER) {
+            let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
+            let len = offset + PER < uniCharCount ? PER : uniCharCount - offset
+            let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
+            defer { buffer.deallocate() }
+            for i in 0..<len {
+                buffer[i] = string.utf16[strIndex]
+                strIndex = string.utf16.index(after: strIndex)
+            }
+            pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: buffer)
+            pressEvent?.post(tap: .cghidEventTap)
+            CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cghidEventTap)
+        }
+        CGEvent(keyboardEventSource: src, virtualKey: 52, keyDown: true)?.post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: src, virtualKey: 52, keyDown: false)?.post(tap: .cghidEventTap)
+    }
+
+    // MARK: - Keychain
+
+    func storePassword(_ password: String) {
+        let pw = password.data(using: .utf8)!
+        let query: [String: Any] = [
+            String(kSecClass): kSecClassGenericPassword,
+            String(kSecAttrAccount): NSUserName(),
+            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "BLEUnlock",
+            String(kSecAttrLabel): "BLEUnlock",
+            String(kSecAttrAccessible): kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            String(kSecValueData): pw,
+        ]
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            let err = SecCopyErrorMessageString(status, nil)
+            errorModal(t("failed_store_password"), info: err as String? ?? "Status \(status)")
+            return
+        }
+    }
+
+    func fetchPassword(warn: Bool = false) -> String? {
+        let query: [String: Any] = [
+            String(kSecClass): kSecClassGenericPassword,
+            String(kSecAttrAccount): NSUserName(),
+            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "BLEUnlock",
+            String(kSecReturnData): kCFBooleanTrue!,
+            String(kSecMatchLimit): kSecMatchLimitOne,
+        ]
+        var item: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound {
+            if warn { errorModal(t("password_not_set")) }
+            return nil
+        }
+        guard status == errSecSuccess else {
+            let info = SecCopyErrorMessageString(status, nil)
+            errorModal(t("failed_retrieve_password"), info: info as String? ?? "Status \(status)")
+            return nil
+        }
+        guard let data = item as? Data else {
+            errorModal(t("failed_convert_password"))
+            return nil
+        }
+        return String(data: data, encoding: .utf8)!
+    }
+
+    // MARK: - 通知
+
+    private func notifyUser(_ reason: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "BLEUnlock"
+        if reason == "lost" { content.subtitle = t("notification_lost_signal") }
+        else if reason == "away" { content.subtitle = t("notification_device_away") }
+        content.body = t("notification_locked")
+        let req = UNNotificationRequest(identifier: "bleunlock-lock", content: content, trigger: nil)
+        userNotificationId = req.identifier
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+    }
+
+    // MARK: - 日志 / 脚本
+
+    func logEvent(_ event: String) {
+        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
+        let logDir = dir.appendingPathComponent("BLEUnlock", isDirectory: true)
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        let logFile = logDir.appendingPathComponent("events.log")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let rssiStr = rssi.map { String($0) } ?? "N/A"
+        let line = "\(formatter.string(from: Date())) | \(event) | RSSI: \(rssiStr)\n"
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logFile.path) {
+                if let handle = try? FileHandle(forWritingTo: logFile) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: logFile)
+            }
+        }
+    }
+
+    func runScript(_ arg: String) {
+        guard let directory = try? FileManager.default.url(for: .applicationScriptsDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
+        let file = directory.appendingPathComponent("event")
+        let process = Process()
+        process.executableURL = file
+        var args = [arg]
+        if let r = rssi { args.append(String(r)) }
+        if let uuid = ble.monitoredUUID, let device = ble.devices[uuid] {
+            args.append(device.description)
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        args.append(formatter.string(from: Date()))
+        process.arguments = args
+        try? process.run()
+    }
+
+    func checkUpdate() {
+        // 由 checkUpdate.swift 的全局函数处理
+        BLEUnlock.checkUpdate()
+    }
+
+    // MARK: - UI 辅助
+
+    func errorModal(_ msg: String, info: String? = nil) {
+        let alert = NSAlert()
+        alert.messageText = msg
+        alert.informativeText = info ?? ""
+        alert.window.title = "BLEUnlock"
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    func askPassword() {
+        let msg = NSAlert()
+        msg.addButton(withTitle: t("ok"))
+        msg.addButton(withTitle: t("cancel"))
+        msg.messageText = t("enter_password")
+        msg.informativeText = t("password_info")
+        msg.window.title = "BLEUnlock"
+        let txt = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 20))
+        msg.accessoryView = txt
+        txt.becomeFirstResponder()
+        NSApp.activate(ignoringOtherApps: true)
+        let response = msg.runModal()
+        if response == .alertFirstButtonReturn {
+            storePassword(txt.stringValue)
+        }
+    }
+
+    // MARK: - 便利属性
+
+    var isDeviceConnected: Bool { connected }
+
+    func updateConnected(_ newValue: Bool) {
+        connected = newValue
+    }
+}

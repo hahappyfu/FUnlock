@@ -24,6 +24,7 @@
 		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
 		3DD4B666226C1DF200451B7B /* BLE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* BLE.swift */; };
 		3DD4B669226C1E3700451B7B /* login.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD4B668226C1E3700451B7B /* login.framework */; };
+		AA000001226C1DF200000001 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* BluetoothManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -73,6 +74,7 @@
 		3DD4B661226C1CEF00451B7B /* BLEUnlock-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BLEUnlock-Bridging-Header.h"; sourceTree = "<group>"; };
 		3DD4B662226C1CEF00451B7B /* lowlevel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lowlevel.h; sourceTree = "<group>"; };
 		3DD4B663226C1CF000451B7B /* lowlevel.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lowlevel.c; sourceTree = "<group>"; };
+		AA000002226C1DF200000001 /* BluetoothManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothManager.swift; sourceTree = "<group>"; };
 		3DD4B665226C1DF200451B7B /* BLE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLE.swift; sourceTree = "<group>"; };
 		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
 		B1EFF91422E010F50010DB0A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AboutBox.strings"; sourceTree = "<group>"; };
@@ -141,6 +143,7 @@
 				3D953799227853E20017D8B9 /* AboutBox.xib */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
 				3DD4B665226C1DF200451B7B /* BLE.swift */,
+				AA000002226C1DF200000001 /* BluetoothManager.swift */,
 				3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */,
 				3DD4B653226C1C3200451B7B /* AppDelegate.swift */,
 				3DC0BC6922728FF1001145EC /* Info.plist */,
@@ -327,6 +330,7 @@
 			files = (
 				3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */,
 				3DD4B666226C1DF200451B7B /* BLE.swift in Sources */,
+				AA000001226C1DF200000001 /* BluetoothManager.swift in Sources */,
 				3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */,
 				3DCAAA7D22ADE9830011A2DA /* checkUpdate.swift in Sources */,
 				3D95379522784D550017D8B9 /* AboutBox.swift in Sources */,
