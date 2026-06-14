@@ -5,6 +5,7 @@
 "device" = "设备列表";
 "device_not_set" = "未选择设备";
 "disabled" = "禁用";
+"enabled" = "启用";
 "enter_password" = "输入密码以解锁电脑。";
 "enter_rssi_threshold" = "输入最小RSSI";
 "enter_rssi_threshold_info" = "扫描设备时会忽略RSSI值低于该值的设备。";
@@ -21,6 +22,9 @@
 "notification_lost_signal" = "信号丢失";
 "notification_update_available" = "发现新版本。";
 "ok" = "确定";
+"failed_store_password" = "密码存储到钥匙串失败";
+"failed_retrieve_password" = "密码读取失败";
+"failed_convert_password" = "密码转换失败";
 "passive_mode" = "被动模式";
 "password_info" = "您的密码将安全地存储在钥匙串中。";
 "password_not_set" = "密码未设置。";

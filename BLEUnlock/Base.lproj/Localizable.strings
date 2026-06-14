@@ -5,6 +5,7 @@
 "device" = "Device";
 "device_not_set" = "Device not selected";
 "disabled" = "Disable";
+"enabled" = "Enabled";
 "enter_password" = "Enter password to unlock the lock screen.";
 "enter_rssi_threshold" = "Enter Minimum RSSI";
 "enter_rssi_threshold_info" = "Device whose RSSI is less than this value will be ignored while scanning.";
@@ -21,6 +22,9 @@
 "notification_lost_signal" = "Signal is lost";
 "notification_update_available" = "Update is available.";
 "ok" = "OK";
+"failed_store_password" = "Failed to store password to Keychain";
+"failed_retrieve_password" = "Failed to retrieve password";
+"failed_convert_password" = "Failed to convert password";
 "passive_mode" = "Passive Mode";
 "password_info" = "Your password will be securely stored in Keychain.";
 "password_not_set" = "Password is not set.";
