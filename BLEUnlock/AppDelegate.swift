@@ -2,6 +2,7 @@ import Cocoa
 import Quartz
 import ServiceManagement
 import UserNotifications
+import SwiftUI
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
@@ -27,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     var nowPlayingWasPlaying = false
     var nowPlayingPauseCompleted = false
     var aboutBox: AboutBox? = nil
+    var settingsWindow: NSWindow?
     var wakeTimer: Timer?
     var manualLock = false
     var unlockedAt = 0.0
@@ -194,11 +196,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         let file = directory.appendingPathComponent("event")
         let process = Process()
         process.executableURL = file
+        var args = [arg]
         if let r = lastRSSI {
-            process.arguments = [arg, String(r)]
-        } else {
-            process.arguments = [arg]
+            args.append(String(r))
         }
+        if let uuid = ble.monitoredUUID, let device = ble.devices[uuid] {
+            args.append(device.description)
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        args.append(formatter.string(from: Date()))
+        process.arguments = args
         try? process.run()
     }
 
@@ -408,11 +416,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     @objc func selectDevice(item: NSMenuItem) {
         for (uuid, menuItem) in deviceDict {
             if menuItem == item {
-                monitorDevice(uuid: uuid)
-                prefs.set(uuid.uuidString, forKey: "device")
-                menuItem.state = .on
-            } else {
-                menuItem.state = .off
+                if menuItem.state == .on {
+                    // Deselect device
+                    menuItem.state = .off
+                    ble.removeMonitoredDevice(uuid: uuid)
+                } else {
+                    // Select device
+                    menuItem.state = .on
+                    if ble.monitoredUUID == nil {
+                        monitorDevice(uuid: uuid)
+                    }
+                    ble.addMonitoredDevice(uuid: uuid)
+                    prefs.set(uuid.uuidString, forKey: "device")
+                }
             }
         }
     }
@@ -618,6 +634,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         lockOrSaveScreen()
     }
     
+    @objc func showSettings() {
+        if #available(macOS 10.15, *) {
+            if settingsWindow == nil {
+                let model = SettingsModel(ble: ble)
+                let view = SettingsView(settings: model)
+                let hostingController = NSHostingController(rootView: view)
+                let window = NSWindow(contentViewController: hostingController)
+                window.title = "BLEUnlock Settings"
+                window.styleMask = [.titled, .closable]
+                window.setContentSize(NSSize(width: 360, height: 400))
+                settingsWindow = window
+            }
+            settingsWindow?.center()
+            settingsWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     @objc func showAboutBox() {
         AboutBox.showAboutBox()
     }
@@ -717,6 +751,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                          keyEquivalent: "")
 
         mainMenu.addItem(NSMenuItem.separator())
+        if #available(macOS 10.15, *) {
+            mainMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        }
         mainMenu.addItem(withTitle: t("about"), action: #selector(showAboutBox), keyEquivalent: "")
         mainMenu.addItem(NSMenuItem.separator())
         mainMenu.addItem(withTitle: t("quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -812,5 +849,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     func applicationWillTerminate(_ aNotification: Notification) {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         DistributedNotificationCenter.default.removeObserver(self)
+    }
+}
+
+// MARK: - SwiftUI Settings
+
+@available(macOS 10.15, *)
+class SettingsModel: ObservableObject {
+    private let prefs = UserDefaults.standard
+    private let ble: BLE
+
+    init(ble: BLE) {
+        self.ble = ble
+    }
+
+    @Published var enabled: Bool = false { didSet { prefs.set(enabled, forKey: "enabled") } }
+    @Published var wakeOnProximity: Bool = false { didSet { prefs.set(wakeOnProximity, forKey: "wakeOnProximity") } }
+    @Published var wakeWithoutUnlocking: Bool = false { didSet { prefs.set(wakeWithoutUnlocking, forKey: "wakeWithoutUnlocking") } }
+    @Published var pauseNowPlaying: Bool = false { didSet { prefs.set(pauseNowPlaying, forKey: "pauseItunes") } }
+    @Published var useScreensaver: Bool = false { didSet { prefs.set(useScreensaver, forKey: "screensaver") } }
+    @Published var sleepDisplay: Bool = false { didSet { prefs.set(sleepDisplay, forKey: "sleepDisplay") } }
+    @Published var passiveMode: Bool = false { didSet { prefs.set(passiveMode, forKey: "passiveMode"); ble.setPassiveMode(passiveMode) } }
+    @Published var launchAtLogin: Bool = false { didSet { prefs.set(launchAtLogin, forKey: "launchAtLogin") } }
+    @Published var lockRSSI: Int = -80 { didSet { prefs.set(lockRSSI, forKey: "lockRSSI"); ble.lockRSSI = lockRSSI } }
+    @Published var unlockRSSI: Int = -60 { didSet { prefs.set(unlockRSSI, forKey: "unlockRSSI"); ble.unlockRSSI = unlockRSSI } }
+}
+
+@available(macOS 10.15, *)
+struct SettingsView: View {
+    @ObservedObject var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("BLEUnlock Settings").font(.headline)
+            Toggle("Enabled", isOn: $settings.enabled)
+            Toggle("Wake on Proximity", isOn: $settings.wakeOnProximity)
+            Toggle("Wake without Unlocking", isOn: $settings.wakeWithoutUnlocking)
+            Toggle("Pause Now Playing", isOn: $settings.pauseNowPlaying)
+            Toggle("Use Screensaver to Lock", isOn: $settings.useScreensaver)
+            Toggle("Turn Off Screen on Lock", isOn: $settings.sleepDisplay)
+            Toggle("Passive Mode", isOn: $settings.passiveMode)
+            Toggle("Launch at Login", isOn: $settings.launchAtLogin)
+        }
+        .padding(20)
+        .frame(width: 340)
+        .onAppear {
+            let p = UserDefaults.standard
+            settings.enabled = p.bool(forKey: "enabled")
+            settings.wakeOnProximity = p.bool(forKey: "wakeOnProximity")
+            settings.wakeWithoutUnlocking = p.bool(forKey: "wakeWithoutUnlocking")
+            settings.pauseNowPlaying = p.bool(forKey: "pauseItunes")
+            settings.useScreensaver = p.bool(forKey: "screensaver")
+            settings.sleepDisplay = p.bool(forKey: "sleepDisplay")
+            settings.passiveMode = p.bool(forKey: "passiveMode")
+            settings.launchAtLogin = p.bool(forKey: "launchAtLogin")
+        }
     }
 }
