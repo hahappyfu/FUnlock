@@ -344,6 +344,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
         Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false, block: { _ in
             guard self.isScreenLocked() else { return }
+            // Guard: if user manually unlocked within the last 3 seconds, abort
+            guard Date().timeIntervalSince1970 - self.unlockedAt > 3 else {
+                print("Screen was recently unlocked by user, skipping auto-unlock")
+                return
+            }
             guard let password = self.fetchPassword(warn: true) else { return }
             
             print("Entering password")
@@ -389,6 +394,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     @objc func onUnlock() {
+        // Record manual unlock time to prevent BLE auto-unlock race condition
+        unlockedAt = Date().timeIntervalSince1970
         Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             print("onUnlock")
             if Date().timeIntervalSince1970 >= self.unlockedAt + 10 {
