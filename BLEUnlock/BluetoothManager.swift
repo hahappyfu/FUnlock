@@ -164,6 +164,14 @@ final class BluetoothManager: ObservableObject {
         }
     }
 
+    /// 系统原生锁屏通知（Apple 菜单 → Lock Screen，或快捷键）
+    /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
+    func onSystemScreenLocked() {
+        print("[SM] systemScreenLocked")
+        state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
+        state.screen = .locked(reason: .manual)
+    }
+
     // MARK: - BLE 设备事件
 
     func onDeviceApproached() {
