@@ -1,5 +1,5 @@
 // MenuDashboardView.swift
-// SwiftUI 控制中心 — 毛玻璃风格 + 全中文化
+// SwiftUI 控制中心 — 毛玻璃风格 + 全中文化 + 设备扫描
 
 import SwiftUI
 import Combine
@@ -20,15 +20,17 @@ struct MenuDashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 1. 顶部：设备状态卡片
-            headerSection
+            // 1. 顶部：设备区域
+            deviceSection
             Divider().padding(.horizontal, 12)
 
-            // 2. 中部：信号仪表
-            signalSection
-            Divider().padding(.horizontal, 12)
+            // 2. 信号仪表（仅在已绑定时显示）
+            if manager.monitoredDeviceName != nil {
+                signalSection
+                Divider().padding(.horizontal, 12)
+            }
 
-            // 3. 下部：快捷开关卡片
+            // 3. 开关区域
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 10) {
                     toggleSection
@@ -40,69 +42,154 @@ struct MenuDashboardView: View {
 
             Divider().padding(.horizontal, 12)
 
-            // 4. 底部：操作按钮
+            // 4. 底部按钮
             footerSection
         }
-        .frame(width: 320, height: 480)
+        .frame(width: 320, height: manager.monitoredDeviceName != nil ? 520 : 400)
         .background(.regularMaterial)
     }
 
-    // MARK: - Header 设备状态卡片
+    // MARK: - 设备区域
 
-    private var headerSection: some View {
-        HStack(spacing: 12) {
-            // 状态指示灯
-            Circle()
-                .fill(statusColor)
-                .frame(width: 12, height: 12)
-                .shadow(color: statusColor.opacity(0.6), radius: 4)
+    private var deviceSection: some View {
+        VStack(spacing: 0) {
+            if let deviceName = manager.monitoredDeviceName {
+                // 已绑定设备
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 12, height: 12)
+                        .shadow(color: statusColor.opacity(0.6), radius: 4)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(statusText)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Text(manager.rssi.map { "\($0) dBm" } ?? "未检测到信号")
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(deviceName)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(statusText)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
 
-            Spacer()
+                    Spacer()
 
-            if manager.connected {
-                Text("已连接")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.green.opacity(0.12))
-                    .cornerRadius(6)
+                    Button(action: { manager.unbindDevice() }) {
+                        Text("解绑")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(14)
+                .background(statusColor.opacity(0.06))
+
+            } else {
+                // 未绑定 — 显示扫描列表
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .foregroundColor(.accentColor)
+                        Text("选择要绑定的设备")
+                            .font(.headline)
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.mini)
+                            .opacity(manager.discoveredDevices.isEmpty ? 1 : 0)
+                    }
+
+                    if manager.discoveredDevices.isEmpty {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 6) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                                Text("正在扫描附近的 BLE 设备…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 20)
+                            Spacer()
+                        }
+                    } else {
+                        ScrollView(.vertical, showsIndicators: true) {
+                            VStack(spacing: 4) {
+                                ForEach(manager.discoveredDevices, id: \.uuid) { device in
+                                    DeviceRow(device: device) {
+                                        manager.selectDevice(device)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 160)
+                    }
+                }
+                .padding(14)
+                .background(Color.accentColor.opacity(0.04))
             }
         }
-        .padding(14)
-        .background(statusColor.opacity(0.06))
     }
 
-    // MARK: - Signal 信号仪表卡片
+    // MARK: - 设备行
+
+    private struct DeviceRow: View {
+        let device: Device
+        let onSelect: () -> Void
+
+        var body: some View {
+            Button(action: onSelect) {
+                HStack {
+                    Image(systemName: "iphone")
+                        .foregroundColor(.accentColor)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(device.description)
+                            .font(.callout)
+                            .lineLimit(1)
+                        if let mac = device.macAddr {
+                            Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Text("\(device.rssi) dBm")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(rssiColor(device.rssi))
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .cornerRadius(6)
+        }
+
+        private func rssiColor(_ rssi: Int) -> Color {
+            if rssi >= -50 { return .green }
+            if rssi >= -70 { return .yellow }
+            return .red
+        }
+    }
+
+    // MARK: - 信号仪表
 
     private var signalSection: some View {
         VStack(spacing: 12) {
-            // 圆形仪表
             ZStack {
-                // 背景环
                 Circle()
                     .stroke(Color.gray.opacity(0.15), lineWidth: 10)
                     .frame(width: 90, height: 90)
-
-                // 信号强度环
                 Circle()
                     .trim(from: 0, to: signalStrength)
                     .stroke(
                         AngularGradient(
                             gradient: Gradient(colors: [signalColor.opacity(0.4), signalColor]),
-                            center: .center,
-                            startAngle: .degrees(0),
-                            endAngle: .degrees(360 * signalStrength)
+                            center: .center
                         ),
                         style: StrokeStyle(lineWidth: 10, lineCap: .round)
                     )
@@ -110,11 +197,9 @@ struct MenuDashboardView: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut(duration: 0.5), value: signalStrength)
 
-                // 中心数值
                 VStack(spacing: 1) {
                     Text(manager.rssi.map { "\($0)" } ?? "—")
                         .font(.system(size: 26, weight: .bold, design: .monospaced))
-                        .foregroundColor(.primary)
                     Text("dBm")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
@@ -122,7 +207,6 @@ struct MenuDashboardView: View {
             }
             .padding(.vertical, 8)
 
-            // 锁定/解锁阈值
             HStack(spacing: 0) {
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
@@ -134,9 +218,7 @@ struct MenuDashboardView: View {
                             .fontWeight(.medium)
                     }
                 } icon: {
-                    Image(systemName: "lock.fill")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                    Image(systemName: "lock.fill").font(.caption).foregroundColor(.orange)
                 }
                 Spacer()
                 Label {
@@ -149,9 +231,7 @@ struct MenuDashboardView: View {
                             .fontWeight(.medium)
                     }
                 } icon: {
-                    Image(systemName: "lock.open.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
+                    Image(systemName: "lock.open.fill").font(.caption).foregroundColor(.green)
                 }
             }
         }
@@ -162,7 +242,7 @@ struct MenuDashboardView: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Toggles 快捷开关卡片
+    // MARK: - 开关
 
     private var toggleSection: some View {
         VStack(spacing: 0) {
@@ -179,9 +259,7 @@ struct MenuDashboardView: View {
             toggleRow("锁定时关闭屏幕", isOn: $sleepDisplay, icon: "display.sleep")
             divider
             toggleRow("被动模式", isOn: $passiveMode, icon: "antenna.radiowaves.left.and.right")
-                .onChange(of: passiveMode) { newValue in
-                    ble.setPassiveMode(newValue)
-                }
+                .onChange(of: passiveMode) { v in ble.setPassiveMode(v) }
             divider
             toggleRow("开机自启动", isOn: $launchAtLogin, icon: "arrow.up.circle")
         }
@@ -193,17 +271,12 @@ struct MenuDashboardView: View {
         VStack(spacing: 0) {
             Button(action: { NSApp.orderFrontStandardAboutPanel(nil) }) {
                 HStack {
-                    Image(systemName: "info.circle")
-                        .frame(width: 20)
-                    Text("关于 BLEUnlock")
-                        .font(.callout)
+                    Image(systemName: "info.circle").frame(width: 20)
+                    Text("关于 BLEUnlock").font(.callout)
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14).padding(.vertical, 10)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -212,36 +285,26 @@ struct MenuDashboardView: View {
         .cornerRadius(10)
     }
 
-    // MARK: - Footer
+    // MARK: - 底部
 
     private var footerSection: some View {
         HStack(spacing: 12) {
             Button(action: { manager.lockNow() }) {
-                HStack {
-                    Image(systemName: "lock.fill")
-                    Text("立即锁定")
-                }
-                .font(.callout)
-                .frame(maxWidth: .infinity)
+                HStack { Image(systemName: "lock.fill"); Text("立即锁定") }
+                    .font(.callout).frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-            .tint(.orange)
+            .buttonStyle(.bordered).tint(.orange)
 
             Button(action: { NSApplication.shared.terminate(nil) }) {
-                HStack {
-                    Image(systemName: "power")
-                    Text("退出")
-                }
-                .font(.callout)
-                .frame(maxWidth: .infinity)
+                HStack { Image(systemName: "power"); Text("退出") }
+                    .font(.callout).frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-            .tint(.red)
+            .buttonStyle(.bordered).tint(.red)
         }
         .padding(14)
     }
 
-    // MARK: - Components
+    // MARK: - 组件
 
     private func toggleRow(_ title: String, isOn: Binding<Bool>, icon: String) -> some View {
         Toggle(isOn: isOn) {
@@ -250,22 +313,18 @@ struct MenuDashboardView: View {
                     .font(.system(size: 14))
                     .foregroundColor(.accentColor)
                     .frame(width: 20)
-                Text(title)
-                    .font(.callout)
+                Text(title).font(.callout)
             }
         }
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .toggleStyle(.switch).controlSize(.small)
+        .padding(.horizontal, 14).padding(.vertical, 8)
     }
 
     private var divider: some View {
-        Divider()
-            .padding(.leading, 44)
+        Divider().padding(.leading, 44)
     }
 
-    // MARK: - Status
+    // MARK: - 状态
 
     private var statusColor: Color {
         switch manager.state.screen {
@@ -291,18 +350,14 @@ struct MenuDashboardView: View {
         }
     }
 
-    // MARK: - Signal helpers
-
     private var signalStrength: CGFloat {
         guard let rssi = manager.rssi else { return 0 }
-        let normalized = CGFloat(rssi + 100) / 70.0
-        return min(max(normalized, 0), 1)
+        return min(max(CGFloat(rssi + 100) / 70.0, 0), 1)
     }
 
     private var signalColor: Color {
-        let s = signalStrength
-        if s > 0.7 { return .green }
-        if s > 0.4 { return .yellow }
+        if signalStrength > 0.7 { return .green }
+        if signalStrength > 0.4 { return .yellow }
         return .red
     }
 }

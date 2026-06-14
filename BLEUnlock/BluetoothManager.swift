@@ -78,6 +78,8 @@ final class BluetoothManager: ObservableObject {
     @Published private(set) var state = LockScreenState()
     @Published var rssi: Int? = nil
     @Published var connected: Bool = false
+    @Published var discoveredDevices: [Device] = []
+    @Published var monitoredDeviceName: String? = nil
 
     // MARK: Dependencies
 
@@ -210,7 +212,47 @@ final class BluetoothManager: ObservableObject {
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {
         self.rssi = rssi
-        // connected 状态由 AppDelegate 的 UI 层处理
+    }
+
+    // MARK: - 设备发现
+
+    func onDeviceDiscovered(_ device: Device) {
+        if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
+            discoveredDevices[idx] = device
+        } else {
+            discoveredDevices.append(device)
+        }
+    }
+
+    func onDeviceUpdated(_ device: Device) {
+        if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
+            discoveredDevices[idx].rssi = device.rssi
+            discoveredDevices[idx].manufacture = device.manufacture
+            discoveredDevices[idx].model = device.model
+        }
+    }
+
+    func onDeviceRemoved(_ device: Device) {
+        discoveredDevices.removeAll { $0.uuid == device.uuid }
+    }
+
+    func selectDevice(_ device: Device) {
+        ble.startMonitor(uuid: device.uuid)
+        ble.addMonitoredDevice(uuid: device.uuid)
+        monitoredDeviceName = device.description
+        prefs.set(device.uuid.uuidString, forKey: "device")
+        prefs.set(device.description, forKey: "deviceName")
+    }
+
+    func unbindDevice() {
+        ble.monitoredUUID = nil
+        ble.monitoredUUIDs.removeAll()
+        ble.devicePresence.removeAll()
+        monitoredDeviceName = nil
+        prefs.removeObject(forKey: "device")
+        prefs.removeObject(forKey: "deviceName")
+        rssi = nil
+        connected = false
     }
 
     // MARK: - 用户操作
