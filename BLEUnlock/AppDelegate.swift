@@ -18,9 +18,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - UI 组件
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    var popover: NSPopover!
+    var settingsWindow: NSWindow!
     var aboutBox: AboutBox? = nil
-    var eventMonitor: Any?
 
     // MARK: - 核心依赖
 
@@ -82,15 +81,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Popover
 
-    @objc func togglePopover(_ sender: AnyObject?) {
-        if popover.isShown {
-            popover.performClose(sender)
+    @objc func toggleSettingsWindow(_ sender: AnyObject?) {
+        if settingsWindow.isVisible {
+            settingsWindow.orderOut(nil)
             ble.stopScanning()
         } else {
-            if let button = statusItem.button {
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                ble.startScanning()
-            }
+            // 居中显示
+            settingsWindow.center()
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            ble.startScanning()
         }
     }
 
@@ -143,26 +143,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { ble.thresholdRSSI = thresholdRSSI }
         let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { ble.proximityTimeout = Double(lockDelay) }
 
-        // 初始化 Popover UI
+        // 初始化设置窗口
         let dashboard = MenuDashboardView(manager: manager, ble: ble)
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 450)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: dashboard)
+        let hostingVC = NSHostingController(rootView: dashboard)
+        settingsWindow = NSWindow(contentViewController: hostingVC)
+        settingsWindow.title = "BLEUnlock"
+        settingsWindow.styleMask = [.titled]
+        settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
+        settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
+        settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.center()
 
         // 绑定状态栏按钮
         if let button = statusItem.button {
             button.image = NSImage(named: "StatusBarDisconnected")
-            button.action = #selector(togglePopover(_:))
+            button.action = #selector(toggleSettingsWindow(_:))
             button.target = self
+            button.toolTip = "BLEUnlock"
         }
 
-        // 点击外部关闭 popover
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            if self?.popover.isShown == true {
-                self?.popover.performClose(nil)
-            }
-        }
+        // 点击外部关闭窗口 —— 已不需要（独立窗口自带关闭按钮）
 
         // 通知权限
         UNUserNotificationCenter.current().delegate = self
@@ -211,8 +211,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationWillTerminate(_ aNotification: Notification) {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         DistributedNotificationCenter.default.removeObserver(self)
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
     }
 }

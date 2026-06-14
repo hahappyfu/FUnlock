@@ -165,7 +165,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func startMonitor(uuid: UUID) {
-        if let p = monitoredPeripheral {
+        // 仅在切换设备时断开旧连接；同设备重选不断开
+        if let p = monitoredPeripheral, monitoredUUID != uuid {
             centralMgr.cancelPeripheralConnection(p)
         }
         monitoredUUID = uuid
@@ -367,11 +368,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 if monitoredPeripheral == nil {
                     monitoredPeripheral = peripheral
                 }
-                if activeModeTimer == nil {
-                    updateMonitoredPeripheral(rssi)
-                    if !passiveMode {
-                        connectMonitoredPeripheral()
-                    }
+                // 始终更新 RSSI，无论 activeModeTimer 状态如何
+                updateMonitoredPeripheral(rssi)
+                if activeModeTimer == nil && !passiveMode {
+                    connectMonitoredPeripheral()
                 }
             }
         }
