@@ -188,9 +188,11 @@ final class BluetoothManager: ObservableObject {
 
     func onDeviceLeft(reason: String) {
         guard prefs.bool(forKey: "enabled") else { return }
-        guard !isScreenLocked() else { return }
+        guard state.screen == .unlocked else { return }
         guard ble.lockRSSI != ble.LOCK_DISABLED else { return }
 
+        let lockReason: ScreenState.LockReason = (reason == "lost") ? .lost : .away
+        state.screen = .locked(reason: lockReason)
         pauseNowPlaying()
         lockOrSaveScreen()
         notifyUser(reason)
