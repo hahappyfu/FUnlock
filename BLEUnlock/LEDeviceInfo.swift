@@ -40,10 +40,11 @@ private func getStringFromRow(stmt: OpaquePointer?, index: Int32) -> String? {
 private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_paired else { return nil }
     var stmt: OpaquePointer?
-    if sqlite3_prepare(db, "SELECT Name, Address, ResolvedAddress FROM PairedDevices where Uuid='\(uuid)'", -1, &stmt, nil) != SQLITE_OK {
+    if sqlite3_prepare(db, "SELECT Name, Address, ResolvedAddress FROM PairedDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
         print("failed to prepare")
         return nil
     }
+    uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil
     }
@@ -64,10 +65,11 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
 private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_other else { return nil }
     var stmt: OpaquePointer?
-    if sqlite3_prepare(db, "SELECT Name, Address FROM OtherDevices where Uuid='\(uuid)'", -1, &stmt, nil) != SQLITE_OK {
+    if sqlite3_prepare(db, "SELECT Name, Address FROM OtherDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
         print("failed to prepare")
         return nil
     }
+    uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil
     }

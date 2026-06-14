@@ -159,7 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     func userNotificationCenter(_ center: NSUserNotificationCenter,
                                 didActivate notification: NSUserNotification) {
         if notification != userNotification {
-            NSWorkspace.shared.open(URL(string: "https://github.com/ts1/BLEUnlock/releases")!)
+            NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/bleunlock/releases")!)
             NSUserNotificationCenter.default.removeDeliveredNotification(notification)
         }
     }
@@ -226,6 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 if displaySleep && !systemSleep && prefs.bool(forKey: "wakeOnProximity") {
                     print("Waking display")
                     wakeDisplay()
+                    displaySleep = false
                     wakeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
                         print("Retrying waking display")
                         wakeDisplay()
@@ -254,6 +255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
             let len = offset + PER < uniCharCount ? PER : uniCharCount - offset
             let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
+            defer { buffer.deallocate() }
             for i in 0..<len {
                 buffer[i] = string.utf16[strIndex]
                 strIndex = string.utf16.index(after: strIndex)
@@ -348,11 +350,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 }
                 self.playNowPlaying()
             }
-        })
-        manualLock = false
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: false, block: { _ in
             checkUpdate()
         })
+        manualLock = false
     }
 
     @objc func onScreensaverStart() {
