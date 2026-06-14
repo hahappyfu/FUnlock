@@ -121,7 +121,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var lastReadAt = 0.0
     var powerWarn = true
     var passiveMode = false
-    var thresholdRSSI = -70
+    var thresholdRSSI = -90
     var latestRSSIs: [Double] = []
     var latestN: Int = 5
     // Kalman filter state

@@ -97,6 +97,16 @@ final class BluetoothManager: ObservableObject {
         self.ble = ble
     }
 
+    // MARK: - 扫描控制
+
+    func startScanning() {
+        ble.startScanning()
+    }
+
+    func stopScanning() {
+        ble.stopScanning()
+    }
+
     // MARK: - 系统事件入口
 
     func onDisplaySleep() {
@@ -226,6 +236,8 @@ final class BluetoothManager: ObservableObject {
 
     func onDeviceUpdated(_ device: Device) {
         if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
+            // Trigger @Published manually for in-place NSObject mutation
+            objectWillChange.send()
             discoveredDevices[idx].rssi = device.rssi
             discoveredDevices[idx].manufacture = device.manufacture
             discoveredDevices[idx].model = device.model

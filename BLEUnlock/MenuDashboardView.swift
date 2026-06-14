@@ -128,6 +128,8 @@ struct MenuDashboardView: View {
                 .background(Color.accentColor.opacity(0.04))
             }
         }
+        .onAppear { manager.startScanning() }
+        .onDisappear { manager.stopScanning() }
     }
 
     // MARK: - 设备行
