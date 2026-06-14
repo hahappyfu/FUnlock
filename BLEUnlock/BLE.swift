@@ -170,11 +170,14 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         monitoredPeripheral = nil
         activeModeTimer?.invalidate()
         activeModeTimer = nil
+        stableCount = 0
+        activePollInterval = 2.0
+        lastEstimatedRSSI = 0
+        signalLostCount = 0
         scanForPeripherals()
     }
 
     func resetSignalTimer() {
-        signalLostCount = 0
         signalTimer?.invalidate()
         signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
             self.signalLostCount += 1
@@ -233,7 +236,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return Int(latestRSSIs.last!)
     }
 
-    func updateMonitoredPeripheral(_ rssi: Int) {
+    @discardableResult
+    func updateMonitoredPeripheral(_ rssi: Int) -> Int {
+        signalLostCount = 0  // Reset on signal receipt
         // print(String(format: "rssi: %d", rssi))
         if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) && !presence {
             print("Device is close")
@@ -267,6 +272,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             print("Proximity timer started")
         }
         resetSignalTimer()
+        return estimatedRSSI
     }
 
     func resetScanTimer(device: Device) {
@@ -411,11 +417,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard peripheral == monitoredPeripheral else { return }
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
         //print("readRSSI \(rssi)dBm")
-        updateMonitoredPeripheral(rssi)
+        let estimated = updateMonitoredPeripheral(rssi)
         lastReadAt = Date().timeIntervalSince1970
 
         // Track RSSI stability for adaptive polling
-        let estimated = getEstimatedRSSI(rssi: rssi)
         let fluctuation = abs(estimated - lastEstimatedRSSI)
         lastEstimatedRSSI = estimated
         if fluctuation < 5 {
