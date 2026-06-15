@@ -166,6 +166,7 @@ final class BluetoothManager: ObservableObject {
 
     func onUnlock() {
         print("[SM] userUnlocked")
+        state.screen = .unlocked
         state.unlockedAt = Date()
         state.intent = .autoLock
 
@@ -396,9 +397,15 @@ final class BluetoothManager: ObservableObject {
                 NSWorkspace.shared.openApplication(at: url, configuration: config)
             }
         } else {
-            if SACLockScreenImmediate() != 0 { print("[SM] failed to lock screen") }
-            if prefs.bool(forKey: "sleepDisplay") {
-                sleepDisplay()
+            // 尝试多种方式锁屏
+            DispatchQueue.main.async {
+                // 方式1: SACLockScreenImmediate
+                let result = SACLockScreenImmediate()
+                if result != 0 {
+                    print("[SM] SACLockScreenImmediate failed (\(result)), trying sleepDisplay")
+                    // 方式2: 显示器睡眠（需配合"唤醒后需要密码"）
+                    sleepDisplay()
+                }
             }
         }
     }
@@ -441,8 +448,8 @@ final class BluetoothManager: ObservableObject {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "BLEUnlock",
-            String(kSecAttrLabel): "BLEUnlock",
+            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
+            String(kSecAttrLabel): "FUnlock",
             String(kSecAttrAccessible): kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             String(kSecValueData): pw,
         ]
@@ -459,7 +466,7 @@ final class BluetoothManager: ObservableObject {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "BLEUnlock",
+            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
             String(kSecReturnData): kCFBooleanTrue!,
             String(kSecMatchLimit): kSecMatchLimitOne,
         ]
@@ -485,7 +492,7 @@ final class BluetoothManager: ObservableObject {
 
     private func notifyUser(_ reason: String) {
         let content = UNMutableNotificationContent()
-        content.title = "BLEUnlock"
+        content.title = "FUnlock"
         if reason == "lost" { content.subtitle = t("notification_lost_signal") }
         else if reason == "away" { content.subtitle = t("notification_device_away") }
         content.body = t("notification_locked")
@@ -498,7 +505,7 @@ final class BluetoothManager: ObservableObject {
 
     func logEvent(_ event: String) {
         guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
-        let logDir = dir.appendingPathComponent("BLEUnlock", isDirectory: true)
+        let logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logFile = logDir.appendingPathComponent("events.log")
         let formatter = DateFormatter()
@@ -540,13 +547,29 @@ final class BluetoothManager: ObservableObject {
         BLEUnlock.checkUpdate()
     }
 
+    // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
+
+    func cleanup() {
+        ble.proximityTimer?.invalidate()
+        ble.proximityTimer = nil
+        ble.signalTimer?.invalidate()
+        ble.signalTimer = nil
+        ble.activeModeTimer?.invalidate()
+        ble.activeModeTimer = nil
+        ble.connectionTimer?.invalidate()
+        ble.connectionTimer = nil
+        wakeTask?.cancel()
+        unlockTask?.cancel()
+        intrudeCheckTask?.cancel()
+    }
+
     // MARK: - UI 辅助
 
     func errorModal(_ msg: String, info: String? = nil) {
         let alert = NSAlert()
         alert.messageText = msg
         alert.informativeText = info ?? ""
-        alert.window.title = "BLEUnlock"
+        alert.window.title = "FUnlock"
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -557,7 +580,7 @@ final class BluetoothManager: ObservableObject {
         msg.addButton(withTitle: t("cancel"))
         msg.messageText = t("enter_password")
         msg.informativeText = t("password_info")
-        msg.window.title = "BLEUnlock"
+        msg.window.title = "FUnlock"
         let txt = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 20))
         msg.accessoryView = txt
         txt.becomeFirstResponder()

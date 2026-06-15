@@ -166,11 +166,11 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func startMonitor(uuid: UUID) {
-        // 仅在切换设备时断开旧连接；同设备重选不断开
         if let p = monitoredPeripheral, monitoredUUID != uuid {
             centralMgr.cancelPeripheralConnection(p)
         }
         monitoredUUID = uuid
+        scanMode = true
         proximityTimer?.invalidate()
         resetSignalTimer()
         presence = true
@@ -185,6 +185,17 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         kalmanP = 1.0
         monitoredUUIDs = [uuid]
         devicePresence.removeAll()
+
+        // 直接获取已知外设（不依赖扫描发现）
+        let known = centralMgr.retrievePeripherals(withIdentifiers: [uuid])
+        if let peripheral = known.first {
+            print("[BLE] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state)")
+            monitoredPeripheral = peripheral
+            if peripheral.state == .disconnected {
+                centralMgr.connect(peripheral, options: nil)
+            }
+        }
+
         scanForPeripherals()
     }
 
@@ -203,7 +214,9 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let anyPresent = devicePresence.values.contains(true)
         if anyPresent != presence {
             presence = anyPresent
-            delegate?.updatePresence(presence: presence, reason: present ? "close" : "away")
+            DispatchQueue.main.async {
+                self.delegate?.updatePresence(presence: self.presence, reason: present ? "close" : "away")
+            }
         }
     }
 
@@ -265,49 +278,47 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         return Int(kalmanEstimate)
     }
 
-    @discardableResult
-    func updateMonitoredPeripheral(_ rssi: Int) -> Int {
-        signalLostCount = 0  // Reset on signal receipt
-        // print(String(format: "rssi: %d", rssi))
+    func updateMonitoredPeripheral(_ rssi: Int) {
+        let estimated = getEstimatedRSSI(rssi: rssi)
         if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) && !presence {
             print("Device is close")
             presence = true
             DispatchQueue.main.async {
                 self.delegate?.updatePresence(presence: self.presence, reason: "close")
             }
-            // Keep last 2 samples for debounce, avoid clearing all
-            while latestRSSIs.count > 2 { latestRSSIs.removeFirst() }
+            latestRSSIs.removeAll()
         }
 
-        let estimatedRSSI = getEstimatedRSSI(rssi: rssi)
         DispatchQueue.main.async {
-            self.delegate?.updateRSSI(rssi: estimatedRSSI, active: self.activeModeTimer != nil)
+            self.delegate?.updateRSSI(rssi: estimated, active: self.activeModeTimer != nil)
         }
 
-        if estimatedRSSI >= (lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) {
+        if estimated >= (lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) {
             if let timer = proximityTimer {
                 timer.invalidate()
-                print("Proximity timer canceled")
                 proximityTimer = nil
             }
         } else if presence && proximityTimer == nil {
-            proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { _ in
+            let timer = Timer(timeInterval: proximityTimeout, repeats: false, block: { _ in
                 print("Device is away")
                 self.presence = false
-                self.delegate?.updatePresence(presence: self.presence, reason: "away")
+                DispatchQueue.main.async {
+                    self.delegate?.updatePresence(presence: self.presence, reason: "away")
+                }
                 self.proximityTimer = nil
             })
-            RunLoop.main.add(proximityTimer!, forMode: .common)
-            print("Proximity timer started")
+            RunLoop.main.add(timer, forMode: .common)
+            proximityTimer = timer
         }
         resetSignalTimer()
-        return estimatedRSSI
     }
 
     func resetScanTimer(device: Device) {
         device.scanTimer?.invalidate()
         device.scanTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
-            self.delegate?.removeDevice(device: device)
+            DispatchQueue.main.async {
+                self.delegate?.removeDevice(device: device)
+            }
             if let p = device.peripheral {
                 self.centralMgr.cancelPeripheralConnection(p)
             }
@@ -340,7 +351,8 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func restartActiveModeTimer(peripheral: CBPeripheral) {
         activeModeTimer?.invalidate()
-        activeModeTimer = Timer.scheduledTimer(withTimeInterval: activePollInterval, repeats: true, block: { _ in
+        let timer = Timer(timeInterval: activePollInterval, repeats: true, block: { [weak self] _ in
+            guard let self = self else { return }
             if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
                 print("Falling back to passive mode")
                 self.centralMgr.cancelPeripheralConnection(peripheral)
@@ -353,7 +365,8 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 self.connectMonitoredPeripheral()
             }
         })
-        RunLoop.main.add(activeModeTimer!, forMode: .common)
+        RunLoop.main.add(timer, forMode: .common)
+        activeModeTimer = timer
     }
 
     //MARK:- CBCentralManagerDelegate start
@@ -369,7 +382,7 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 if monitoredPeripheral == nil {
                     monitoredPeripheral = peripheral
                 }
-                // 始终更新 RSSI，无论 activeModeTimer 状态如何
+                // 扫描回调：更新 presence 和锁定判断
                 updateMonitoredPeripheral(rssi)
                 if activeModeTimer == nil && !passiveMode {
                     connectMonitoredPeripheral()
@@ -441,15 +454,16 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     //MARK:- CBPeripheralDelegate start
 
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        guard peripheral == monitoredPeripheral else { return }
+        // 按 UUID 匹配，不依赖对象引用相等
+        guard peripheral.identifier == monitoredUUID else { return }
+        if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
-        //print("readRSSI \(rssi)dBm")
-        let estimated = updateMonitoredPeripheral(rssi)
+        updateMonitoredPeripheral(rssi)
         lastReadAt = Date().timeIntervalSince1970
 
         // Track RSSI stability for adaptive polling
-        let fluctuation = abs(estimated - lastEstimatedRSSI)
-        lastEstimatedRSSI = estimated
+        let fluctuation = abs(kalmanEstimate - Double(lastEstimatedRSSI))
+        lastEstimatedRSSI = Int(kalmanEstimate)
         if fluctuation < 5 {
             stableCount += 1
         } else {
@@ -469,7 +483,8 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if !scanMode {
                 centralMgr.stopScan()
             }
-            activeModeTimer = Timer.scheduledTimer(withTimeInterval: activePollInterval, repeats: true, block: { _ in
+            let timer = Timer(timeInterval: activePollInterval, repeats: true, block: { [weak self] _ in
+                guard let self = self else { return }
                 if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
                     print("Falling back to passive mode")
                     self.centralMgr.cancelPeripheralConnection(peripheral)
@@ -482,7 +497,8 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     self.connectMonitoredPeripheral()
                 }
             })
-            RunLoop.main.add(activeModeTimer!, forMode: .common)
+            RunLoop.main.add(timer, forMode: .common)
+            activeModeTimer = timer
         }
     }
 
