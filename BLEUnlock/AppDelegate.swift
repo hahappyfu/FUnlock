@@ -148,7 +148,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let dashboard = MenuDashboardView(manager: manager, ble: ble)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
-        settingsWindow.title = "BLEUnlock"
+        settingsWindow.title = "FUnlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
         settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
         settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
@@ -160,7 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.image = NSImage(named: "StatusBarDisconnected")
             button.action = #selector(toggleSettingsWindow(_:))
             button.target = self
-            button.toolTip = "BLEUnlock"
+            button.toolTip = "FUnlock"
         }
 
         // 点击外部关闭窗口 —— 已不需要（独立窗口自带关闭按钮）
@@ -184,8 +184,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // 首次引导
         if !prefs.bool(forKey: "hasShownGuide") {
-            prefs.set(true, forKey: "enabled")
-            showFirstLaunchGuide()
+            prefs.set(true, forKey: "hasShownGuide")
         }
 
         // 密码检查
@@ -199,18 +198,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NSApp.setActivationPolicy(.accessory)
     }
 
-    func showFirstLaunchGuide() {
-        let alert = NSAlert()
-        alert.messageText = "Welcome to BLEUnlock"
-        alert.informativeText = "BLEUnlock locks/unlocks your Mac based on your phone's proximity.\n\nRequired permissions:\n• Bluetooth — detect your device\n• Accessibility — auto-unlock screen\n• Keychain — store login password securely\n• Notifications — alert when locked\n\nPlease grant these when prompted."
-        alert.addButton(withTitle: t("ok"))
-        alert.window.title = "BLEUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
     func applicationWillTerminate(_ aNotification: Notification) {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         DistributedNotificationCenter.default.removeObserver(self)
+        manager?.cleanup()
     }
 }
