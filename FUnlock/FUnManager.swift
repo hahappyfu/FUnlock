@@ -88,6 +88,7 @@ final class FUnManager: ObservableObject {
 
     let fun: FUn
     var inputMonitor: InputActivityMonitor?
+    var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let prefs = UserDefaults.standard
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
@@ -205,12 +206,19 @@ final class FUnManager: ObservableObject {
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
         print("[SM] systemScreenLocked")
-        let deadline = prefs.bool(forKey: "manualLockNoAutoUnlock")
-            ? Date().addingTimeInterval(86400)  // 24h: 等待手动解锁
-            : Date().addingTimeInterval(60)
-        state.intent = .manualLock(deadline: deadline)
+        if isSelfLocking {
+            // FUnlock 自动锁屏，不标记为手动锁定
+            isSelfLocking = false
+            state.intent = .autoLock
+        } else {
+            // 用户手动锁屏（⌘+Ctrl+Q 等）
+            let deadline = prefs.bool(forKey: "manualLockNoAutoUnlock")
+                ? Date().addingTimeInterval(86400)  // 24h: 等待手动解锁
+                : Date().addingTimeInterval(60)
+            state.intent = .manualLock(deadline: deadline)
+        }
         state.screen = .locked(reason: .manual)
-        state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
+        state.unlockedAt = Date(timeIntervalSince1970: 0)
     }
 
     // MARK: - FUn 设备事件
@@ -243,8 +251,9 @@ final class FUnManager: ObservableObject {
         guard fun.lockRSSI != fun.LOCK_DISABLED else { return }
 
         displayWakeRequested = false
-        state.screen = .displaySleeping  // 标记为显示器休眠（与原始逻辑一致）
+        state.screen = .displaySleeping
         pauseNowPlaying()
+        isSelfLocking = true
         lockOrSaveScreen()
         notifyUser(reason)
         runScript(reason)
@@ -344,44 +353,58 @@ final class FUnManager: ObservableObject {
         }
         if !axGranted { unlockLog("WARN: ax=false, trying anyway") }
 
-        // 显示器休眠中 → 先唤醒
+        // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务
         if state.screen == .displaySleeping && state.system == .awake
             && prefs.bool(forKey: "wakeOnProximity") {
-            unlockLog("starting wakeRetry (display sleeping)")
+            unlockLog("starting parallel wake + unlock")
             startWakeRetry()
+            // 并行：等 0.8s 后尝试解锁，不等唤醒完成
+            unlockTask?.cancel()
+            unlockTask = Task {
+                try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+                guard !Task.isCancelled else { return }
+                tryUnlock()
+            }
             return
         }
 
         guard !prefs.bool(forKey: "wakeWithoutUnlocking") else { unlockLog("SKIP: wakeWithoutUnlocking"); return }
         guard state.screen != .displaySleeping else { unlockLog("SKIP: still displaySleeping"); return }
 
+        // 优化 1: 条件等待 — 屏幕已锁定等 0.3s，显示器休眠等 0.5s
+        let delay = state.screen == .displaySleeping ? 500_000_000 : 300_000_000
         unlockTask?.cancel()
         unlockTask = Task {
-            unlockLog("Task started, sleeping 0.5s")
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            unlockLog("Task started, sleeping \(delay / 1_000_000)ms")
+            try? await Task.sleep(nanoseconds: UInt64(delay))
             guard !Task.isCancelled else { unlockLog("Task cancelled after sleep"); return }
-            let locked = isScreenLocked()
-            unlockLog("screen locked check: \(locked)")
-            guard locked else { unlockLog("SKIP: screen not locked"); return }
-            let sinceUnlock = Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
-            guard sinceUnlock > 3 else {
-                unlockLog("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
-                return
-            }
-            guard let password = fetchPassword(warn: true) else { unlockLog("SKIP: no password"); return }
-
-            // #6: 最后一次检查，防止 0.5s 等待期间指纹解锁
-            guard isScreenLocked() else { unlockLog("SKIP: screen unlocked during wait"); return }
-
-            unlockLog("typing password (\(password.count) chars)")
-            self.state.unlockedAt = Date()
-            fakeKeyStrokes(password)
-            unlockLog("fakeKeyStrokes done")
-            playNowPlaying()
-            runScript("unlocked")
-            logEvent("unlocked")
-            unlockLog("unlock complete")
+            tryUnlock()
         }
+    }
+
+    // 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
+    private func tryUnlock() {
+        let locked = isScreenLocked()
+        unlockLog("screen locked check: \(locked)")
+        guard locked else { unlockLog("SKIP: screen not locked"); return }
+        let sinceUnlock = Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
+        guard sinceUnlock > 3 else {
+            unlockLog("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
+            return
+        }
+        guard let password = fetchPassword(warn: true) else { unlockLog("SKIP: no password"); return }
+
+        // #6: 最后一次检查，防止等待期间指纹解锁
+        guard isScreenLocked() else { unlockLog("SKIP: screen unlocked during wait"); return }
+
+        unlockLog("typing password (\(password.count) chars)")
+        self.state.unlockedAt = Date()
+        fakeKeyStrokes(password)
+        unlockLog("fakeKeyStrokes done")
+        playNowPlaying()
+        runScript("unlocked")
+        logEvent("unlocked")
+        unlockLog("unlock complete")
     }
 
     // MARK: - 显示器唤醒重试 (async/await 替代 Timer)
@@ -398,7 +421,7 @@ final class FUnManager: ObservableObject {
                     print("[SM] retrying wake #\(attempt)")
                 }
                 wakeDisplay()
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
                 // wakeDisplay() 不一定触发 screensDidWakeNotification，
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !isScreenLocked() {
