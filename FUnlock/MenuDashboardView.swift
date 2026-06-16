@@ -6,8 +6,8 @@ import Combine
 
 @available(macOS 12.0, *)
 struct MenuDashboardView: View {
-    @ObservedObject var manager: BluetoothManager
-    @ObservedObject var ble: BLE
+    @ObservedObject var manager: FUnManager
+    @ObservedObject var fun: FUn
 
     @AppStorage("enabled") private var enabled = true
     @AppStorage("wakeOnProximity") private var wakeOnProximity = false
@@ -350,7 +350,7 @@ struct MenuDashboardView: View {
             toggleRow("锁定时关闭屏幕", isOn: $sleepDisplay, icon: "display.sleep")
             divider
             toggleRow("被动模式", isOn: $passiveMode, icon: "antenna.radiowaves.left.and.right")
-                .onChange(of: passiveMode) { v in ble.setPassiveMode(v) }
+                .onChange(of: passiveMode) { v in fun.setPassiveMode(v) }
             divider
             toggleRow("开机自启动", isOn: $launchAtLogin, icon: "arrow.up.circle")
         }

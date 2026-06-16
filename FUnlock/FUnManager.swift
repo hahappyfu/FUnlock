@@ -68,10 +68,10 @@ struct LockScreenState: Equatable {
     }
 }
 
-// MARK: - BluetoothManager
+// MARK: - FUnManager
 
 @MainActor
-final class BluetoothManager: ObservableObject {
+final class FUnManager: ObservableObject {
 
     // MARK: Published state
 
@@ -86,7 +86,7 @@ final class BluetoothManager: ObservableObject {
 
     // MARK: Dependencies
 
-    let ble: BLE
+    let fun: FUn
     private let prefs = UserDefaults.standard
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
@@ -96,24 +96,24 @@ final class BluetoothManager: ObservableObject {
 
     // MARK: Init
 
-    init(ble: BLE) {
-        self.ble = ble
-        self.lockRSSI = ble.lockRSSI
-        self.unlockRSSI = ble.unlockRSSI
+    init(fun: FUn) {
+        self.fun = fun
+        self.lockRSSI = fun.lockRSSI
+        self.unlockRSSI = fun.unlockRSSI
     }
 
     // MARK: - 阈值同步
 
     func setLockRSSI(_ value: Int) {
         lockRSSI = value
-        ble.lockRSSI = value
+        fun.lockRSSI = value
         UserDefaults.standard.set(value, forKey: "lockRSSI")
         thresholdVersion += 1
     }
 
     func setUnlockRSSI(_ value: Int) {
         unlockRSSI = value
-        ble.unlockRSSI = value
+        fun.unlockRSSI = value
         UserDefaults.standard.set(value, forKey: "unlockRSSI")
         thresholdVersion += 1
     }
@@ -121,11 +121,11 @@ final class BluetoothManager: ObservableObject {
     // MARK: - 扫描控制
 
     func startScanning() {
-        ble.startScanning()
+        fun.startScanning()
     }
 
     func stopScanning() {
-        ble.stopScanning()
+        fun.stopScanning()
     }
 
     // MARK: - 系统事件入口
@@ -170,13 +170,13 @@ final class BluetoothManager: ObservableObject {
         state.unlockedAt = Date()
         state.intent = .autoLock
 
-        // 2 秒后检查是否为入侵（非 BLE 自动解锁）
+        // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         intrudeCheckTask?.cancel()
         intrudeCheckTask = Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
             if Date().timeIntervalSince1970 >= state.unlockedAt.timeIntervalSince1970 + 10 {
-                if ble.unlockRSSI != ble.UNLOCK_DISABLED {
+                if fun.unlockRSSI != fun.UNLOCK_DISABLED {
                     runScript("intruded")
                     logEvent("intruded")
                 }
@@ -206,11 +206,11 @@ final class BluetoothManager: ObservableObject {
         state.screen = .locked(reason: .manual)
     }
 
-    // MARK: - BLE 设备事件
+    // MARK: - FUn 设备事件
 
     func onDeviceApproached() {
         guard prefs.bool(forKey: "enabled") else { return }
-        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
+        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
 
         // 清除锁屏通知
         if !userNotificationId.isEmpty {
@@ -231,7 +231,7 @@ final class BluetoothManager: ObservableObject {
     func onDeviceLeft(reason: String) {
         guard prefs.bool(forKey: "enabled") else { return }
         guard state.screen == .unlocked else { return }
-        guard ble.lockRSSI != ble.LOCK_DISABLED else { return }
+        guard fun.lockRSSI != fun.LOCK_DISABLED else { return }
 
         state.screen = .displaySleeping  // 标记为显示器休眠（与原始逻辑一致）
         pauseNowPlaying()
@@ -270,17 +270,17 @@ final class BluetoothManager: ObservableObject {
     }
 
     func selectDevice(_ device: Device) {
-        ble.startMonitor(uuid: device.uuid)
-        ble.addMonitoredDevice(uuid: device.uuid)
+        fun.startMonitor(uuid: device.uuid)
+        fun.addMonitoredDevice(uuid: device.uuid)
         monitoredDeviceName = device.description
         prefs.set(device.uuid.uuidString, forKey: "device")
         prefs.set(device.description, forKey: "deviceName")
     }
 
     func unbindDevice() {
-        ble.monitoredUUID = nil
-        ble.monitoredUUIDs.removeAll()
-        ble.devicePresence.removeAll()
+        fun.monitoredUUID = nil
+        fun.monitoredUUIDs.removeAll()
+        fun.devicePresence.removeAll()
         monitoredDeviceName = nil
         prefs.removeObject(forKey: "device")
         prefs.removeObject(forKey: "deviceName")
@@ -314,10 +314,10 @@ final class BluetoothManager: ObservableObject {
     private func attemptAutoUnlock() {
         let screenLocked = isScreenLocked()
         let axGranted = AXIsProcessTrusted()
-        let log = "\(Date()): attemptAutoUnlock presence=\(ble.presence) screen=\(state.screen) wakeWO=\(prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)\n"
+        let log = "\(Date()): attemptAutoUnlock presence=\(fun.presence) screen=\(state.screen) wakeWO=\(prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)\n"
         if let d = log.data(using: .utf8) { try? d.write(to: URL(fileURLWithPath: "/tmp/funlock_unlock.log")) }
-        guard ble.presence else { unlockLog("SKIP: no presence"); return }
-        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { unlockLog("SKIP: unlock disabled"); return }
+        guard fun.presence else { unlockLog("SKIP: no presence"); return }
+        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { unlockLog("SKIP: unlock disabled"); return }
         if !axGranted { unlockLog("WARN: ax=false, trying anyway") }
 
         // 显示器休眠中 → 先唤醒
@@ -582,7 +582,7 @@ final class BluetoothManager: ObservableObject {
         process.executableURL = file
         var args = [arg]
         if let r = rssi { args.append(String(r)) }
-        if let uuid = ble.monitoredUUID, let device = ble.devices[uuid] {
+        if let uuid = fun.monitoredUUID, let device = fun.devices[uuid] {
             args.append(device.description)
         }
         let formatter = DateFormatter()
@@ -594,20 +594,20 @@ final class BluetoothManager: ObservableObject {
 
     func checkUpdate() {
         // 由 checkUpdate.swift 的全局函数处理
-        BLEUnlock.checkUpdate()
+        FUnlock.checkUpdate()
     }
 
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
 
     func cleanup() {
-        ble.proximityTimer?.invalidate()
-        ble.proximityTimer = nil
-        ble.signalTimer?.invalidate()
-        ble.signalTimer = nil
-        ble.activeModeTimer?.invalidate()
-        ble.activeModeTimer = nil
-        ble.connectionTimer?.invalidate()
-        ble.connectionTimer = nil
+        fun.proximityTimer?.invalidate()
+        fun.proximityTimer = nil
+        fun.signalTimer?.invalidate()
+        fun.signalTimer = nil
+        fun.activeModeTimer?.invalidate()
+        fun.activeModeTimer = nil
+        fun.connectionTimer?.invalidate()
+        fun.connectionTimer = nil
         wakeTask?.cancel()
         unlockTask?.cancel()
         intrudeCheckTask?.cancel()

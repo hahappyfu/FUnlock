@@ -1,75 +1,75 @@
 import XCTest
-@testable import BLEUnlock
+@testable import FUnlock
 
-class BLEUnlockTests: XCTestCase {
+class FUnlockTests: XCTestCase {
 
     // MARK: - EMA (Exponential Moving Average) Tests
 
     func testEMASingleValue() {
-        let ble = BLE()
-        let result = ble.getEstimatedRSSI(rssi: -60)
+        let fun = FUn()
+        let result = fun.getEstimatedRSSI(rssi: -60)
         XCTAssertEqual(result, -60, "First value should be the raw RSSI")
     }
 
     func testEMATwoValues() {
-        let ble = BLE()
-        _ = ble.getEstimatedRSSI(rssi: -60)
-        let result = ble.getEstimatedRSSI(rssi: -70)
+        let fun = FUn()
+        _ = fun.getEstimatedRSSI(rssi: -60)
+        let result = fun.getEstimatedRSSI(rssi: -70)
         // EMA: -60 * 0.7 + (-70) * 0.3 = -42 + (-21) = -63
         XCTAssertEqual(result, -63, "EMA with alpha=0.3 should weight recent value less")
     }
 
     func testEMAConvergence() {
-        let ble = BLE()
+        let fun = FUn()
         // Feed many values at -80, then one at -50
         for _ in 0..<20 {
-            _ = ble.getEstimatedRSSI(rssi: -80)
+            _ = fun.getEstimatedRSSI(rssi: -80)
         }
-        let result = ble.getEstimatedRSSI(rssi: -50)
+        let result = fun.getEstimatedRSSI(rssi: -50)
         // After convergence to -80, one -50 should shift slightly
         // EMA: -80 * 0.7 + (-50) * 0.3 = -56 + (-15) = -71
         XCTAssertEqual(result, -71, "EMA should shift toward new value")
     }
 
     func testEMABufferLimit() {
-        let ble = BLE()
-        ble.latestN = 3
-        _ = ble.getEstimatedRSSI(rssi: -60)
-        _ = ble.getEstimatedRSSI(rssi: -70)
-        _ = ble.getEstimatedRSSI(rssi: -80)
-        _ = ble.getEstimatedRSSI(rssi: -90)
-        XCTAssertTrue(ble.latestRSSIs.count <= ble.latestN, "Buffer should respect latestN limit")
+        let fun = FUn()
+        fun.latestN = 3
+        _ = fun.getEstimatedRSSI(rssi: -60)
+        _ = fun.getEstimatedRSSI(rssi: -70)
+        _ = fun.getEstimatedRSSI(rssi: -80)
+        _ = fun.getEstimatedRSSI(rssi: -90)
+        XCTAssertTrue(fun.latestRSSIs.count <= fun.latestN, "Buffer should respect latestN limit")
     }
 
     // MARK: - Signal Lost Count Tests
 
     func testSignalLostCountReset() {
-        let ble = BLE()
-        ble.signalLostCount = 2
+        let fun = FUn()
+        fun.signalLostCount = 2
         // Simulate signal received by calling updateMonitoredPeripheral
-        _ = ble.updateMonitoredPeripheral(-60)
-        XCTAssertEqual(ble.signalLostCount, 0, "Signal lost count should reset on signal receipt")
+        _ = fun.updateMonitoredPeripheral(-60)
+        XCTAssertEqual(fun.signalLostCount, 0, "Signal lost count should reset on signal receipt")
     }
 
     // MARK: - Adaptive Polling Tests
 
     func testStableCountTracking() {
-        let ble = BLE()
-        ble.lastEstimatedRSSI = -60
+        let fun = FUn()
+        fun.lastEstimatedRSSI = -60
         // Feed stable values (within 5 dBm threshold)
-        _ = ble.updateMonitoredPeripheral(-62)
-        _ = ble.updateMonitoredPeripheral(-61)
-        _ = ble.updateMonitoredPeripheral(-59)
-        XCTAssertGreaterThan(ble.stableCount, 0, "Stable RSSI should increase stableCount")
+        _ = fun.updateMonitoredPeripheral(-62)
+        _ = fun.updateMonitoredPeripheral(-61)
+        _ = fun.updateMonitoredPeripheral(-59)
+        XCTAssertGreaterThan(fun.stableCount, 0, "Stable RSSI should increase stableCount")
     }
 
     func testStableCountReset() {
-        let ble = BLE()
-        ble.stableCount = 10
-        ble.lastEstimatedRSSI = -60
+        let fun = FUn()
+        fun.stableCount = 10
+        fun.lastEstimatedRSSI = -60
         // Feed a value with large fluctuation
-        _ = ble.updateMonitoredPeripheral(-90)
-        XCTAssertEqual(ble.stableCount, 0, "Large fluctuation should reset stableCount")
+        _ = fun.updateMonitoredPeripheral(-90)
+        XCTAssertEqual(fun.stableCount, 0, "Large fluctuation should reset stableCount")
     }
 
     // MARK: - Version Comparison Tests

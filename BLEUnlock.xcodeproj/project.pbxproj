@@ -22,9 +22,9 @@
 		3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B653226C1C3200451B7B /* AppDelegate.swift */; };
 		3DD4B659226C1C3400451B7B /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3DD4B657226C1C3400451B7B /* MainMenu.xib */; };
 		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
-		3DD4B666226C1DF200451B7B /* BLE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* BLE.swift */; };
+		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
 		3DD4B669226C1E3700451B7B /* login.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD4B668226C1E3700451B7B /* login.framework */; };
-		AA000001226C1DF200000001 /* BluetoothManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* BluetoothManager.swift */; };
+		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
 		AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004226C1DF200000001 /* MenuDashboardView.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
 /* End PBXBuildFile section */
@@ -69,16 +69,16 @@
 		3D95379B227853EC0017D8B9 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3DC0BC6922728FF1001145EC /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = checkUpdate.swift; sourceTree = "<group>"; };
-		3DD4B650226C1C3200451B7B /* BLEUnlock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BLEUnlock.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DD4B650226C1C3200451B7B /* FUnlock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FUnlock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DD4B653226C1C3200451B7B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		3DD4B658226C1C3400451B7B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
-		3DD4B65B226C1C3400451B7B /* BLEUnlock.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BLEUnlock.entitlements; sourceTree = "<group>"; };
-		3DD4B661226C1CEF00451B7B /* BLEUnlock-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BLEUnlock-Bridging-Header.h"; sourceTree = "<group>"; };
+		3DD4B65B226C1C3400451B7B /* FUnlock.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FUnlock.entitlements; sourceTree = "<group>"; };
+		3DD4B661226C1CEF00451B7B /* FUnlock-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FUnlock-Bridging-Header.h"; sourceTree = "<group>"; };
 		3DD4B662226C1CEF00451B7B /* lowlevel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lowlevel.h; sourceTree = "<group>"; };
 		3DD4B663226C1CF000451B7B /* lowlevel.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lowlevel.c; sourceTree = "<group>"; };
-		3DD4B665226C1DF200451B7B /* BLE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLE.swift; sourceTree = "<group>"; };
+		3DD4B665226C1DF200451B7B /* FUn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUn.swift; sourceTree = "<group>"; };
 		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
-		AA000002226C1DF200000001 /* BluetoothManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothManager.swift; sourceTree = "<group>"; };
+		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
 		AA000004226C1DF200000001 /* MenuDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuDashboardView.swift; sourceTree = "<group>"; };
 		B1EFF91422E010F50010DB0A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AboutBox.strings"; sourceTree = "<group>"; };
@@ -124,7 +124,7 @@
 		3DD4B647226C1C3200451B7B = {
 			isa = PBXGroup;
 			children = (
-				3DD4B652226C1C3200451B7B /* BLEUnlock */,
+				3DD4B652226C1C3200451B7B /* FUnlock */,
 				3D600A4122701A5B0068FB7B /* Launcher */,
 				3DD4B651226C1C3200451B7B /* Products */,
 				3DD4B667226C1E3700451B7B /* Frameworks */,
@@ -134,20 +134,20 @@
 		3DD4B651226C1C3200451B7B /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3DD4B650226C1C3200451B7B /* BLEUnlock.app */,
+				3DD4B650226C1C3200451B7B /* FUnlock.app */,
 				3D600A4022701A5A0068FB7B /* Launcher.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		3DD4B652226C1C3200451B7B /* BLEUnlock */ = {
+		3DD4B652226C1C3200451B7B /* FUnlock */ = {
 			isa = PBXGroup;
 			children = (
 				3D95379322784D550017D8B9 /* AboutBox.swift */,
 				3D953799227853E20017D8B9 /* AboutBox.xib */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
-				3DD4B665226C1DF200451B7B /* BLE.swift */,
-				AA000002226C1DF200000001 /* BluetoothManager.swift */,
+				3DD4B665226C1DF200451B7B /* FUn.swift */,
+				AA000002226C1DF200000001 /* FUnManager.swift */,
 				AA000004226C1DF200000001 /* MenuDashboardView.swift */,
 				AA000006226C1DF200000001 /* CalibrationWizardView.swift */,
 				3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */,
@@ -157,12 +157,12 @@
 				3DD4B662226C1CEF00451B7B /* lowlevel.h */,
 				3DD4B663226C1CF000451B7B /* lowlevel.c */,
 				3DD4B657226C1C3400451B7B /* MainMenu.xib */,
-				3DD4B65B226C1C3400451B7B /* BLEUnlock.entitlements */,
-				3DD4B661226C1CEF00451B7B /* BLEUnlock-Bridging-Header.h */,
+				3DD4B65B226C1C3400451B7B /* FUnlock.entitlements */,
+				3DD4B661226C1CEF00451B7B /* FUnlock-Bridging-Header.h */,
 				3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */,
 				3D2FCF07226C99CB007A06E7 /* Images.xcassets */,
 			);
-			path = BLEUnlock;
+			path = FUnlock;
 			sourceTree = "<group>";
 		};
 		3DD4B667226C1E3700451B7B /* Frameworks */ = {
@@ -194,9 +194,9 @@
 			productReference = 3D600A4022701A5A0068FB7B /* Launcher.app */;
 			productType = "com.apple.product-type.application";
 		};
-		3DD4B64F226C1C3200451B7B /* BLEUnlock */ = {
+		3DD4B64F226C1C3200451B7B /* FUnlock */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3DD4B65E226C1C3400451B7B /* Build configuration list for PBXNativeTarget "BLEUnlock" */;
+			buildConfigurationList = 3DD4B65E226C1C3400451B7B /* Build configuration list for PBXNativeTarget "FUnlock" */;
 			buildPhases = (
 				3DD4B64C226C1C3200451B7B /* Sources */,
 				3DD4B64D226C1C3200451B7B /* Frameworks */,
@@ -208,9 +208,9 @@
 			);
 			dependencies = (
 			);
-			name = BLEUnlock;
-			productName = BLEUnlock;
-			productReference = 3DD4B650226C1C3200451B7B /* BLEUnlock.app */;
+			name = FUnlock;
+			productName = FUnlock;
+			productReference = 3DD4B650226C1C3200451B7B /* FUnlock.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -252,7 +252,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "BLEUnlock" */;
+			buildConfigurationList = 3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "FUnlock" */;
 			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -272,7 +272,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				3DD4B64F226C1C3200451B7B /* BLEUnlock */,
+				3DD4B64F226C1C3200451B7B /* FUnlock */,
 				3D600A3F22701A5A0068FB7B /* Launcher */,
 			);
 		};
@@ -335,8 +335,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */,
-				3DD4B666226C1DF200451B7B /* BLE.swift in Sources */,
-				AA000001226C1DF200000001 /* BluetoothManager.swift in Sources */,
+				3DD4B666226C1DF200451B7B /* FUn.swift in Sources */,
+				AA000001226C1DF200000001 /* FUnManager.swift in Sources */,
 				AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */,
 				AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */,
 				3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */,
@@ -561,14 +561,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = BLEUnlock/BLEUnlock.entitlements;
+				CODE_SIGN_ENTITLEMENTS = FUnlock/FUnlock.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = JJYCS98SHK;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
-				INFOPLIST_FILE = BLEUnlock/Info.plist;
+				INFOPLIST_FILE = FUnlock/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -577,7 +577,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_OBJC_BRIDGING_HEADER = "BLEUnlock/BLEUnlock-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "FUnlock/FUnlock-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
@@ -592,14 +592,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = BLEUnlock/BLEUnlock.entitlements;
+				CODE_SIGN_ENTITLEMENTS = FUnlock/FUnlock.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = JJYCS98SHK;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
-				INFOPLIST_FILE = BLEUnlock/Info.plist;
+				INFOPLIST_FILE = FUnlock/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -608,7 +608,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_OBJC_BRIDGING_HEADER = "BLEUnlock/BLEUnlock-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "FUnlock/FUnlock-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -629,7 +629,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "BLEUnlock" */ = {
+		3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "FUnlock" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3DD4B65C226C1C3400451B7B /* Debug */,
@@ -638,7 +638,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3DD4B65E226C1C3400451B7B /* Build configuration list for PBXNativeTarget "BLEUnlock" */ = {
+		3DD4B65E226C1C3400451B7B /* Build configuration list for PBXNativeTarget "FUnlock" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3DD4B65F226C1C3400451B7B /* Debug */,

@@ -91,7 +91,7 @@ class Device: NSObject {
     }
 }
 
-protocol BLEDelegate {
+protocol FUnDelegate {
     func newDevice(device: Device)
     func updateDevice(device: Device)
     func removeDevice(device: Device)
@@ -100,13 +100,13 @@ protocol BLEDelegate {
     func bluetoothPowerWarn()
 }
 
-class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let UNLOCK_DISABLED = 1
     let LOCK_DISABLED = -100
     let bleQueue = DispatchQueue(label: "com.bleunlock.ble")
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
-    var delegate: BLEDelegate?
+    var delegate: FUnDelegate?
     var scanMode = false
     var monitoredUUID: UUID?
     var monitoredUUIDs: Set<UUID> = []
@@ -189,7 +189,7 @@ class BLE: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         // 直接获取已知外设（不依赖扫描发现）
         let known = centralMgr.retrievePeripherals(withIdentifiers: [uuid])
         if let peripheral = known.first {
-            print("[BLE] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state)")
+            print("[FUn] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state)")
             monitoredPeripheral = peripheral
             if peripheral.state == .disconnected {
                 centralMgr.connect(peripheral, options: nil)
