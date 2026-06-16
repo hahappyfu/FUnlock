@@ -101,12 +101,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         AXIsProcessTrusted()
     }
 
-    /// 仅在确认未授权时请求弹窗，避免每次启动都弹
+    /// 带弹窗请求（用户可在系统设置中手动批准）
     func requestAccessibilityIfNeeded() {
         guard !isAccessibilityGranted else { return }
-        // 带 prompt 参数触发系统弹窗
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
+        // agent 应用（无 Dock 图标）可能无法弹出系统授权弹窗
+        // 直接打开系统设置的辅助功能页面，让用户手动添加
+        let script = """
+        tell application "System Settings"
+            activate
+            reveal pane id "com.apple.preference.security?Privacy_Accessibility"
+        end tell
+        """
+        if let AppleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            AppleScript.executeAndReturnError(&error)
+        }
     }
 
     /// 保留向后兼容的启动检查（仅首次运行时弹窗）
@@ -192,6 +201,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             manager.askPassword()
         }
 
+        // Accessibility — 解锁功能需要，每次启动都检查
+        if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
+            if !isAccessibilityGranted {
+                requestAccessibilityIfNeeded()
+            }
+        }
         checkAccessibility()
         BLEUnlock.checkUpdate()
 

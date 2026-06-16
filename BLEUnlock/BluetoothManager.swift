@@ -233,8 +233,7 @@ final class BluetoothManager: ObservableObject {
         guard state.screen == .unlocked else { return }
         guard ble.lockRSSI != ble.LOCK_DISABLED else { return }
 
-        let lockReason: ScreenState.LockReason = (reason == "lost") ? .lost : .away
-        state.screen = .locked(reason: lockReason)
+        state.screen = .displaySleeping  // 标记为显示器休眠（与原始逻辑一致）
         pauseNowPlaying()
         lockOrSaveScreen()
         notifyUser(reason)
@@ -301,39 +300,60 @@ final class BluetoothManager: ObservableObject {
 
     // MARK: - 核心：自动解锁
 
-    private func attemptAutoUnlock() {
-        guard state.canAutoUnlock else { return }
-        guard ble.presence else { return }
-        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { return }
+    private func unlockLog(_ msg: String) {
+        let line = "\(Date()): [unlock] \(msg)\n"
+        if let d = line.data(using: .utf8) {
+            if let h = try? FileHandle(forWritingTo: URL(fileURLWithPath: "/tmp/funlock_unlock.log")) {
+                h.seekToEndOfFile(); h.write(d); h.closeFile()
+            } else {
+                try? d.write(to: URL(fileURLWithPath: "/tmp/funlock_unlock.log"))
+            }
+        }
+    }
 
-        // 屏保中先按 Esc
-        if state.screen == .screensaver {
-            let src = CGEventSource(stateID: .hidSystemState)
-            CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: true)?.post(tap: .cghidEventTap)
-            CGEvent(keyboardEventSource: src, virtualKey: 0x35, keyDown: false)?.post(tap: .cghidEventTap)
+    private func attemptAutoUnlock() {
+        let screenLocked = isScreenLocked()
+        let axGranted = AXIsProcessTrusted()
+        let log = "\(Date()): attemptAutoUnlock presence=\(ble.presence) screen=\(state.screen) wakeWO=\(prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)\n"
+        if let d = log.data(using: .utf8) { try? d.write(to: URL(fileURLWithPath: "/tmp/funlock_unlock.log")) }
+        guard ble.presence else { unlockLog("SKIP: no presence"); return }
+        guard ble.unlockRSSI != ble.UNLOCK_DISABLED else { unlockLog("SKIP: unlock disabled"); return }
+        if !axGranted { unlockLog("WARN: ax=false, trying anyway") }
+
+        // 显示器休眠中 → 先唤醒
+        if state.screen == .displaySleeping && state.system == .awake
+            && prefs.bool(forKey: "wakeOnProximity") {
+            unlockLog("starting wakeRetry (display sleeping)")
+            startWakeRetry()
+            return
         }
 
-        guard !prefs.bool(forKey: "wakeWithoutUnlocking") else { return }
+        guard !prefs.bool(forKey: "wakeWithoutUnlocking") else { unlockLog("SKIP: wakeWithoutUnlocking"); return }
+        guard state.screen != .displaySleeping else { unlockLog("SKIP: still displaySleeping"); return }
 
-        // 取消之前的解锁任务
         unlockTask?.cancel()
-
         unlockTask = Task {
+            unlockLog("Task started, sleeping 0.5s")
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-            guard !Task.isCancelled else { return }
-            guard isScreenLocked() else { return }
-            guard Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970 > 3 else {
-                print("[SM] recently unlocked by user, abort auto-unlock")
+            guard !Task.isCancelled else { unlockLog("Task cancelled after sleep"); return }
+            let locked = isScreenLocked()
+            unlockLog("screen locked check: \(locked)")
+            guard locked else { unlockLog("SKIP: screen not locked"); return }
+            let sinceUnlock = Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
+            guard sinceUnlock > 3 else {
+                unlockLog("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
                 return
             }
-            guard let password = fetchPassword(warn: true) else { return }
+            guard let password = fetchPassword(warn: true) else { unlockLog("SKIP: no password"); return }
 
-            print("[SM] entering password")
+            unlockLog("typing password (\(password.count) chars)")
             self.state.unlockedAt = Date()
             fakeKeyStrokes(password)
+            unlockLog("fakeKeyStrokes done")
             playNowPlaying()
             runScript("unlocked")
             logEvent("unlocked")
+            unlockLog("unlock complete")
         }
     }
 
@@ -341,7 +361,7 @@ final class BluetoothManager: ObservableObject {
 
     private func startWakeRetry() {
         state.wake = .pending
-        state.screen = .locked(reason: .away) // 唤醒后仍为锁定
+        state.screen = .locked(reason: .away)
 
         wakeTask?.cancel()
         wakeTask = Task {
@@ -352,12 +372,22 @@ final class BluetoothManager: ObservableObject {
                 }
                 wakeDisplay()
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
-                if state.wake == .succeeded {
+                // wakeDisplay() 不一定触发 screensDidWakeNotification，
+                // 直接检测屏幕是否已解锁
+                if state.wake == .succeeded || !isScreenLocked() {
+                    state.wake = .succeeded
+                    DispatchQueue.main.async { [weak self] in
+                        self?.attemptAutoUnlock()
+                    }
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
+            // wake 完成后尝试解锁（原始逻辑：onDisplayWake 会调 tryUnlockScreen）
+            DispatchQueue.main.async { [weak self] in
+                self?.attemptAutoUnlock()
+            }
         }
     }
 
@@ -397,15 +427,9 @@ final class BluetoothManager: ObservableObject {
                 NSWorkspace.shared.openApplication(at: url, configuration: config)
             }
         } else {
-            // 尝试多种方式锁屏
             DispatchQueue.main.async {
-                // 方式1: SACLockScreenImmediate
-                let result = SACLockScreenImmediate()
-                if result != 0 {
-                    print("[SM] SACLockScreenImmediate failed (\(result)), trying sleepDisplay")
-                    // 方式2: 显示器睡眠（需配合"唤醒后需要密码"）
-                    sleepDisplay()
-                }
+                // 必须真正锁屏，让 isScreenLocked() 返回 true
+                _ = SACLockScreenImmediate()
             }
         }
     }
@@ -420,6 +444,11 @@ final class BluetoothManager: ObservableObject {
     // MARK: - 键盘模拟
 
     private func fakeKeyStrokes(_ string: String) {
+        // 直接尝试 CGEvent（不依赖 AXIsProcessTrusted，它对 agent 应用不可靠）
+        fakeKeyStrokesCGEvent(string)
+    }
+
+    private func fakeKeyStrokesCGEvent(_ string: String) {
         let src = CGEventSource(stateID: .hidSystemState)
         let PER = 20
         let uniCharCount = string.utf16.count
@@ -434,11 +463,32 @@ final class BluetoothManager: ObservableObject {
                 strIndex = string.utf16.index(after: strIndex)
             }
             pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: buffer)
-            pressEvent?.post(tap: .cghidEventTap)
-            CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cghidEventTap)
+            pressEvent?.post(tap: .cgSessionEventTap)
+            CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cgSessionEventTap)
         }
-        CGEvent(keyboardEventSource: src, virtualKey: 52, keyDown: true)?.post(tap: .cghidEventTap)
-        CGEvent(keyboardEventSource: src, virtualKey: 52, keyDown: false)?.post(tap: .cghidEventTap)
+        // Return key (36 = main Return, not numpad Enter 52)
+        CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)?.post(tap: .cgSessionEventTap)
+        CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)?.post(tap: .cgSessionEventTap)
+    }
+
+    private func fakeKeyStrokesAppleScript(_ string: String) {
+        // 通过 System Events 发送键盘事件（某些 macOS 版本不需要 Accessibility）
+        let escaped = string.replacingOccurrences(of: "\\", with: "\\\\")
+                          .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "System Events"
+            keystroke "\(escaped)"
+            delay 0.1
+            key code 36
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if let error = error {
+                print("[SM] AppleScript keystroke failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Keychain

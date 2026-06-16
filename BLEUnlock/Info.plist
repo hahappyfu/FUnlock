@@ -13,13 +13,13 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>FUnlock</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.12.2</string>
 	<key>CFBundleVersion</key>
-	<string>825</string>
+	<string>871</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -27,7 +27,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>BLEUnlock uses Bluetooth to detect devices.</string>
+	<string>FUnlock uses Bluetooth to detect devices.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2019-2022 Takeshi Sone. MIT Licensed.</string>
 	<key>NSMainNibFile</key>
