@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "3DD4B64F226C1C3200451B7B"
-               BuildableName = "BLEUnlock.app"
-               BlueprintName = "BLEUnlock"
+               BuildableName = "FUnlock.app"
+               BlueprintName = "FUnlock"
                ReferencedContainer = "container:BLEUnlock.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

@@ -13,7 +13,7 @@ func t(_ key: String) -> String {
 
 @MainActor
 @NSApplicationMain
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, BLEDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
 
     // MARK: - UI 组件
 
@@ -23,12 +23,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - 核心依赖
 
-    let ble = BLE()
-    var manager: BluetoothManager!
+    let fun = FUn()
+    var manager: FUnManager!
     let prefs = UserDefaults.standard
     var cancellables = Set<AnyCancellable>()
 
-    // MARK: - BLEDelegate（UI 更新 + 转发设备事件）
+    // MARK: - FUnDelegate（UI 更新 + 转发设备事件）
 
     func newDevice(device: Device) {
         manager.onDeviceDiscovered(device)
@@ -84,13 +84,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @objc func toggleSettingsWindow(_ sender: AnyObject?) {
         if settingsWindow.isVisible {
             settingsWindow.orderOut(nil)
-            ble.stopScanning()
+            fun.stopScanning()
         } else {
             // 居中显示
             settingsWindow.center()
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
-            ble.startScanning()
+            fun.startScanning()
         }
     }
 
@@ -135,26 +135,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // 先恢复设置到 ble（manager init 会同步 ble 的值）
-        let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { ble.lockRSSI = lockRSSI }
-        let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { ble.unlockRSSI = unlockRSSI }
-        let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { ble.signalTimeout = Double(timeout) }
-        ble.setPassiveMode(prefs.bool(forKey: "passiveMode"))
-        let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { ble.thresholdRSSI = thresholdRSSI }
-        let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { ble.proximityTimeout = Double(lockDelay) }
+        let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { fun.lockRSSI = lockRSSI }
+        let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { fun.unlockRSSI = unlockRSSI }
+        let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { fun.signalTimeout = Double(timeout) }
+        fun.setPassiveMode(prefs.bool(forKey: "passiveMode"))
+        let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { fun.thresholdRSSI = thresholdRSSI }
+        let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { fun.proximityTimeout = Double(lockDelay) }
 
         // 初始化 manager（此时 ble 已有正确的 UserDefaults 值）
-        manager = BluetoothManager(ble: ble)
-        ble.delegate = self
+        manager = FUnManager(fun: fun)
+        fun.delegate = self
 
         // 恢复已保存的设备
         if let str = prefs.string(forKey: "device"), let uuid = UUID(uuidString: str) {
             manager.updateConnected(false)
             manager.monitoredDeviceName = prefs.string(forKey: "deviceName") ?? "已配对设备"
-            ble.startMonitor(uuid: uuid)
+            fun.startMonitor(uuid: uuid)
         }
 
         // 初始化设置窗口
-        let dashboard = MenuDashboardView(manager: manager, ble: ble)
+        let dashboard = MenuDashboardView(manager: manager, fun: fun)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "FUnlock"
@@ -197,18 +197,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         // 密码检查
-        if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && manager.fetchPassword() == nil {
+        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && manager.fetchPassword() == nil {
             manager.askPassword()
         }
 
         // Accessibility — 解锁功能需要，每次启动都检查
-        if ble.unlockRSSI != ble.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
+        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
             if !isAccessibilityGranted {
                 requestAccessibilityIfNeeded()
             }
         }
         checkAccessibility()
-        BLEUnlock.checkUpdate()
+        FUnlock.checkUpdate()
 
         NSApp.setActivationPolicy(.accessory)
     }
