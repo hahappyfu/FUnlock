@@ -92,6 +92,7 @@ final class FUnManager: ObservableObject {
     private var unlockTask: Task<Void, Never>?
     private var intrudeCheckTask: Task<Void, Never>?
     private var userNotificationId = ""
+    private var displayWakeRequested = false
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: Init
@@ -219,9 +220,11 @@ final class FUnManager: ObservableObject {
             userNotificationId = ""
         }
 
-        // 显示器休眠中 → 唤醒
-        if state.screen == .displaySleeping && state.system == .awake
-            && prefs.bool(forKey: "wakeOnProximity") {
+        // 显示器休眠中 → 确保已唤醒（早唤醒可能已触发，这里做兜底）
+        if state.screen == .displaySleeping
+            && prefs.bool(forKey: "wakeOnProximity")
+            && !displayWakeRequested {
+            displayWakeRequested = true
             startWakeRetry()
         }
 
@@ -233,6 +236,7 @@ final class FUnManager: ObservableObject {
         guard state.screen == .unlocked else { return }
         guard fun.lockRSSI != fun.LOCK_DISABLED else { return }
 
+        displayWakeRequested = false
         state.screen = .displaySleeping  // 标记为显示器休眠（与原始逻辑一致）
         pauseNowPlaying()
         lockOrSaveScreen()
@@ -243,6 +247,15 @@ final class FUnManager: ObservableObject {
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {
         self.rssi = rssi
+
+        // 早唤醒：信号出现且显示器休眠时，立即唤醒（不等到解锁阈值）
+        if let rssi = rssi, !displayWakeRequested,
+           state.screen == .displaySleeping,
+           prefs.bool(forKey: "wakeOnProximity") {
+            displayWakeRequested = true
+            print("[SM] early wake triggered at RSSI \(rssi)")
+            startWakeRetry()
+        }
     }
 
     // MARK: - 设备发现
