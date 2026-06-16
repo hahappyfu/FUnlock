@@ -1,13 +1,13 @@
-# BLEUnlock
+# FUnlock
 
 > 靠近自动解锁，离开自动锁屏 —— 用蓝牙信号守护你的 Mac
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2012.0%2B-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)]()
+[![Platform](https://img.shields.io/badge/platform-macOS%2013.0%2B-lightgrey.svg)]()
+[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)]()
 [![Swift](https://img.shields.io/badge/Swift-5.7%2B-orange.svg)]()
 
-BLEUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。
+FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。
 
 ---
 
@@ -16,11 +16,14 @@ BLEUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch �
 - **靠近即解锁** — 手机靠近 Mac 自动输入密码解锁，无需手动操作
 - **离开即锁定** — 手机离开范围后自动锁屏，保护隐私
 - **无需 iPhone App** — 纯 macOS 端实现，利用 BLE 广播信号
-- **SwiftUI 控制中心** — 现代化 NSPopover 面板，实时显示信号强度和设备状态
-- **多设备支持** — 可同时监测多个 BLE 设备（任一在场即解锁）
-- **智能信号处理** — 卡尔曼滤波 + 自适应轮询，平衡精度与功耗
-- **事件日志** — 自动记录锁定/解锁事件，支持自定义脚本触发
-- **安全存储** — 密码使用 Keychain 加密，设置 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
+- **SwiftUI 控制中心** — 现代化面板，实时显示信号强度和设备状态
+- **多设备支持** — 可同时监测多个 BLE 设备
+- **智能信号处理** — 非对称卡尔曼滤波 + 时间衰减丢包惩罚，靠近解锁干脆、离开锁定可靠
+- **输入活动保护** — 检测键盘/触控板活动时暂缓锁定，打字不会误锁屏
+- **手动锁屏保护** — 可选手动锁屏后禁止自动解锁，防止旁人靠近时屏幕自动打开
+- **指纹解锁安全** — 指纹解锁时自动中断模拟密码输入，防止输入泄漏到前台应用
+- **启动权限检查** — 启动时自动检查辅助功能和蓝牙权限，缺失时弹窗引导授权
+- **安全存储** — 密码使用 Keychain 加密
 - **多语言** — 支持中文、日文、德语、瑞典语、挪威语、丹麦语、土耳其语
 
 ---
@@ -30,20 +33,20 @@ BLEUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch �
 ### Homebrew Cask（推荐）
 
 ```bash
-brew install bleunlock
+brew install funlock
 ```
 
 ### 手动安装
 
-1. 从 [Releases](https://gitee.com/fuhahah/bleunlock/releases) 下载最新版本
-2. 解压后将 `BLEUnlock.app` 移到 `/Applications` 文件夹
-3. 首次启动时按提示授予蓝牙、辅助功能、钥匙串和通知权限
+1. 从 [Releases](https://gitee.com/fuhahah/funlock/releases) 下载最新版本
+2. 解压后将 `FUnlock.app` 移到 `/Applications` 文件夹
+3. 首次启动时按提示授予蓝牙和辅助功能权限
 
 ---
 
 ## 🚀 快速开始
 
-1. 启动 BLEUnlock，菜单栏出现蓝牙图标
+1. 启动 FUnlock，菜单栏出现蓝牙图标
 2. 点击图标打开控制中心面板
 3. 在「设备」区域选择你的 iPhone 或 Apple Watch
 4. 调整锁定/解锁的 RSSI 阈值（默认 -80 / -60 dBm）
@@ -70,18 +73,16 @@ brew install bleunlock
 
 | 选项 | 说明 |
 |------|------|
-| **Enabled** | 总开关，暂停/恢复 BLEUnlock |
-| **Unlock RSSI** | 解锁阈值，数值越大要求越近（设为 Disable 关闭自动解锁） |
-| **Lock RSSI** | 锁定阈值，数值越小要求越远（设为 Disable 关闭自动锁定） |
-| **Delay to Lock** | 检测到离开后延迟多久再锁定（防止误触） |
-| **No-Signal Timeout** | 最后一次收到信号后多久判定为信号丢失 |
-| **Wake on Proximity** | 靠近时唤醒显示器 |
-| **Wake without Unlocking** | 只唤醒不解锁（配合 Apple Watch 解锁） |
-| **Pause Now Playing** | 锁定时暂停音乐/视频播放 |
-| **Use Screensaver to Lock** | 用屏保代替直接锁屏 |
-| **Turn Off Screen on Lock** | 锁定时关闭显示器 |
-| **Passive Mode** | 被动扫描模式，不主动连接设备（降低蓝牙干扰） |
-| **Launch at Login** | 开机自启动 |
+| **启用** | 总开关，暂停/恢复 FUnlock |
+| **靠近时唤醒** | 设备靠近时点亮屏幕（显示锁屏界面） |
+| **唤醒但不解锁** | 只唤醒不解锁（配合 Apple Watch 解锁） |
+| **锁定时暂停播放** | 锁定时暂停音乐/视频播放 |
+| **使用屏幕保护程序** | 用屏保代替直接锁屏 |
+| **锁定时关闭屏幕** | 锁定时关闭显示器 |
+| **输入活动时暂缓锁定** | 检测到键盘/触控板活动时暂缓锁定，防止误锁 |
+| **手动锁屏不自动解锁** | 手动锁屏后禁止自动解锁，保护隐私 |
+| **被动模式** | 被动扫描模式，不主动连接设备 |
+| **开机自启动** | 开机自动启动 FUnlock |
 
 ---
 
@@ -108,8 +109,8 @@ brew install bleunlock
 |------|------|
 | `away` | 设备远离，自动锁定 |
 | `lost` | 信号丢失，自动锁定 |
-| `unlocked` | BLEUnlock 自动解锁 |
-| `intruded` | 用户手动解锁（非 BLEUnlock 触发） |
+| `unlocked` | FUnlock 自动解锁 |
+| `intruded` | 用户手动解锁（非 FUnlock 触发） |
 
 示例脚本：
 ```bash
@@ -126,12 +127,13 @@ esac
 ## 📁 项目结构
 
 ```
-BLEUnlock/
-├── BLEUnlock/
-│   ├── BluetoothManager.swift    # 核心状态机（@MainActor + Combine）
-│   ├── BLE.swift                 # CoreBluetooth 底层驱动
-│   ├── AppDelegate.swift         # NSPopover UI + 通知转发
+FUnlock/
+├── FUnlock/
+│   ├── FUnManager.swift          # 核心状态机（@MainActor）
+│   ├── FUn.swift                 # CoreBluetooth 驱动 + 信号滤波 + 输入保护
+│   ├── AppDelegate.swift         # 应用入口 + 权限检查 + 输入活动监听
 │   ├── MenuDashboardView.swift   # SwiftUI 控制中心面板
+│   ├── CalibrationWizardView.swift # 阈值校准向导
 │   ├── LEDeviceInfo.swift        # macOS 蓝牙设备数据库查询
 │   ├── appleDeviceNames.swift    # Apple 设备名称映射表
 │   ├── checkUpdate.swift         # 自动更新检查
@@ -139,7 +141,8 @@ BLEUnlock/
 │   ├── lowlevel.h / .c           # 系统级 API（锁屏/唤醒显示器）
 │   └── MediaRemote.h             # 私有框架（Now Playing 控制）
 ├── Launcher/                      # 开机自启动 Helper
-└── docs/                          # 开发文档
+├── docs/                          # 开发文档与设计 spec
+└── BUGS.md                        # 问题登记
 ```
 
 ---
@@ -149,20 +152,26 @@ BLEUnlock/
 ```
 ┌─────────────────────────────────────────────┐
 │            MenuDashboardView (SwiftUI)       │
-│         NSPopover 控制中心 @ObservedObject   │
+│         控制中心 @ObservedObject              │
 └──────────────────┬──────────────────────────┘
                    │ @Published state/rssi/connected
 ┌──────────────────▼──────────────────────────┐
-│          BluetoothManager (@MainActor)       │
-│    状态机：ScreenLockState + Combine          │
+│          FUnManager (@MainActor)             │
+│    状态机：ScreenState + LockIntent           │
 │    决策：lockOrSaveScreen / fakeKeyStrokes    │
-│    async/await 替代 Timer                     │
+│    输入活动否决 + 心跳检查                     │
 └──────────────────┬──────────────────────────┘
-                   │ BLEDelegate
+                   │ FUnDelegate
 ┌──────────────────▼──────────────────────────┐
-│              BLE (CoreBluetooth)             │
-│    扫描 / 连接 / RSSI 读取 / 卡尔曼滤波      │
+│              FUn (CoreBluetooth)             │
+│    扫描 / 连接 / RSSI 读取                    │
+│    非对称 Kalman + 时间衰减 + 独立显示滤波     │
 │    专用串行队列 bleQueue                       │
+└──────────────────┬──────────────────────────┘
+                   │ IOKit HID
+┌──────────────────▼──────────────────────────┐
+│        InputActivityMonitor                  │
+│    键盘 / 触控板活动检测                       │
 └─────────────────────────────────────────────┘
 ```
 
@@ -173,22 +182,24 @@ BLEUnlock/
 ### 构建
 
 ```bash
-xcodebuild build -project BLEUnlock.xcodeproj -scheme BLEUnlock -destination 'platform=macOS'
+xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Release
 ```
 
 ### 要求
 
-- Xcode 14+
-- macOS 12.0+ 部署目标
+- Xcode 15+
+- macOS 13.0+ 部署目标
 - Swift 5.7+
 
 ### 关键技术
 
-- **状态机**：`LockScreenState` 枚举管理屏幕/系统/意图/唤醒/媒体 5 个正交维度
-- **Combine**：`@Published` 暴露状态，SwiftUI 视图自动响应
-- **async/await**：唤醒重试、解锁延迟、入侵检测均使用 `Task` 替代 `Timer`
-- **卡尔曼滤波**：RSSI 平滑处理（Q=0.008, R=0.5），替代简单滑动平均
-- **自适应轮询**：RSSI 稳定时从 2s 降频到 8s，降低功耗约 75%
+- **状态机**：`ScreenState` + `LockIntent` 枚举管理锁定/解锁/唤醒/媒体状态
+- **非对称卡尔曼滤波**：靠近时快速响应（Q 自适应放大 + 钳位），离开时强阻尼（原始小 Q）
+- **时间衰减丢包惩罚**：`effectiveRSSI = kalmanEstimate - 0.5×elapsed`，丢包自动降级
+- **输入活动否决**：IOKit HID 监听键盘/触控板，有活动时否决锁定决策
+- **心跳检查**：每 2 秒主动轮询，防丢包 100% 时状态机死锁
+- **UI 解耦**：决策层用非对称 Kalman，UI 显示用独立对称 EMA（α=0.1）
+- **async/await**：唤醒重试、解锁延迟均使用 `Task` 替代 `Timer`
 
 ---
 

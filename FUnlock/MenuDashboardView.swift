@@ -3,6 +3,7 @@
 
 import SwiftUI
 import Combine
+import ServiceManagement
 
 @available(macOS 12.0, *)
 struct MenuDashboardView: View {
@@ -15,14 +16,20 @@ struct MenuDashboardView: View {
     @AppStorage("pauseItunes") private var pauseItunes = false
     @AppStorage("screensaver") private var useScreensaver = false
     @AppStorage("sleepDisplay") private var sleepDisplay = false
+    @AppStorage("lockOnIdle") private var lockOnIdle = true
+    @AppStorage("manualLockNoAutoUnlock") private var manualLockNoAutoUnlock = false
     @AppStorage("passiveMode") private var passiveMode = false
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @State private var showCalibration = false
     @State private var sliderLock: Double = 0
     @State private var sliderUnlock: Double = 0
-    @State private var showApplied = false
+    @State private var isSliderDragging: Bool = false
     @State private var isScanning = false
     @State private var frozenDevices: [Device] = []
+
+    var isThresholdApplied: Bool {
+        Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == (manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,7 +44,7 @@ struct MenuDashboardView: View {
             }
 
             // 3. 开关区域
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 10) {
                     toggleSection
                     otherSection
@@ -260,7 +267,7 @@ struct MenuDashboardView: View {
 
             // 阈值调节
             VStack(spacing: 12) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Image(systemName: "lock.fill")
                         .font(.caption)
                         .foregroundColor(.orange)
@@ -268,7 +275,13 @@ struct MenuDashboardView: View {
                     Text("锁定")
                         .font(.caption)
                         .frame(width: 30, alignment: .leading)
+                    Button(action: { sliderLock = max(-95, sliderLock - 1) }) {
+                        Image(systemName: "minus.circle").font(.caption)
+                    }.buttonStyle(.plain)
                     Slider(value: $sliderLock, in: Double(-95)...Double(-30))
+                    Button(action: { sliderLock = min(-30, sliderLock + 1) }) {
+                        Image(systemName: "plus.circle").font(.caption)
+                    }.buttonStyle(.plain)
                     Text("\(Int(sliderLock))")
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 35, alignment: .trailing)
@@ -277,7 +290,7 @@ struct MenuDashboardView: View {
                         .foregroundColor(.secondary)
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Image(systemName: "lock.open.fill")
                         .font(.caption)
                         .foregroundColor(.green)
@@ -285,7 +298,13 @@ struct MenuDashboardView: View {
                     Text("解锁")
                         .font(.caption)
                         .frame(width: 30, alignment: .leading)
+                    Button(action: { sliderUnlock = max(-95, sliderUnlock - 1) }) {
+                        Image(systemName: "minus.circle").font(.caption)
+                    }.buttonStyle(.plain)
                     Slider(value: $sliderUnlock, in: Double(-95)...Double(-30))
+                    Button(action: { sliderUnlock = min(-30, sliderUnlock + 1) }) {
+                        Image(systemName: "plus.circle").font(.caption)
+                    }.buttonStyle(.plain)
                     Text("\(Int(sliderUnlock))")
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 35, alignment: .trailing)
@@ -298,30 +317,28 @@ struct MenuDashboardView: View {
             Button(action: {
                 manager.setLockRSSI(Int(sliderLock))
                 manager.setUnlockRSSI(Int(sliderUnlock))
-                showApplied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showApplied = false }
             }) {
                 HStack {
-                    Image(systemName: showApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-                        .foregroundColor(showApplied ? .green : .accentColor)
-                    Text(showApplied ? "已应用" : "应用阈值")
+                    Image(systemName: isThresholdApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundColor(isThresholdApplied ? .green : .accentColor)
+                    Text(isThresholdApplied ? "已应用" : "应用阈值")
                         .font(.callout)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(showApplied ? 0.15 : 0.1))
+                .background(Color.accentColor.opacity(isThresholdApplied ? 0.15 : 0.1))
                 .cornerRadius(8)
             }
             .buttonStyle(.plain)
 
             .onReceive(manager.$lockRSSI) { newValue in
-                if Int(sliderLock) != newValue {
+                if Int(sliderLock) != newValue && !isSliderDragging {
                     sliderLock = Double(newValue)
                 }
             }
             .onReceive(manager.$unlockRSSI) { newValue in
                 let expected = (newValue == 1 ? -95 : newValue)
-                if Int(sliderUnlock) != expected {
+                if Int(sliderUnlock) != expected && !isSliderDragging {
                     sliderUnlock = Double(expected)
                 }
             }
@@ -347,12 +364,24 @@ struct MenuDashboardView: View {
             divider
             toggleRow("使用屏幕保护程序", isOn: $useScreensaver, icon: "sparkles.tv")
             divider
-            toggleRow("锁定时关闭屏幕", isOn: $sleepDisplay, icon: "display.sleep")
+            toggleRow("锁定时关闭屏幕", isOn: $sleepDisplay, icon: "moon.fill")
+            divider
+            toggleRow("输入活动时暂缓锁定", isOn: $lockOnIdle, icon: "keyboard")
+            divider
+            toggleRow("手动锁屏不自动解锁", isOn: $manualLockNoAutoUnlock, icon: "hand.raised.fill")
             divider
             toggleRow("被动模式", isOn: $passiveMode, icon: "antenna.radiowaves.left.and.right")
                 .onChange(of: passiveMode) { v in fun.setPassiveMode(v) }
             divider
             toggleRow("开机自启动", isOn: $launchAtLogin, icon: "arrow.up.circle")
+                .onChange(of: launchAtLogin) { v in
+                    if #available(macOS 13.0, *) {
+                        do {
+                            if v { try SMAppService.mainApp.register() }
+                            else { try SMAppService.mainApp.unregister() }
+                        } catch { print("SMAppService error: \(error)") }
+                    }
+                }
         }
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
         .cornerRadius(10)
