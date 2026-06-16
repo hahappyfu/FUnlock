@@ -6,9 +6,73 @@ import ServiceManagement
 import UserNotifications
 import SwiftUI
 import Combine
+import CoreBluetooth
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
+}
+
+// MARK: - 权限检查视图
+
+struct PermissionCheckView: View {
+    @State private var accessibilityGranted = false
+    @State private var bluetoothGranted = false
+    @Environment(\.dismiss) private var dismiss
+
+    var allGranted: Bool { accessibilityGranted && bluetoothGranted }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("权限检查").font(.title2.bold())
+            Text("FUnlock 需要以下权限才能正常工作：").foregroundColor(.secondary)
+
+            VStack(spacing: 12) {
+                row("辅助功能", "用于在锁屏界面输入密码", accessibilityGranted) { requestAX() }
+                row("蓝牙", "用于检测设备靠近/远离", bluetoothGranted) { requestBT() }
+            }.padding(.horizontal, 24)
+
+            HStack(spacing: 12) {
+                Button("全部跳过") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(allGranted ? "完成" : "刷新状态") {
+                    refresh()
+                    if allGranted { dismiss() }
+                }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 420).onAppear { refresh() }
+    }
+
+    private func row(_ name: String, _ desc: String, _ granted: Bool, _ action: @escaping () -> Void) -> some View {
+        HStack {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundColor(granted ? .green : .orange).font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.body.bold())
+                Text(desc).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            if !granted { Button("授权") { action() }.buttonStyle(.bordered) }
+        }.padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func refresh() {
+        accessibilityGranted = AXIsProcessTrusted()
+        bluetoothGranted = (CBManager.authorization == .allowedAlways)
+    }
+
+    private func requestAX() {
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        AXIsProcessTrustedWithOptions(opts)
+        openSettings("com.apple.preference.security?Privacy_Accessibility")
+    }
+
+    private func requestBT() {
+        openSettings("com.apple.preference.security?Privacy_Bluetooth")
+    }
+
+    private func openSettings(_ pane: String) {
+        let script = "tell application \"System Settings\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
+        if let s = NSAppleScript(source: script) { var e: NSDictionary?; s.executeAndReturnError(&e) }
+    }
 }
 
 @MainActor
@@ -210,7 +274,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         checkAccessibility()
         FUnlock.checkUpdate()
 
+        // 启动时检查权限
+        showPermissionCheck()
+
         NSApp.setActivationPolicy(.accessory)
+    }
+
+    // MARK: - 权限检查
+
+    private var permissionWindow: NSWindow?
+
+    func showPermissionCheck() {
+        let ax = AXIsProcessTrusted()
+        let bt = (CBManager.authorization == .allowedAlways)
+        guard !ax || !bt else { return }
+
+        let view = PermissionCheckView()
+        let hosting = NSHostingController(rootView: view)
+        let win = NSWindow(contentViewController: hosting)
+        win.title = "FUnlock - 权限检查"
+        win.styleMask = [.titled, .closable]
+        win.contentMinSize = NSSize(width: 420, height: 320)
+        win.isReleasedWhenClosed = false
+        win.center()
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        permissionWindow = win
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {

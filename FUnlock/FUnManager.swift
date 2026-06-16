@@ -196,6 +196,7 @@ final class FUnManager: ObservableObject {
         print("[SM] screensaverStop")
         if state.screen == .screensaver {
             state.screen = .locked(reason: .manual)
+            state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
         }
     }
 
@@ -205,6 +206,7 @@ final class FUnManager: ObservableObject {
         print("[SM] systemScreenLocked")
         state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
         state.screen = .locked(reason: .manual)
+        state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
     }
 
     // MARK: - FUn 设备事件
@@ -434,14 +436,13 @@ final class FUnManager: ObservableObject {
 
     private func lockOrSaveScreen() {
         if prefs.bool(forKey: "screensaver") {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.screensaver.ScreenSaverEngine") {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ScreenSaver.Engine") {
                 let config = NSWorkspace.OpenConfiguration()
                 config.activates = false
                 NSWorkspace.shared.openApplication(at: url, configuration: config)
             }
         } else {
             DispatchQueue.main.async {
-                // 必须真正锁屏，让 isScreenLocked() 返回 true
                 _ = SACLockScreenImmediate()
             }
         }

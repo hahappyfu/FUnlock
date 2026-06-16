@@ -17,7 +17,7 @@ void wakeDisplay(void)
         &preventSleepID);
 
     // 方式3: 通过 IORegistry 直接唤醒显示器
-    io_registry_entry_t reg = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/IOResources/IODisplayWrangler");
+    io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
         IORegistryEntrySetCFProperty(reg, CFSTR("IORequestPowerState"), CFNumberCreate(NULL, kCFNumberIntType, &(int){2}));
         IOObjectRelease(reg);
@@ -26,7 +26,7 @@ void wakeDisplay(void)
 
 void sleepDisplay(void)
 {
-    io_registry_entry_t reg = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/IOResources/IODisplayWrangler");
+    io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
         IORegistryEntrySetCFProperty(reg, CFSTR("IORequestIdle"), kCFBooleanTrue);
         IOObjectRelease(reg);
