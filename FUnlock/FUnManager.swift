@@ -87,6 +87,7 @@ final class FUnManager: ObservableObject {
     // MARK: Dependencies
 
     let fun: FUn
+    var inputMonitor: InputActivityMonitor?
     private let prefs = UserDefaults.standard
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
@@ -204,7 +205,10 @@ final class FUnManager: ObservableObject {
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
         print("[SM] systemScreenLocked")
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
+        let deadline = prefs.bool(forKey: "manualLockNoAutoUnlock")
+            ? Date().addingTimeInterval(86400)  // 24h: 等待手动解锁
+            : Date().addingTimeInterval(60)
+        state.intent = .manualLock(deadline: deadline)
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
     }
@@ -333,6 +337,11 @@ final class FUnManager: ObservableObject {
         if let d = log.data(using: .utf8) { try? d.write(to: URL(fileURLWithPath: "/tmp/funlock_unlock.log")) }
         guard fun.presence else { unlockLog("SKIP: no presence"); return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { unlockLog("SKIP: unlock disabled"); return }
+        // #5: 手动锁屏后不自动解锁
+        if prefs.bool(forKey: "manualLockNoAutoUnlock") && state.intent.isManualLockActive {
+            unlockLog("SKIP: manualLock active, waiting for manual unlock")
+            return
+        }
         if !axGranted { unlockLog("WARN: ax=false, trying anyway") }
 
         // 显示器休眠中 → 先唤醒
@@ -360,6 +369,9 @@ final class FUnManager: ObservableObject {
                 return
             }
             guard let password = fetchPassword(warn: true) else { unlockLog("SKIP: no password"); return }
+
+            // #6: 最后一次检查，防止 0.5s 等待期间指纹解锁
+            guard isScreenLocked() else { unlockLog("SKIP: screen unlocked during wait"); return }
 
             unlockLog("typing password (\(password.count) chars)")
             self.state.unlockedAt = Date()
@@ -446,6 +458,9 @@ final class FUnManager: ObservableObject {
                 _ = SACLockScreenImmediate()
             }
         }
+        if prefs.bool(forKey: "sleepDisplay") {
+            sleepDisplay()
+        }
     }
 
     private func isScreenLocked() -> Bool {
@@ -468,6 +483,11 @@ final class FUnManager: ObservableObject {
         let uniCharCount = string.utf16.count
         var strIndex = string.utf16.startIndex
         for offset in stride(from: 0, to: uniCharCount, by: PER) {
+            // #6: 每批按键前检查屏幕是否仍锁定，防止指纹解锁后输入泄漏到前台 app
+            guard isScreenLocked() else {
+                unlockLog("ABORT: screen unlocked during keystroke injection")
+                return
+            }
             let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
             let len = offset + PER < uniCharCount ? PER : uniCharCount - offset
             let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)

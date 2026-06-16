@@ -7,9 +7,57 @@ import UserNotifications
 import SwiftUI
 import Combine
 import CoreBluetooth
+import IOKit.hid
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
+}
+
+// MARK: - 输入活动监听
+
+class InputActivityMonitor {
+    private var hidManager: IOHIDManager?
+    private(set) var lastInputTime: Date = Date.distantPast
+    var activityWindow: TimeInterval = 30
+
+    var isActive: Bool {
+        Date().timeIntervalSince(lastInputTime) < activityWindow
+    }
+
+    func start() {
+        hidManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(0))
+        guard let hidManager = hidManager else { return }
+        let keyboard: [String: Any] = [
+            kIOHIDDeviceUsagePageKey: 0x01,
+            kIOHIDDeviceUsageKey: 0x06
+        ]
+        let trackpad: [String: Any] = [
+            kIOHIDDeviceUsagePageKey: 0x0D,
+            kIOHIDDeviceUsageKey: 0x04
+        ]
+        IOHIDManagerSetDeviceMatchingMultiple(hidManager, [keyboard, trackpad] as CFArray)
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDManagerRegisterInputValueCallback(hidManager, inputCallback, ctx)
+        IOHIDManagerScheduleWithRunLoop(hidManager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerOpen(hidManager, IOOptionBits(0))
+    }
+
+    func stop() {
+        if let mgr = hidManager {
+            IOHIDManagerClose(mgr, IOOptionBits(0))
+            hidManager = nil
+        }
+    }
+
+    fileprivate func didReceiveInput() { lastInputTime = Date() }
+}
+
+private func inputCallback(_ ctx: UnsafeMutableRawPointer?,
+                            _ result: IOReturn,
+                            _ sender: UnsafeMutableRawPointer?,
+                            _ value: IOHIDValue) {
+    guard let ctx = ctx else { return }
+    Unmanaged<InputActivityMonitor>.fromOpaque(ctx).takeUnretainedValue().didReceiveInput()
 }
 
 // MARK: - 权限检查视图
@@ -89,6 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     let fun = FUn()
     var manager: FUnManager!
+    let inputMonitor = InputActivityMonitor()
     let prefs = UserDefaults.standard
     var cancellables = Set<AnyCancellable>()
 
@@ -129,6 +178,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func bluetoothPowerWarn() {
         manager.errorModal(t("bluetooth_power_warn"))
+    }
+
+    func onDeviceApproached() {
+        manager.onDeviceApproached()
     }
 
     // MARK: - UNUserNotificationCenter
@@ -209,6 +262,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 初始化 manager（此时 ble 已有正确的 UserDefaults 值）
         manager = FUnManager(fun: fun)
         fun.delegate = self
+        manager.inputMonitor = inputMonitor
+        fun.inputMonitor = inputMonitor
+        if prefs.object(forKey: "lockOnIdle") == nil || prefs.bool(forKey: "lockOnIdle") {
+            inputMonitor.start()
+        }
 
         // 恢复已保存的设备
         if let str = prefs.string(forKey: "device"), let uuid = UUID(uuidString: str) {
@@ -273,6 +331,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         checkAccessibility()
         FUnlock.checkUpdate()
+
+        // 启动时同步开机自启动状态
+        if #available(macOS 13.0, *) {
+            let registered = SMAppService.mainApp.status == .enabled
+            prefs.set(registered, forKey: "launchAtLogin")
+        }
 
         // 启动时检查权限
         showPermissionCheck()

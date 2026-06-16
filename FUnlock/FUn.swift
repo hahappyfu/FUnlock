@@ -98,6 +98,7 @@ protocol FUnDelegate {
     func updateRSSI(rssi: Int?, active: Bool)
     func updatePresence(presence: Bool, reason: String)
     func bluetoothPowerWarn()
+    func onDeviceApproached()
 }
 
 class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
@@ -107,6 +108,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
     var delegate: FUnDelegate?
+    weak var inputMonitor: InputActivityMonitor?
     var scanMode = false
     var monitoredUUID: UUID?
     var monitoredUUIDs: Set<UUID> = []
@@ -128,8 +130,22 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     // Kalman filter state
     var kalmanEstimate: Double = -60.0  // initial estimate
     var kalmanP: Double = 1.0           // error covariance
-    let kalmanQ: Double = 0.008         // process noise (small = smooth)
+    let kalmanQ: Double = 0.008         // base process noise
     let kalmanR: Double = 0.5           // measurement noise (BLE RSSI noise)
+    let kalmanAlpha: Double = 0.02      // asymmetric rise sensitivity
+    let kalmanQMax: Double = 0.5        // upper clamp for adaptive Q
+    let kalmanDeadZone: Double = 2.0    // dB: delta < deadZone → symmetric
+    var kalmanSampleCount: Int = 0      // cold start counter
+    // Time decay penalty (Direction 2)
+    let decayRate: Double = 0.5         // dB per second of silence
+    let effectiveRSSIFloor: Double = -100.0
+    var lastReceiveTime: Date = Date()
+    var effectiveRSSI: Double = -60.0
+    // Heartbeat timer (Direction 3)
+    var heartbeatTimer: Timer?
+    // Display-only symmetric filter (decoupled from asymmetric decision filter)
+    var displayRSSI: Double = -60.0
+    let displaySmoothing: Double = 0.1  // EMA alpha: 0.1 = very smooth
     var activeModeTimer : Timer? = nil
     var connectionTimer : Timer? = nil
     var stableCount: Int = 0
@@ -183,6 +199,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         signalLostCount = 0
         kalmanEstimate = -60.0
         kalmanP = 1.0
+        kalmanSampleCount = 0
+        lastReceiveTime = Date()
+        effectiveRSSI = -60.0
+        displayRSSI = -60.0
+        cancelHeartbeat()
         monitoredUUIDs = [uuid]
         devicePresence.removeAll()
 
@@ -266,50 +287,144 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     
     func getEstimatedRSSI(rssi: Int) -> Int {
-        // Kalman filter: predict + update
+        let measurement = Double(rssi)
+        let delta = measurement - kalmanEstimate
+
+        // Direction 1: Asymmetric Kalman — adaptive Q
+        var q = kalmanQ
+        kalmanSampleCount += 1
+        if kalmanSampleCount > 5 && abs(delta) > kalmanDeadZone {
+            if delta > 0 {
+                // Signal rising: increase Q for fast climb
+                let raw = kalmanQ * (1.0 + kalmanAlpha * delta * delta)
+                q = min(raw, kalmanQMax)
+            }
+            // Signal falling: keep base Q (strong damping)
+        }
+
+        // Standard Kalman predict + update
         let predicted = kalmanEstimate
-        let predictedP = kalmanP + kalmanQ
+        let predictedP = kalmanP + q
         let kalmanGain = predictedP / (predictedP + kalmanR)
-        kalmanEstimate = predicted + kalmanGain * (Double(rssi) - predicted)
+        kalmanEstimate = predicted + kalmanGain * (measurement - predicted)
         kalmanP = (1 - kalmanGain) * predictedP
-        // Keep latestRSSIs for buffer limit tracking
-        latestRSSIs.append(Double(rssi))
+
+        latestRSSIs.append(measurement)
         if latestRSSIs.count > latestN { latestRSSIs.removeFirst() }
         return Int(kalmanEstimate)
     }
 
+    // MARK: - Direction 2: Time decay computation
+    func getEffectiveRSSI() -> Double {
+        let elapsed = Date().timeIntervalSince(lastReceiveTime)
+        let penalty = decayRate * elapsed
+        let eff = kalmanEstimate - penalty
+        return max(eff, effectiveRSSIFloor)
+    }
+
+    // MARK: - Direction 3: Heartbeat — proactive lock check
+    private func ensureHeartbeat() {
+        guard heartbeatTimer == nil else { return }
+        // Check every 2s if we should lock even without RSSI packets
+        heartbeatTimer = Timer(timeInterval: 2.0, repeats: true, block: { [weak self] _ in
+            guard let self = self else { return }
+            guard self.presence else {
+                self.heartbeatTimer?.invalidate()
+                self.heartbeatTimer = nil
+                return
+            }
+            let eff = self.getEffectiveRSSI()
+            let threshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            if eff < threshold && self.proximityTimer == nil && self.inputMonitor?.isActive != true {
+                print("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
+                self.startLockTimer()
+            }
+        })
+        RunLoop.main.add(heartbeatTimer!, forMode: .common)
+    }
+
+    private func cancelHeartbeat() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+    }
+
+    // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
+    private func startLockTimer() {
+        let timer = Timer(timeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
+            guard let self = self else { return }
+            // Direction 3: final input check before locking
+            let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
+                || UserDefaults.standard.bool(forKey: "lockOnIdle")
+            if lockOnIdle && self.inputMonitor?.isActive == true {
+                print("[SM] input active at lock timer fire, deferring")
+                self.proximityTimer = nil
+                return
+            }
+            print("Device is away")
+            self.presence = false
+            self.cancelHeartbeat()
+            DispatchQueue.main.async {
+                self.delegate?.updatePresence(presence: false, reason: "away")
+            }
+            self.proximityTimer = nil
+        })
+        RunLoop.main.add(timer, forMode: .common)
+        proximityTimer = timer
+    }
+
     func updateMonitoredPeripheral(_ rssi: Int) {
         let estimated = getEstimatedRSSI(rssi: rssi)
-        if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) && !presence {
-            print("Device is close")
-            presence = true
-            DispatchQueue.main.async {
-                self.delegate?.updatePresence(presence: self.presence, reason: "close")
+
+        // Direction 2: RSSI received → reset decay timer, update effectiveRSSI
+        lastReceiveTime = Date()
+        effectiveRSSI = Double(estimated)
+
+        // Display-only symmetric EMA (stable UI, decoupled from asymmetric decision)
+        displayRSSI = displaySmoothing * Double(rssi) + (1 - displaySmoothing) * displayRSSI
+
+        // Presence check: use raw rssi for fast unlock detection
+        let unlockThreshold = unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI
+        if rssi >= unlockThreshold {
+            if !presence {
+                print("Device is close")
+                presence = true
+                DispatchQueue.main.async {
+                    self.delegate?.updatePresence(presence: true, reason: "close")
+                }
+                latestRSSIs.removeAll()
             }
-            latestRSSIs.removeAll()
+            // Always attempt unlock when signal is strong and screen might be locked
+            DispatchQueue.main.async {
+                self.delegate?.updateRSSI(rssi: Int(self.displayRSSI), active: self.activeModeTimer != nil)
+                self.delegate?.onDeviceApproached()
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.delegate?.updateRSSI(rssi: Int(self.displayRSSI), active: self.activeModeTimer != nil)
+            }
         }
 
-        DispatchQueue.main.async {
-            self.delegate?.updateRSSI(rssi: estimated, active: self.activeModeTimer != nil)
-        }
-
-        if estimated >= (lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) {
+        // Direction 2 + 3: use effectiveRSSI for lock decision
+        let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
+        if effectiveRSSI >= threshold {
+            // Signal strong → cancel any pending lock
             if let timer = proximityTimer {
                 timer.invalidate()
                 proximityTimer = nil
             }
         } else if presence && proximityTimer == nil {
-            let timer = Timer(timeInterval: proximityTimeout, repeats: false, block: { _ in
-                print("Device is away")
-                self.presence = false
-                DispatchQueue.main.async {
-                    self.delegate?.updatePresence(presence: self.presence, reason: "away")
-                }
-                self.proximityTimer = nil
-            })
-            RunLoop.main.add(timer, forMode: .common)
-            proximityTimer = timer
+            // Direction 3: input activity veto — no timer, no locking
+            let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
+                || UserDefaults.standard.bool(forKey: "lockOnIdle")
+            if lockOnIdle && inputMonitor?.isActive == true {
+                print("[SM] input active, rejecting lock signal")
+                // Don't start proximityTimer; heartbeat will catch it later if needed
+            } else {
+                startLockTimer()
+            }
         }
+
+        ensureHeartbeat()
         resetSignalTimer()
     }
 
