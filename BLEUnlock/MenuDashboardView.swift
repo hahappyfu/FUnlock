@@ -20,6 +20,9 @@ struct MenuDashboardView: View {
     @State private var showCalibration = false
     @State private var sliderLock: Double = 0
     @State private var sliderUnlock: Double = 0
+    @State private var showApplied = false
+    @State private var isScanning = false
+    @State private var frozenDevices: [Device] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,7 +97,7 @@ struct MenuDashboardView: View {
                 .background(statusColor.opacity(0.06))
 
             } else {
-                // 未绑定 — 显示扫描列表
+                // 未绑定 — 搜索按钮 + 设备列表
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "antenna.radiowaves.left.and.right")
@@ -102,19 +105,36 @@ struct MenuDashboardView: View {
                         Text("选择要绑定的设备")
                             .font(.headline)
                         Spacer()
-                        ProgressView()
+                        if isScanning {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Button(action: {
+                                isScanning = true
+                                frozenDevices = []
+                                manager.startScanning()
+                                // 3秒后冻结列表
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                    frozenDevices = manager.discoveredDevices.sorted(by: { $0.rssi > $1.rssi })
+                                    isScanning = false
+                                    manager.stopScanning()
+                                }
+                            }) {
+                                Text("开始搜索")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
                             .controlSize(.mini)
-                            .opacity(manager.discoveredDevices.isEmpty ? 1 : 0)
+                        }
                     }
 
-                    if manager.discoveredDevices.isEmpty {
+                    if frozenDevices.isEmpty && !isScanning {
                         HStack {
                             Spacer()
                             VStack(spacing: 6) {
                                 Image(systemName: "magnifyingglass")
                                     .font(.title2)
                                     .foregroundColor(.secondary)
-                                Text("正在扫描附近的 BLE 设备…")
+                                Text("点击「开始搜索」扫描附近设备")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -124,7 +144,7 @@ struct MenuDashboardView: View {
                     } else {
                         ScrollView(.vertical, showsIndicators: true) {
                             VStack(spacing: 4) {
-                                ForEach(manager.discoveredDevices, id: \.uuid) { device in
+                                ForEach(isScanning ? manager.discoveredDevices.sorted(by: { $0.rssi > $1.rssi }) : frozenDevices, id: \.uuid) { device in
                                     DeviceRow(device: device) {
                                         manager.selectDevice(device)
                                     }
@@ -249,8 +269,7 @@ struct MenuDashboardView: View {
                         .font(.caption)
                         .frame(width: 30, alignment: .leading)
                     Slider(value: $sliderLock, in: Double(-95)...Double(-30))
-                        .onChange(of: sliderLock) { manager.setLockRSSI(Int($0)) }
-                    Text("\(manager.lockRSSI)")
+                    Text("\(Int(sliderLock))")
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 35, alignment: .trailing)
                     Text("dBm")
@@ -267,8 +286,7 @@ struct MenuDashboardView: View {
                         .font(.caption)
                         .frame(width: 30, alignment: .leading)
                     Slider(value: $sliderUnlock, in: Double(-95)...Double(-30))
-                        .onChange(of: sliderUnlock) { manager.setUnlockRSSI(Int($0)) }
-                    Text(manager.unlockRSSI == 1 ? "关" : "\(manager.unlockRSSI)")
+                    Text("\(Int(sliderUnlock))")
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 35, alignment: .trailing)
                     Text("dBm")
@@ -276,6 +294,26 @@ struct MenuDashboardView: View {
                         .foregroundColor(.secondary)
                 }
             }
+
+            Button(action: {
+                manager.setLockRSSI(Int(sliderLock))
+                manager.setUnlockRSSI(Int(sliderUnlock))
+                showApplied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showApplied = false }
+            }) {
+                HStack {
+                    Image(systemName: showApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundColor(showApplied ? .green : .accentColor)
+                    Text(showApplied ? "已应用" : "应用阈值")
+                        .font(.callout)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(showApplied ? 0.15 : 0.1))
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+
             .onReceive(manager.$lockRSSI) { newValue in
                 if Int(sliderLock) != newValue {
                     sliderLock = Double(newValue)
