@@ -1,5 +1,5 @@
-"about" = "BLEUnlock について";
-"bluetooth_power_warn" = "Bluetooth がオフになっています。 BLEUnlock を動作させるためにはオンにしてください。";
+"about" = "FUnlock について";
+"bluetooth_power_warn" = "Bluetooth がオフになっています。 FUnlock を動作させるためにはオンにしてください。";
 "cancel" = "キャンセル";
 "closer" = "⬆近い";
 "device" = "デバイス";
@@ -17,7 +17,7 @@
 "minutes" = "分";
 "not_detected" = "信号未検出";
 "notification_device_away" = "デバイスが Mac から離れました";
-"notification_locked" = "Mac は BLEUnlock によってロックされました";
+"notification_locked" = "Mac は FUnlock によってロックされました";
 "notification_lost_signal" = "デバイスからの信号がありません";
 "notification_update_available" = "アップデートが利用可能です";
 "ok" = "OK";
@@ -25,7 +25,7 @@
 "password_info" = "パスワードはキーチェーンに安全に保存されます。";
 "password_not_set" = "パスワードが設定されていません。";
 "pause_now_playing" = "ロック中 \"再生中\" を一時停止";
-"quit" = "BLEUnlock を終了";
+"quit" = "FUnlock を終了";
 "scanning" = "スキャン中…";
 "seconds" = "秒";
 "set_password" = "パスワードを設定…";

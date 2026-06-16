@@ -1,5 +1,5 @@
-"about" = "Über BLEUnlock";
-"bluetooth_power_warn" = "Bluetooth ist ausgeschalten. Muss eingeschalten sein, damit BLEUnlock funktioniert.";
+"about" = "Über FUnlock";
+"bluetooth_power_warn" = "Bluetooth ist ausgeschalten. Muss eingeschalten sein, damit FUnlock funktioniert.";
 "cancel" = "Abbruch";
 "closer" = "⬆näher";
 "device" = "Gerät";
@@ -17,7 +17,7 @@
 "minutes" = "Minuten";
 "not_detected" = "Kein Signal entdeckt";
 "notification_device_away" = "Gerät ist entfernt";
-"notification_locked" = "Dieses Gerät wurde durch BLEUnlock gesperrt";
+"notification_locked" = "Dieses Gerät wurde durch FUnlock gesperrt";
 "notification_lost_signal" = "Signal ging verloren";
 "notification_update_available" = "Update verfügbar";
 "ok" = "OK";
@@ -25,7 +25,7 @@
 "password_info" = "Das Passwort wurde sicher am Schlüsselbund gespeichert.";
 "password_not_set" = "Kein Passwort gesetzt.";
 "pause_now_playing" = "Pause \"Spielt jetzt\" während der Sperre";
-"quit" = "BLEUnlock beenden";
+"quit" = "FUnlock beenden";
 "scanning" = "Scanning";
 "seconds" = "seconds";
 "set_password" = "Passwort setzen…";

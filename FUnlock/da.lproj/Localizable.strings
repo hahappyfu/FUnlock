@@ -1,5 +1,5 @@
-"about" = "Om BLEUnlock";
-"bluetooth_power_warn" = "Bluetooth er slået fra. Du skal slå den til for at få BLEUnlock til at virke.";
+"about" = "Om FUnlock";
+"bluetooth_power_warn" = "Bluetooth er slået fra. Du skal slå den til for at få FUnlock til at virke.";
 "cancel" = "Annuller";
 "closer" = "⬆Nærmere";
 "device" = "Enhed";
@@ -17,7 +17,7 @@
 "minutes" = "minutter";
 "not_detected" = "Signal ikke fundet";
 "notification_device_away" = "Enheden er væk";
-"notification_locked" = "Denne computer er blevet låst af BLEUnlock";
+"notification_locked" = "Denne computer er blevet låst af FUnlock";
 "notification_lost_signal" = "Signalet er tabt";
 "notification_update_available" = "Opdatering er tilgængelig.";
 "ok" = "OK";
@@ -25,7 +25,7 @@
 "password_info" = "Din adgangskode vil blive gemt sikkert i nøglering.";
 "password_not_set" = "Der er ikke indstillet et kodeord.";
 "pause_now_playing" = "Pause \"Afspilning nu\", mens den er låst";
-"quit" = "Afslut BLEUnlock";
+"quit" = "Afslut FUnlock";
 "scanning" = "Scanning…";
 "seconds" = "seconder";
 "set_password" = "Indstil adgangskode…";

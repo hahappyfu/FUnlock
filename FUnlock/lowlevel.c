@@ -6,14 +6,14 @@ void wakeDisplay(void)
 {
     // 方式1: 声明用户活动（可能不足以唤醒深度休眠的显示器）
     static IOPMAssertionID assertionID;
-    IOPMAssertionDeclareUserActivity(CFSTR("BLEUnlock"), kIOPMUserActiveLocal, &assertionID);
+    IOPMAssertionDeclareUserActivity(CFSTR("FUnlock"), kIOPMUserActiveLocal, &assertionID);
 
     // 方式2: 创建强断言强制唤醒显示器
     static IOPMAssertionID preventSleepID;
     IOPMAssertionCreateWithName(
         kIOPMAssertionTypePreventUserIdleDisplaySleep,
         kIOPMAssertionLevelOn,
-        CFSTR("BLEUnlock Wake"),
+        CFSTR("FUnlock Wake"),
         &preventSleepID);
 
     // 方式3: 通过 IORegistry 直接唤醒显示器
