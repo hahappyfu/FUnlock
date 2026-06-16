@@ -1,5 +1,5 @@
-"about" = "BLEUnlock Hakkında";
-"bluetooth_power_warn" = "Bluetooth Kapalı. BLEUnlock çalışması için Bluetooth u açın";
+"about" = "FUnlock Hakkında";
+"bluetooth_power_warn" = "Bluetooth Kapalı. FUnlock çalışması için Bluetooth u açın";
 "cancel" = "İptal";
 "closer" = "⬆Yakın";
 "device" = "Aygıt";
@@ -17,7 +17,7 @@
 "minutes" = "dakika";
 "not_detected" = "Sinyal tespit edilemedi";
 "notification_device_away" = "Aygıt uzakta";
-"notification_locked" = "Bu bilgisayar BLEUnlock tarafından kilitlenmiştir";
+"notification_locked" = "Bu bilgisayar FUnlock tarafından kilitlenmiştir";
 "notification_lost_signal" = "Sinyal kayboldu";
 "notification_update_available" = "Güncelleme var";
 "ok" = "TAMAM";
@@ -25,7 +25,7 @@
 "password_info" = "Şifreniz güvenli bir şekilde anahtar zincirinde saklanacaktır.";
 "password_not_set" = "Şifre belirlenmedi.";
 "pause_now_playing" = "Kilitliyken \"Now Playing\" beklet";
-"quit" = "BLEUnlock'tan çıkış";
+"quit" = "FUnlock'tan çıkış";
 "scanning" = "Taranıyor…";
 "seconds" = "saniye";
 "set_password" = "Şifre belirle…";

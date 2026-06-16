@@ -1,5 +1,5 @@
-"about" = "About BLEUnlock";
-"bluetooth_power_warn" = "Bluetooth is turned off. For BLEUnlock to work, turn it on.";
+"about" = "About FUnlock";
+"bluetooth_power_warn" = "Bluetooth is turned off. For FUnlock to work, turn it on.";
 "cancel" = "Cancel";
 "closer" = "⬆Closer";
 "device" = "Device";
@@ -18,7 +18,7 @@
 "minutes" = "minutes";
 "not_detected" = "Signal not detected";
 "notification_device_away" = "Device is away";
-"notification_locked" = "This computer has been locked by BLEUnlock";
+"notification_locked" = "This computer has been locked by FUnlock";
 "notification_lost_signal" = "Signal is lost";
 "notification_update_available" = "Update is available.";
 "ok" = "OK";
@@ -29,7 +29,7 @@
 "password_info" = "Your password will be securely stored in Keychain.";
 "password_not_set" = "Password is not set.";
 "pause_now_playing" = "Pause \"Now Playing\" while Locked";
-"quit" = "Quit BLEUnlock";
+"quit" = "Quit FUnlock";
 "scanning" = "Scanning…";
 "seconds" = "seconds";
 "set_password" = "Set Password…";

@@ -363,7 +363,7 @@ struct MenuDashboardView: View {
             Button(action: { NSApp.orderFrontStandardAboutPanel(nil) }) {
                 HStack {
                     Image(systemName: "info.circle").frame(width: 20)
-                    Text("关于 BLEUnlock").font(.callout)
+                    Text("关于 FUnlock").font(.callout)
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
                 }

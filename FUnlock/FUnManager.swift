@@ -546,7 +546,7 @@ final class FUnManager: ObservableObject {
         if reason == "lost" { content.subtitle = t("notification_lost_signal") }
         else if reason == "away" { content.subtitle = t("notification_device_away") }
         content.body = t("notification_locked")
-        let req = UNNotificationRequest(identifier: "bleunlock-lock", content: content, trigger: nil)
+        let req = UNNotificationRequest(identifier: "funlock-lock", content: content, trigger: nil)
         userNotificationId = req.identifier
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }

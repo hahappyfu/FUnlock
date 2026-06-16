@@ -1,5 +1,5 @@
-"about" = "Om BLEUnlock";
-"bluetooth_power_warn" = "Bluetooth är avstängt. För att BLEUnlock ska fungera måste du slå på det.";
+"about" = "Om FUnlock";
+"bluetooth_power_warn" = "Bluetooth är avstängt. För att FUnlock ska fungera måste du slå på det.";
 "cancel" = "Avbryta";
 "closer" = "⬆Närmare";
 "device" = "Enhet";
@@ -17,7 +17,7 @@
 "minutes" = "minuter";
 "not_detected" = "Ingen enhet upptäcktes";
 "notification_device_away" = "Enheten är borta";
-"notification_locked" = "Den här datorn har låsts av BLEUnlock";
+"notification_locked" = "Den här datorn har låsts av FUnlock";
 "notification_lost_signal" = "Signalen är förlorad";
 "notification_update_available" = "En updatering finns tillgänglig.";
 "ok" = "OK";
@@ -25,7 +25,7 @@
 "password_info" = "Ditt lösenord lagras säkert i nyckelringen.";
 "password_not_set" = "Inget lösenordet har angetts.";
 "pause_now_playing" = "Pausa \"Spela nu\" när låst";
-"quit" = "Avsluta BLEUnlock";
+"quit" = "Avsluta FUnlock";
 "scanning" = "Skannar…";
 "seconds" = "sekunder";
 "set_password" = "Ange lösenord…";

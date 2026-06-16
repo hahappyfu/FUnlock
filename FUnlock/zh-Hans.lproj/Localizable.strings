@@ -1,5 +1,5 @@
-"about" = "关于BLEUnlock";
-"bluetooth_power_warn" = "蓝牙已关闭。要使BLEUnlock正常工作，请将其打开。";
+"about" = "关于FUnlock";
+"bluetooth_power_warn" = "蓝牙已关闭。要使FUnlock正常工作，请将其打开。";
 "cancel" = "取消";
 "closer" = "⬆接近";
 "device" = "设备列表";
@@ -18,7 +18,7 @@
 "minutes" = "分钟";
 "not_detected" = "未检测到信息";
 "notification_device_away" = "设备掉线";
-"notification_locked" = "本电脑已被BLEUnlock锁定";
+"notification_locked" = "本电脑已被FUnlock锁定";
 "notification_lost_signal" = "信号丢失";
 "notification_update_available" = "发现新版本。";
 "ok" = "确定";
@@ -29,7 +29,7 @@
 "password_info" = "您的密码将安全地存储在钥匙串中。";
 "password_not_set" = "密码未设置。";
 "pause_now_playing" = "锁定时暂停\"播放中\"";
-"quit" = "退出BLEUnlock";
+"quit" = "退出FUnlock";
 "scanning" = "扫描中…";
 "seconds" = "秒钟";
 "set_password" = "设置密码…";

@@ -49,6 +49,6 @@ private func notify() {
     let content = UNMutableNotificationContent()
     content.title = "FUnlock"
     content.subtitle = t("notification_update_available")
-    let req = UNNotificationRequest(identifier: "bleunlock-update", content: content, trigger: nil)
+    let req = UNNotificationRequest(identifier: "funlock-update", content: content, trigger: nil)
     UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
 }
