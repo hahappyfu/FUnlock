@@ -5,7 +5,6 @@ import SwiftUI
 import Combine
 import ServiceManagement
 
-@available(macOS 12.0, *)
 struct MenuDashboardView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn

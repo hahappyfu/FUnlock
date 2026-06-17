@@ -2,6 +2,158 @@ import Foundation
 import CoreBluetooth
 import Combine
 
+// MARK: - 信号处理管道类型
+
+struct SignalDecision: Equatable {
+    let kalmanEstimate: Double
+    let effectiveRSSI: Double
+    let slope: Double
+    let isAnomalous: Bool
+    let sourceWeight: Double
+}
+
+enum SignalSource { case scanning, connected }
+
+// MARK: - 管道状态容器
+
+struct SignalPipeline {
+    var kalmanEstimate: Double = -60.0
+    var kalmanP: Double = 1.0
+    var kalmanSampleCount: Int = 0
+    var smoothedSlope: Double = 0.0
+    var latestRSSIs: [Double] = []
+    var rssiTimestamps: [Date] = []
+    let windowDuration: TimeInterval = 1.5
+
+    // Kalman 参数
+    private let kalmanQ: Double = 0.008
+    private let kalmanR: Double = 0.5
+    private let kalmanAlpha: Double = 0.02
+    private let kalmanQMax: Double = 0.5
+    private let kalmanDeadZone: Double = 2.0
+    private let betaSlope: Double = 0.1
+    private let gammaAnomaly: Double = 1.5
+
+    // 衰减参数
+    private let decayRate: Double = 0.5
+    private let effectiveRSSIFloor: Double = -100.0
+    private let slopeFactor: Double = 0.3
+    private let inactivityFactor: Double = 0.05
+    private let slopeSwitchThreshold: Double = 2.0
+
+    // IQR 参数
+    private let iqrMultiplier: Double = 2.0
+
+    // EWLR 参数
+    private let ewlrLambda: Double = 0.4
+    private let slopeEmaAlpha: Double = 0.3
+
+    mutating func process(rssi: Int, source: SignalSource, now: Date) -> SignalDecision {
+        // S0: 源标记
+        let sourceWeight: Double = source == .connected ? 1.0 : 0.7
+
+        // S1: IQR 异常检测
+        let isAnomalous = applyIQR(window: latestRSSIs, rssi: Double(rssi))
+
+        // S2: EWLR 斜率
+        let rawSlope = computeSlopeEWLR(rssis: latestRSSIs, timestamps: rssiTimestamps, now: now)
+        let slope = slopeEmaAlpha * rawSlope + (1 - slopeEmaAlpha) * smoothedSlope
+        smoothedSlope = slope
+
+        // S3: Kalman
+        let estimate = computeKalman(rssi: rssi, slope: slope, isAnomalous: isAnomalous)
+
+        // S4: 自适应衰减
+        // elapsed 基于 rssiTimestamps.last（上一次 BLE 样本时间），新样本尚未 append
+        let elapsed = now.timeIntervalSince(rssiTimestamps.last ?? now)
+        let adaptiveRate: Double
+        if abs(slope) > slopeSwitchThreshold {
+            adaptiveRate = decayRate * (1 + slopeFactor * abs(slope))
+        } else {
+            adaptiveRate = decayRate / (1 + inactivityFactor * max(elapsed, 0))
+        }
+        let penalty = adaptiveRate * elapsed
+        let effective = max(estimate - penalty, effectiveRSSIFloor)
+
+        return SignalDecision(
+            kalmanEstimate: estimate,
+            effectiveRSSI: effective,
+            slope: slope,
+            isAnomalous: isAnomalous,
+            sourceWeight: sourceWeight
+        )
+    }
+
+    private func applyIQR(window: [Double], rssi: Double) -> Bool {
+        guard window.count >= 5 else { return false }
+        let sorted = window.sorted()
+        let n = sorted.count
+        let q1 = sorted[n / 4]
+        let q3 = sorted[3 * n / 4]
+        let iqr = q3 - q1
+        return abs(rssi - (q1 + q3) / 2.0) > iqrMultiplier * iqr
+    }
+
+    private func computeSlopeEWLR(rssis: [Double], timestamps: [Date], now: Date) -> Double {
+        let cutoff = now.addingTimeInterval(-windowDuration)
+        var sumW: Double = 0
+        var sumWT: Double = 0
+        var sumWR: Double = 0
+        var sumWTR: Double = 0
+        var sumWT2: Double = 0
+        for i in rssis.indices {
+            let t = timestamps[i]
+            guard t >= cutoff else { continue }
+            let dt = now.timeIntervalSince(t)
+            let w = exp(-ewlrLambda * dt)
+            let r = rssis[i]
+            sumW += w
+            sumWT += w * dt
+            sumWR += w * r
+            sumWTR += w * dt * r
+            sumWT2 += w * dt * dt
+        }
+        guard sumW > 1 else { return 0 }
+        let denom = sumW * sumWT2 - sumWT * sumWT
+        guard abs(denom) > 1e-6 else { return 0 }
+        let slope = -(sumW * sumWTR - sumWT * sumWR) / denom
+        return max(min(slope, 30), -30)
+    }
+
+    private mutating func computeKalman(rssi: Int, slope: Double, isAnomalous: Bool) -> Double {
+        let measurement = Double(rssi)
+        let delta = measurement - kalmanEstimate
+        var q = kalmanQ
+        kalmanSampleCount += 1
+        if kalmanSampleCount > 5 && abs(delta) > kalmanDeadZone {
+            if delta > 0 {
+                let baseTerm = 1.0 + kalmanAlpha * pow(abs(delta), 1.5)
+                let slopeTerm = slope > 0 ? betaSlope * slope : 0.0
+                let anomTerm = isAnomalous ? gammaAnomaly : 0
+                q = kalmanQ * (baseTerm + slopeTerm + anomTerm)
+            } else {
+                let anomTerm = isAnomalous ? gammaAnomaly : 0
+                q = kalmanQ * (1.0 + anomTerm)
+            }
+            q = min(q, kalmanQMax)
+        }
+        let predictedP = kalmanP + q
+        let kalmanGain = predictedP / (predictedP + kalmanR)
+        kalmanEstimate = kalmanEstimate + kalmanGain * (measurement - kalmanEstimate)
+        kalmanP = (1 - kalmanGain) * predictedP
+        return kalmanEstimate
+    }
+
+    mutating func reset() {
+        kalmanEstimate = -60.0
+        kalmanP = 1.0
+        kalmanSampleCount = 0
+        smoothedSlope = 0.0
+        latestRSSIs.removeAll()
+        rssiTimestamps.removeAll()
+    }
+}
+
 let DeviceInformation = CBUUID(string:"180A")
 let ManufacturerName = CBUUID(string:"2A29")
 let ModelName = CBUUID(string:"2A24")
@@ -125,27 +277,13 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var powerWarn = true
     var passiveMode = false
     var thresholdRSSI = -90
-    var latestRSSIs: [Double] = []
-    var latestN: Int = 5
-    // Kalman filter state
-    var kalmanEstimate: Double = -60.0  // initial estimate
-    var kalmanP: Double = 1.0           // error covariance
-    let kalmanQ: Double = 0.008         // base process noise
-    let kalmanR: Double = 0.5           // measurement noise (BLE RSSI noise)
-    let kalmanAlpha: Double = 0.02      // asymmetric rise sensitivity
-    let kalmanQMax: Double = 0.5        // upper clamp for adaptive Q
-    let kalmanDeadZone: Double = 2.0    // dB: delta < deadZone → symmetric
-    var kalmanSampleCount: Int = 0      // cold start counter
-    // Time decay penalty (Direction 2)
-    let decayRate: Double = 0.5         // dB per second of silence
-    let effectiveRSSIFloor: Double = -100.0
-    var lastReceiveTime: Date = Date()
+    // 管道状态 (替代旧的散装字段)
+    var pipeline = SignalPipeline()
     var effectiveRSSI: Double = -60.0
-    // Heartbeat timer (Direction 3)
-    var heartbeatTimer: Timer?
-    // Display-only symmetric filter (decoupled from asymmetric decision filter)
     var displayRSSI: Double = -60.0
-    let displaySmoothing: Double = 0.1  // EMA alpha: 0.1 = very smooth
+    var lastReceiveTime: Date = Date()
+    // Heartbeat timer (独立状态机，不在管道内)
+    var heartbeatTimer: Timer?
     var activeModeTimer : Timer? = nil
     var connectionTimer : Timer? = nil
     var stableCount: Int = 0
@@ -188,18 +326,19 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         monitoredUUID = uuid
         scanMode = true
         proximityTimer?.invalidate()
+        proximityTimer = nil
         resetSignalTimer()
         presence = true
         monitoredPeripheral = nil
         activeModeTimer?.invalidate()
         activeModeTimer = nil
+        connectionTimer?.invalidate()
+        connectionTimer = nil
         stableCount = 0
         activePollInterval = 2.0
         lastEstimatedRSSI = 0
         signalLostCount = 0
-        kalmanEstimate = -60.0
-        kalmanP = 1.0
-        kalmanSampleCount = 0
+        pipeline.reset()
         lastReceiveTime = Date()
         effectiveRSSI = -60.0
         displayRSSI = -60.0
@@ -286,40 +425,18 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
     
-    func getEstimatedRSSI(rssi: Int) -> Int {
-        let measurement = Double(rssi)
-        let delta = measurement - kalmanEstimate
-
-        // Direction 1: Asymmetric Kalman — adaptive Q
-        var q = kalmanQ
-        kalmanSampleCount += 1
-        if kalmanSampleCount > 5 && abs(delta) > kalmanDeadZone {
-            if delta > 0 {
-                // Signal rising: increase Q for fast climb
-                let raw = kalmanQ * (1.0 + kalmanAlpha * delta * delta)
-                q = min(raw, kalmanQMax)
-            }
-            // Signal falling: keep base Q (strong damping)
-        }
-
-        // Standard Kalman predict + update
-        let predicted = kalmanEstimate
-        let predictedP = kalmanP + q
-        let kalmanGain = predictedP / (predictedP + kalmanR)
-        kalmanEstimate = predicted + kalmanGain * (measurement - predicted)
-        kalmanP = (1 - kalmanGain) * predictedP
-
-        latestRSSIs.append(measurement)
-        if latestRSSIs.count > latestN { latestRSSIs.removeFirst() }
-        return Int(kalmanEstimate)
-    }
-
-    // MARK: - Direction 2: Time decay computation
+    // MARK: - Time decay computation (heartbeat fallback, reads self.effectiveRSSI)
     func getEffectiveRSSI() -> Double {
         let elapsed = Date().timeIntervalSince(lastReceiveTime)
-        let penalty = decayRate * elapsed
-        let eff = kalmanEstimate - penalty
-        return max(eff, effectiveRSSIFloor)
+        // 使用管道相同的自适应衰减率（heartbeat 读取时的增量惩罚）
+        let rate: Double
+        if abs(pipeline.smoothedSlope) > 2.0 {
+            rate = 0.5 * (1 + 0.3 * abs(pipeline.smoothedSlope))
+        } else {
+            rate = 0.5 / (1 + 0.05 * elapsed)
+        }
+        let eff = self.effectiveRSSI - rate * elapsed
+        return max(eff, -100.0)
     }
 
     // MARK: - Direction 3: Heartbeat — proactive lock check
@@ -373,14 +490,25 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func updateMonitoredPeripheral(_ rssi: Int) {
-        let estimated = getEstimatedRSSI(rssi: rssi)
+        let now = Date()
+        let source: SignalSource = (activeModeTimer != nil) ? .connected : .scanning
+        let decision = pipeline.process(rssi: rssi, source: source, now: now)
 
-        // Direction 2: RSSI received → reset decay timer, update effectiveRSSI
-        lastReceiveTime = Date()
-        effectiveRSSI = Double(estimated)
+        // 维护窗口
+        pipeline.latestRSSIs.append(Double(rssi))
+        pipeline.rssiTimestamps.append(now)
+        let cutoff = now.addingTimeInterval(-pipeline.windowDuration)
+        while let first = pipeline.rssiTimestamps.first, first < cutoff {
+            pipeline.rssiTimestamps.removeFirst()
+            pipeline.latestRSSIs.removeFirst()
+        }
 
-        // Display-only symmetric EMA (stable UI, decoupled from asymmetric decision)
-        displayRSSI = displaySmoothing * Double(rssi) + (1 - displaySmoothing) * displayRSSI
+        // 更新有效 RSSI（来自管道 S4 自适应衰减）
+        lastReceiveTime = now
+        effectiveRSSI = decision.effectiveRSSI
+
+        // displayRSSI: raw RSSI EMA（在管道 process 中已计算，这里用旧路径保持兼容）
+        displayRSSI = 0.1 * Double(rssi) + 0.9 * displayRSSI
 
         // Presence check: use raw rssi for fast unlock detection
         let unlockThreshold = unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI
@@ -391,7 +519,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 DispatchQueue.main.async {
                     self.delegate?.updatePresence(presence: true, reason: "close")
                 }
-                latestRSSIs.removeAll()
+                pipeline.latestRSSIs.removeAll()
+                pipeline.rssiTimestamps.removeAll()
             }
             // Always attempt unlock when signal is strong and screen might be locked
             DispatchQueue.main.async {
@@ -577,8 +706,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         lastReadAt = Date().timeIntervalSince1970
 
         // Track RSSI stability for adaptive polling
-        let fluctuation = abs(kalmanEstimate - Double(lastEstimatedRSSI))
-        lastEstimatedRSSI = Int(kalmanEstimate)
+        let fluctuation = abs(pipeline.kalmanEstimate - Double(lastEstimatedRSSI))
+        lastEstimatedRSSI = Int(pipeline.kalmanEstimate)
         if fluctuation < 5 {
             stableCount += 1
         } else {

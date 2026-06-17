@@ -4,6 +4,7 @@
 
 void sleepDisplay(void);
 void wakeDisplay(void);
+void releaseWakeAssertion(void);
 int SACLockScreenImmediate(void);
 
 #endif /* lowlevel_h */

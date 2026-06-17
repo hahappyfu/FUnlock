@@ -8,6 +8,7 @@ import SwiftUI
 import Combine
 import CoreBluetooth
 import IOKit.hid
+import os.lock
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
@@ -17,8 +18,15 @@ func t(_ key: String) -> String {
 
 class InputActivityMonitor {
     private var hidManager: IOHIDManager?
-    private(set) var lastInputTime: Date = Date.distantPast
+    private var _lastInputTime: Date = Date.distantPast
+    private var lock = os_unfair_lock()
     var activityWindow: TimeInterval = 30
+
+    var lastInputTime: Date {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        return _lastInputTime
+    }
 
     var isActive: Bool {
         Date().timeIntervalSince(lastInputTime) < activityWindow
@@ -49,7 +57,11 @@ class InputActivityMonitor {
         }
     }
 
-    fileprivate func didReceiveInput() { lastInputTime = Date() }
+    fileprivate func didReceiveInput() {
+        os_unfair_lock_lock(&lock)
+        _lastInputTime = Date()
+        os_unfair_lock_unlock(&lock)
+    }
 }
 
 private func inputCallback(_ ctx: UnsafeMutableRawPointer?,
@@ -124,7 +136,7 @@ struct PermissionCheckView: View {
 }
 
 @MainActor
-@NSApplicationMain
+@main
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
 
     // MARK: - UI 组件
@@ -139,7 +151,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var manager: FUnManager!
     let inputMonitor = InputActivityMonitor()
     let prefs = UserDefaults.standard
-    var cancellables = Set<AnyCancellable>()
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - FUnDelegate（UI 更新 + 转发设备事件）
 
@@ -185,8 +197,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     // MARK: - UNUserNotificationCenter
-
-    func userNotificationCenter(_ center: NSUserNotificationCenter, shouldPresent notification: NSUserNotification) -> Bool { true }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) -> UNNotificationPresentationOptions {
         return [.alert, .sound]
@@ -300,18 +310,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
-        // 转发系统通知 → BluetoothManager
+        // 转发系统通知 → FUnManager
         let nc = NSWorkspace.shared.notificationCenter
-        nc.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.manager.onDisplaySleep() }
-        nc.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.manager.onDisplayWake() }
-        nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.manager.onSystemSleep() }
-        nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.manager.onSystemWake() }
+        nc.publisher(for: NSWorkspace.screensDidSleepNotification)
+            .sink { [weak self] _ in self?.manager.onDisplaySleep() }
+            .store(in: &cancellables)
+        nc.publisher(for: NSWorkspace.screensDidWakeNotification)
+            .sink { [weak self] _ in self?.manager.onDisplayWake() }
+            .store(in: &cancellables)
+        nc.publisher(for: NSWorkspace.willSleepNotification)
+            .sink { [weak self] _ in self?.manager.onSystemSleep() }
+            .store(in: &cancellables)
+        nc.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in self?.manager.onSystemWake() }
+            .store(in: &cancellables)
 
         let dnc = DistributedNotificationCenter.default
-        dnc.addObserver(forName: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in self?.manager.onUnlock() }
-        dnc.addObserver(forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.manager.onSystemScreenLocked() }
-        dnc.addObserver(forName: NSNotification.Name("com.apple.screensaver.didstart"), object: nil, queue: .main) { [weak self] _ in self?.manager.onScreensaverStart() }
-        dnc.addObserver(forName: NSNotification.Name("com.apple.screensaver.didstop"), object: nil, queue: .main) { [weak self] _ in self?.manager.onScreensaverStop() }
+        dnc.publisher(for: NSNotification.Name("com.apple.screenIsUnlocked"))
+            .sink { [weak self] _ in self?.manager.onUnlock() }
+            .store(in: &cancellables)
+        dnc.publisher(for: NSNotification.Name("com.apple.screenIsLocked"))
+            .sink { [weak self] _ in self?.manager.onSystemScreenLocked() }
+            .store(in: &cancellables)
+        dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstart"))
+            .sink { [weak self] _ in self?.manager.onScreensaverStart() }
+            .store(in: &cancellables)
+        dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstop"))
+            .sink { [weak self] _ in self?.manager.onScreensaverStop() }
+            .store(in: &cancellables)
 
         // 首次引导
         if !prefs.bool(forKey: "hasShownGuide") {
@@ -367,8 +393,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
-        DistributedNotificationCenter.default.removeObserver(self)
+        cancellables.removeAll()
         manager?.cleanup()
     }
 }
