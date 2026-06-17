@@ -3,7 +3,6 @@
 
 import SwiftUI
 
-@available(macOS 12.0, *)
 struct CalibrationWizardView: View {
     @ObservedObject var manager: FUnManager
     @Binding var isPresented: Bool

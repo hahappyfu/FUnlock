@@ -95,7 +95,6 @@ final class FUnManager: ObservableObject {
     private var intrudeCheckTask: Task<Void, Never>?
     private var userNotificationId = ""
     private var displayWakeRequested = false
-    private var cancellables = Set<AnyCancellable>()
 
     // MARK: Init
 
@@ -103,6 +102,12 @@ final class FUnManager: ObservableObject {
         self.fun = fun
         self.lockRSSI = fun.lockRSSI
         self.unlockRSSI = fun.unlockRSSI
+    }
+
+    deinit {
+        wakeTask?.cancel()
+        unlockTask?.cancel()
+        intrudeCheckTask?.cancel()
     }
 
     // MARK: - 阈值同步
@@ -135,11 +140,13 @@ final class FUnManager: ObservableObject {
 
     func onDisplaySleep() {
         print("[SM] displaySleep")
+        unlockLog("EVENT: onDisplaySleep screen=\(state.screen) system=\(state.system)")
         state.screen = .displaySleeping
     }
 
     func onDisplayWake() {
         print("[SM] displayWake")
+        unlockLog("EVENT: onDisplayWake screen=\(state.screen) system=\(state.system)")
         state.wake = .succeeded
         wakeTask?.cancel()
         wakeTask = nil
@@ -222,6 +229,20 @@ final class FUnManager: ObservableObject {
     }
 
     // MARK: - FUn 设备事件
+
+    // MARK: 多设备投票共识
+    // 简化实现：单设备直接返回 isScreenLocked()，多设备看 devicePresence 聚合结果。
+    // 完整版应基于各设备独立 Kalman 滤波 + effectiveRSSI 阈值加权投票，
+    // 但当前 FUn 架构为单 pipeline 单例，需重构后才能支持。
+    func consensusDecision() -> Bool {
+        guard fun.monitoredUUIDs.count > 1 else { return isScreenLocked() }
+        let anyPresent = fun.devicePresence.values.contains(true)
+        if anyPresent {
+            return false  // 有设备近 → 保持解锁
+        }
+        // 所有设备都远离 → 锁定
+        return true
+    }
 
     func onDeviceApproached() {
         guard prefs.bool(forKey: "enabled") else { return }
@@ -371,13 +392,14 @@ final class FUnManager: ObservableObject {
         guard !prefs.bool(forKey: "wakeWithoutUnlocking") else { unlockLog("SKIP: wakeWithoutUnlocking"); return }
         guard state.screen != .displaySleeping else { unlockLog("SKIP: still displaySleeping"); return }
 
-        // 优化 1: 条件等待 — 屏幕已锁定等 0.3s，显示器休眠等 0.5s
-        let delay = state.screen == .displaySleeping ? 500_000_000 : 300_000_000
+        // 屏幕已锁定等 0.3s
+        let delay: UInt64 = 300_000_000
         unlockTask?.cancel()
         unlockTask = Task {
-            unlockLog("Task started, sleeping \(delay / 1_000_000)ms")
+            unlockLog("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(isScreenLocked())")
             try? await Task.sleep(nanoseconds: UInt64(delay))
-            guard !Task.isCancelled else { unlockLog("Task cancelled after sleep"); return }
+            guard !Task.isCancelled else { unlockLog("unlockTask CANCELLED after sleep"); return }
+            unlockLog("unlockTask WOKE — isScreenLocked=\(isScreenLocked())")
             tryUnlock()
         }
     }
@@ -400,7 +422,7 @@ final class FUnManager: ObservableObject {
         unlockLog("typing password (\(password.count) chars)")
         self.state.unlockedAt = Date()
         fakeKeyStrokes(password)
-        unlockLog("fakeKeyStrokes done")
+        unlockLog("fakeKeyStrokes done — Return key posted")
         playNowPlaying()
         runScript("unlocked")
         logEvent("unlocked")
@@ -426,18 +448,15 @@ final class FUnManager: ObservableObject {
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !isScreenLocked() {
                     state.wake = .succeeded
-                    DispatchQueue.main.async { [weak self] in
-                        self?.attemptAutoUnlock()
-                    }
+                    releaseWakeAssertion()
+                    self.attemptAutoUnlock()
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
-            // wake 完成后尝试解锁（原始逻辑：onDisplayWake 会调 tryUnlockScreen）
-            DispatchQueue.main.async { [weak self] in
-                self?.attemptAutoUnlock()
-            }
+            releaseWakeAssertion()
+            self.attemptAutoUnlock()
         }
     }
 
@@ -477,9 +496,7 @@ final class FUnManager: ObservableObject {
                 NSWorkspace.shared.openApplication(at: url, configuration: config)
             }
         } else {
-            DispatchQueue.main.async {
-                _ = SACLockScreenImmediate()
-            }
+            _ = SACLockScreenImmediate()
         }
         if prefs.bool(forKey: "sleepDisplay") {
             sleepDisplay()
@@ -487,10 +504,16 @@ final class FUnManager: ObservableObject {
     }
 
     private func isScreenLocked() -> Bool {
+        // 优先用 CGSession 检测系统原生锁屏
         if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-            return dict["CGSSessionScreenIsLocked"] as? Int == 1
+            if dict["CGSSessionScreenIsLocked"] as? Int == 1 { return true }
         }
-        return false
+        // CGSession 不覆盖屏幕保护程序，用进程检测兜底
+        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").count > 0 {
+            return true
+        }
+        // 最终兜底：状态机知道屏幕是否锁着（覆盖 Cmd+Ctrl+Q 等所有场景）
+        return state.screen != .unlocked
     }
 
     // MARK: - 键盘模拟
@@ -551,7 +574,7 @@ final class FUnManager: ObservableObject {
     // MARK: - Keychain
 
     func storePassword(_ password: String) {
-        let pw = password.data(using: .utf8)!
+        guard let pw = password.data(using: .utf8) else { return }
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
@@ -574,7 +597,7 @@ final class FUnManager: ObservableObject {
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
             String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
-            String(kSecReturnData): kCFBooleanTrue!,
+            String(kSecReturnData): true as CFBoolean,
             String(kSecMatchLimit): kSecMatchLimitOne,
         ]
         var item: AnyObject?
@@ -592,7 +615,7 @@ final class FUnManager: ObservableObject {
             errorModal(t("failed_convert_password"))
             return nil
         }
-        return String(data: data, encoding: .utf8)!
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: - 通知
@@ -665,6 +688,9 @@ final class FUnManager: ObservableObject {
         fun.activeModeTimer = nil
         fun.connectionTimer?.invalidate()
         fun.connectionTimer = nil
+        fun.heartbeatTimer?.invalidate()
+        fun.heartbeatTimer = nil
+        releaseWakeAssertion()
         wakeTask?.cancel()
         unlockTask?.cancel()
         intrudeCheckTask?.cancel()
