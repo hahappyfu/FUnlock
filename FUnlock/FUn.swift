@@ -382,7 +382,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func resetSignalTimer() {
         signalTimer?.invalidate()
-        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
+        let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
             self.signalLostCount += 1
             if self.signalLostCount >= 3 {
@@ -397,9 +397,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 DispatchQueue.main.async { self.resetSignalTimer() }
             }
         })
-        if let timer = signalTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        RunLoop.main.add(timer, forMode: .common)
+        signalTimer = timer
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -560,7 +559,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func resetScanTimer(device: Device) {
         device.scanTimer?.invalidate()
-        device.scanTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
+        let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             DispatchQueue.main.async {
                 self?.delegate?.removeDevice(device: device)
             }
@@ -569,9 +568,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             self?.devices.removeValue(forKey: device.uuid)
         })
-        if let timer = device.scanTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        RunLoop.main.add(timer, forMode: .common)
+        device.scanTimer = timer
     }
 
     func connectMonitoredPeripheral() {
@@ -585,13 +583,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         print("Connecting")
         centralMgr.connect(p, options: nil)
         connectionTimer?.invalidate()
-        connectionTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false, block: { [weak self] _ in
+        let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] _ in
             if p.state == .connecting {
                 print("Connection timeout")
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
         })
-        RunLoop.main.add(connectionTimer!, forMode: .common)
+        RunLoop.main.add(connTimer, forMode: .common)
+        connectionTimer = connTimer
     }
 
     private func restartActiveModeTimer(peripheral: CBPeripheral) {
