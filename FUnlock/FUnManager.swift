@@ -416,8 +416,8 @@ final class FUnManager: ObservableObject {
         }
         guard let password = fetchPassword(warn: true) else { unlockLog("SKIP: no password"); return }
 
-        // #6: 最后一次检查，防止等待期间指纹解锁
-        guard isScreenLocked() else { unlockLog("SKIP: screen unlocked during wait"); return }
+        // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
+        guard isSecureToInject() else { unlockLog("SKIP: screen no longer secure for injection"); return }
 
         unlockLog("typing password (\(password.count) chars)")
         self.state.unlockedAt = Date()
@@ -516,6 +516,19 @@ final class FUnManager: ObservableObject {
         return state.screen != .unlocked
     }
 
+    /// 双重安全检查：确保密码注入时屏幕确实锁定且前台是 loginwindow
+    private func isSecureToInject() -> Bool {
+        // 检查1: 系统锁屏状态
+        guard isScreenLocked() else { return false }
+        // 检查2: 前台应用必须是 loginwindow
+        if let frontApp = NSWorkspace.shared.frontmostApplication,
+           frontApp.bundleIdentifier != "com.apple.loginwindow" {
+            unlockLog("ABORT: frontmost=\(frontApp.bundleIdentifier ?? "nil"), not loginwindow")
+            return false
+        }
+        return true
+    }
+
     // MARK: - 键盘模拟
 
     private func fakeKeyStrokes(_ string: String) {
@@ -525,17 +538,16 @@ final class FUnManager: ObservableObject {
 
     private func fakeKeyStrokesCGEvent(_ string: String) {
         let src = CGEventSource(stateID: .hidSystemState)
-        let PER = 20
         let uniCharCount = string.utf16.count
         var strIndex = string.utf16.startIndex
-        for offset in stride(from: 0, to: uniCharCount, by: PER) {
-            // #6: 每批按键前检查屏幕是否仍锁定，防止指纹解锁后输入泄漏到前台 app
-            guard isScreenLocked() else {
-                unlockLog("ABORT: screen unlocked during keystroke injection")
+        for offset in stride(from: 0, to: uniCharCount, by: 20) {
+            // 每批按键前双重检查：屏幕仍锁定 + 前台仍是 loginwindow
+            guard isSecureToInject() else {
+                unlockLog("ABORT: screen no longer secure during keystroke injection")
                 return
             }
             let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
-            let len = offset + PER < uniCharCount ? PER : uniCharCount - offset
+            let len = offset + 20 < uniCharCount ? 20 : uniCharCount - offset
             let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
             defer { buffer.deallocate() }
             for i in 0..<len {
@@ -546,7 +558,11 @@ final class FUnManager: ObservableObject {
             pressEvent?.post(tap: .cgSessionEventTap)
             CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cgSessionEventTap)
         }
-        // Return key (36 = main Return, not numpad Enter 52)
+        // Return 键发送前再次确认
+        guard isSecureToInject() else {
+            unlockLog("ABORT: screen no longer secure before Return key")
+            return
+        }
         CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)?.post(tap: .cgSessionEventTap)
         CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)?.post(tap: .cgSessionEventTap)
     }
