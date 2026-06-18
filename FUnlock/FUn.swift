@@ -382,7 +382,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func resetSignalTimer() {
         signalTimer?.invalidate()
-        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
+        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
+            guard let self = self else { return }
             self.signalLostCount += 1
             if self.signalLostCount >= 3 {
                 print("Device is lost (3 consecutive timeouts)")
@@ -393,7 +394,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 }
             } else {
                 print("Signal timeout \(self.signalLostCount)/3, waiting...")
-                self.resetSignalTimer()
+                DispatchQueue.main.async { self.resetSignalTimer() }
             }
         })
         if let timer = signalTimer {
@@ -559,14 +560,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func resetScanTimer(device: Device) {
         device.scanTimer?.invalidate()
-        device.scanTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
+        device.scanTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             DispatchQueue.main.async {
-                self.delegate?.removeDevice(device: device)
+                self?.delegate?.removeDevice(device: device)
             }
             if let p = device.peripheral {
-                self.centralMgr.cancelPeripheralConnection(p)
+                self?.centralMgr.cancelPeripheralConnection(p)
             }
-            self.devices.removeValue(forKey: device.uuid)
+            self?.devices.removeValue(forKey: device.uuid)
         })
         if let timer = device.scanTimer {
             RunLoop.main.add(timer, forMode: .common)
@@ -584,10 +585,10 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         print("Connecting")
         centralMgr.connect(p, options: nil)
         connectionTimer?.invalidate()
-        connectionTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false, block: { _ in
+        connectionTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false, block: { [weak self] _ in
             if p.state == .connecting {
                 print("Connection timeout")
-                self.centralMgr.cancelPeripheralConnection(p)
+                self?.centralMgr.cancelPeripheralConnection(p)
             }
         })
         RunLoop.main.add(connectionTimer!, forMode: .common)
