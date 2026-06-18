@@ -680,22 +680,15 @@ final class FUnManager: ObservableObject {
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
 
     func cleanup() {
-        // 延迟到下一个 RunLoop 迭代，避免在 RunLoop 销毁 Timer 列表时 invalidate 竞态
-        // (崩溃: __CFRunLoopDeallocateTimers → objectAtIndex beyond bounds)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.fun.proximityTimer?.invalidate()
-            self.fun.proximityTimer = nil
-            self.fun.signalTimer?.invalidate()
-            self.fun.signalTimer = nil
-            self.fun.activeModeTimer?.invalidate()
-            self.fun.activeModeTimer = nil
-            self.fun.connectionTimer?.invalidate()
-            self.fun.connectionTimer = nil
-            self.fun.heartbeatTimer?.invalidate()
-            self.fun.heartbeatTimer = nil
-            releaseWakeAssertion()
-        }
+        // 不 invalidate Timer — macOS RunLoop 销毁 Timer 数组时有竞态 bug
+        // (__CFRunLoopDeallocateTimers → objectAtIndex beyond bounds)
+        // 进程退出时 Timer 会自然释放，无需手动清理
+        fun.signalTimer = nil
+        fun.proximityTimer = nil
+        fun.activeModeTimer = nil
+        fun.connectionTimer = nil
+        fun.heartbeatTimer = nil
+        releaseWakeAssertion()
         wakeTask?.cancel()
         unlockTask?.cancel()
         intrudeCheckTask?.cancel()
