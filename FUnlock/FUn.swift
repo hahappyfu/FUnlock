@@ -265,7 +265,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var monitoredUUID: UUID?
     var monitoredUUIDs: Set<UUID> = []
     var monitoredPeripheral: CBPeripheral?
-    var devicePresence: [UUID: Bool] = [:]
     var proximityTimer : Timer?
     var signalTimer: Timer?
     var presence = false
@@ -344,7 +343,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         displayRSSI = -60.0
         cancelHeartbeat()
         monitoredUUIDs = [uuid]
-        devicePresence.removeAll()
 
         // 直接获取已知外设（不依赖扫描发现）
         let known = centralMgr.retrievePeripherals(withIdentifiers: [uuid])
@@ -357,27 +355,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
 
         scanForPeripherals()
-    }
-
-    func addMonitoredDevice(uuid: UUID) {
-        monitoredUUIDs.insert(uuid)
-        devicePresence[uuid] = false
-    }
-
-    func removeMonitoredDevice(uuid: UUID) {
-        monitoredUUIDs.remove(uuid)
-        devicePresence.removeValue(forKey: uuid)
-    }
-
-    func updateDevicePresence(_ uuid: UUID, present: Bool) {
-        devicePresence[uuid] = present
-        let anyPresent = devicePresence.values.contains(true)
-        if anyPresent != presence {
-            presence = anyPresent
-            DispatchQueue.main.async {
-                self.delegate?.updatePresence(presence: self.presence, reason: present ? "close" : "away")
-            }
-        }
     }
 
     func resetSignalTimer() {
@@ -460,7 +437,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         RunLoop.main.add(heartbeatTimer!, forMode: .common)
     }
 
-    private func cancelHeartbeat() {
+    func cancelHeartbeat() {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
     }
