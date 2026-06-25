@@ -2,6 +2,7 @@
 // 职责：NSPopover UI + 转发系统通知给 BluetoothManager
 
 import Cocoa
+import Carbon
 import ServiceManagement
 import UserNotifications
 import SwiftUI
@@ -14,6 +15,7 @@ import os.lock
 
 extension Notification.Name {
     static let menuShowStats = Notification.Name("menuShowStats")
+    static let globalHotKeyPressed = Notification.Name("globalHotKeyPressed")
 }
 
 class InputActivityMonitor {
@@ -70,6 +72,15 @@ private func inputCallback(_ ctx: UnsafeMutableRawPointer?,
                             _ value: IOHIDValue) {
     guard let ctx = ctx else { return }
     Unmanaged<InputActivityMonitor>.fromOpaque(ctx).takeUnretainedValue().didReceiveInput()
+}
+
+// MARK: - Carbon 全局快捷键回调
+
+private func hotKeyCallback(_ nextHandler: EventHandlerCallRef?,
+                            _ event: EventRef?,
+                            _ userData: UnsafeMutableRawPointer?) -> OSStatus {
+    NotificationCenter.default.post(name: .globalHotKeyPressed, object: nil)
+    return noErr
 }
 
 // MARK: - 权限检查视图
@@ -153,6 +164,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     let inputMonitor = InputActivityMonitor()
     let prefs = UserDefaults.standard
     private var cancellables = Set<AnyCancellable>()
+
+    // MARK: - 全局快捷键
+
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyEventHandler: EventHandlerRef?
 
     // MARK: - FUnDelegate（UI 更新 + 转发设备事件）
 
@@ -258,6 +274,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - 全局快捷键注册
+
+    func setupGlobalHotKey() {
+        // ⌘⇧L — Carbon RegisterEventHotKey
+        let hotKeyID = EventHotKeyID(signature: OSType(0x4655_4C4B), id: 1) // 'FULK'
+
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                      eventKind: UInt32(kEventHotKeyPressed))
+
+        let status1 = InstallEventHandler(
+            GetApplicationEventTarget(),
+            hotKeyCallback,
+            1, &eventType, nil,
+            &hotKeyEventHandler
+        )
+        guard status1 == noErr else { return }
+
+        let status2 = RegisterEventHotKey(
+            UInt32(kVK_ANSI_L),
+            UInt32(cmdKey | shiftKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+        guard status2 == noErr else { return }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleGlobalHotKey),
+            name: .globalHotKeyPressed,
+            object: nil
+        )
+    }
+
+    func teardownGlobalHotKey() {
+        NotificationCenter.default.removeObserver(self, name: .globalHotKeyPressed, object: nil)
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
+        }
+        if let handler = hotKeyEventHandler {
+            RemoveEventHandler(handler)
+            hotKeyEventHandler = nil
+        }
+    }
+
+    @objc private func handleGlobalHotKey() {
+        DispatchQueue.main.async { [weak self] in
+            self?.lockNow()
+        }
     }
 
     // MARK: - Accessibility
@@ -407,6 +476,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         showPermissionCheck()
 
         NSApp.setActivationPolicy(.accessory)
+
+        // 注册全局快捷键 ⌘⇧L（lock screen）
+        setupGlobalHotKey()
     }
 
     func setupSettingsWindow() {
@@ -447,6 +519,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
+        teardownGlobalHotKey()
         cancellables.removeAll()
         manager?.cleanup()
     }
