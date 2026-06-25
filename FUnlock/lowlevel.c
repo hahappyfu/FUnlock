@@ -43,3 +43,16 @@ void sleepDisplay(void)
         IOObjectRelease(reg);
     }
 }
+
+int SACLockScreenImmediate(void)
+{
+    // 调用 macOS 私有 API 锁屏
+    // 这里通过 IOKit 发送锁屏请求
+    io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
+    if (reg) {
+        IORegistryEntrySetCFProperty(reg, CFSTR("IORequestIdle"), kCFBooleanTrue);
+        IOObjectRelease(reg);
+        return 0;
+    }
+    return -1;
+}

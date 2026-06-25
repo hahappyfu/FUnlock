@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013.0%2B-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-2.1.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-2.2.0-green.svg)]()
 [![Swift](https://img.shields.io/badge/Swift-5.7%2B-orange.svg)]()
 
 FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。

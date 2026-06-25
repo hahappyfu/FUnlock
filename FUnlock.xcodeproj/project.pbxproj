@@ -10,23 +10,25 @@
 		3D2CF85B255102B300157996 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3D2CF85A255102B300157996 /* MediaRemote.framework */; };
 		3D2FCF08226C99CB007A06E7 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D2FCF07226C99CB007A06E7 /* Images.xcassets */; };
 		3D4EE4112279E55A00AF9E93 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 3D4EE4102279E55A00AF9E93 /* AppDelegate.m */; };
+		3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B653226C1C3200451B7B /* AppDelegate.swift */; };
+		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
+		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
+		CC000001226C1DF200000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000002226C1DF200000001 /* ProfileManager.swift */; };
+		AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004226C1DF200000001 /* MenuDashboardView.swift */; };
+		3DCAAA7D22ADE9830011A2DA /* checkUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */; };
+		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
 		3D4EE4132279E56900AF9E93 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 3D4EE4122279E56900AF9E93 /* main.m */; };
-		3D4EE4152279E94B00AF9E93 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3D4EE4142279E94B00AF9E93 /* MainMenu.xib */; };
+		3DD4B659226C1C3400451B7B /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3DD4B657226C1C3400451B7B /* MainMenu.xib */; };
 		3D600A37226CC1A40068FB7B /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3D600A35226CC1A40068FB7B /* Localizable.strings */; };
 		3D600A5A22701E740068FB7B /* Launcher.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = 3D600A4022701A5A0068FB7B /* Launcher.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */; };
 		3D79FD7D226C335100A373C0 /* appleDeviceNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */; };
-		3D95379522784D550017D8B9 /* AboutBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D95379322784D550017D8B9 /* AboutBox.swift */; };
-		3D953797227853E20017D8B9 /* AboutBox.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3D953799227853E20017D8B9 /* AboutBox.xib */; };
-		3DCAAA7D22ADE9830011A2DA /* checkUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */; };
-		3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B653226C1C3200451B7B /* AppDelegate.swift */; };
-		3DD4B659226C1C3400451B7B /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3DD4B657226C1C3400451B7B /* MainMenu.xib */; };
-		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
-		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
-		3DD4B669226C1E3700451B7B /* login.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD4B668226C1E3700451B7B /* login.framework */; };
-		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
-		AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004226C1DF200000001 /* MenuDashboardView.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
+		B200000122784D550017D8B9 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000222784D550017D8B9 /* AboutView.swift */; };
+		B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000422784D550017D8B9 /* FUnlockUtils.swift */; };
+		WF0000010000000100000001 /* WiFiMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = WF0000010000000100000002 /* WiFiMonitor.swift */; };
+		WF0000010000000100000003 /* CoreWLAN.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = WF0000010000000100000004 /* CoreWLAN.framework */; };
+		CC00001022784D550017D8B9 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = CC00000F22784D550017D8B9 /* main.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -45,33 +47,25 @@
 /* Begin PBXFileReference section */
 		3D2CF85A255102B300157996 /* MediaRemote.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemote.framework; path = ../../../../System/Library/PrivateFrameworks/MediaRemote.framework; sourceTree = "<group>"; };
 		3D2FCF07226C99CB007A06E7 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
-		3D43D0112765FCCB00D15991 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3D43D0122765FCCB00D15991 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3D43D0132765FCFD00D15991 /* da */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = da; path = da.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3D43D0142765FCFD00D15991 /* da */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = da; path = da.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3D43D0152765FD1600D15991 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3D43D0162765FD1600D15991 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3D43D0172765FD2800D15991 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3D43D0182765FD2800D15991 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3D4EE40F2279E55A00AF9E93 /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		3D4EE4102279E55A00AF9E93 /* AppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
 		3D4EE4122279E56900AF9E93 /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
-		3D4EE4142279E94B00AF9E93 /* MainMenu.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = MainMenu.xib; sourceTree = "<group>"; };
 		3D600A36226CC1A40068FB7B /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Base; path = Base.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3D600A38226CC1AA0068FB7B /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		3DD4B658226C1C3400451B7B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		3D600A4022701A5A0068FB7B /* Launcher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Launcher.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3D600A4922701A5C0068FB7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3D600A4A22701A5C0068FB7B /* Launcher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Launcher.entitlements; sourceTree = "<group>"; };
 		3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LEDeviceInfo.swift; sourceTree = "<group>"; };
 		3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = appleDeviceNames.swift; sourceTree = "<group>"; };
-		3D95379322784D550017D8B9 /* AboutBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutBox.swift; sourceTree = "<group>"; };
-		3D953798227853E20017D8B9 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AboutBox.xib; sourceTree = "<group>"; };
-		3D95379B227853EC0017D8B9 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		3DC0BC6922728FF1001145EC /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = checkUpdate.swift; sourceTree = "<group>"; };
 		3DD4B650226C1C3200451B7B /* FUnlock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FUnlock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DD4B653226C1C3200451B7B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		3DD4B658226C1C3400451B7B /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		3DD4B65B226C1C3400451B7B /* FUnlock.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FUnlock.entitlements; sourceTree = "<group>"; };
 		3DD4B661226C1CEF00451B7B /* FUnlock-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FUnlock-Bridging-Header.h"; sourceTree = "<group>"; };
 		3DD4B662226C1CEF00451B7B /* lowlevel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lowlevel.h; sourceTree = "<group>"; };
@@ -81,10 +75,14 @@
 		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
 		AA000004226C1DF200000001 /* MenuDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuDashboardView.swift; sourceTree = "<group>"; };
-		B1EFF91422E010F50010DB0A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AboutBox.strings"; sourceTree = "<group>"; };
+		CC000002226C1DF200000001 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		B1EFF91622E010F50010DB0A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		F749D28C277515C600C78C28 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/AboutBox.strings; sourceTree = "<group>"; };
 		F749D28D277515C600C78C28 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		B200000222784D550017D8B9 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		B200000422784D550017D8B9 /* FUnlockUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockUtils.swift; sourceTree = "<group>"; };
+		WF0000010000000100000002 /* WiFiMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiMonitor.swift; sourceTree = "<group>"; };
+		WF0000010000000100000004 /* CoreWLAN.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreWLAN.framework; path = System/Library/Frameworks/CoreWLAN.framework; sourceTree = SDKROOT; };
+		CC00000F22784D550017D8B9 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +99,7 @@
 			files = (
 				3D2CF85B255102B300157996 /* MediaRemote.framework in Frameworks */,
 				3DD4B669226C1E3700451B7B /* login.framework in Frameworks */,
+				WF0000010000000100000003 /* CoreWLAN.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,7 +113,6 @@
 				3D4EE40F2279E55A00AF9E93 /* AppDelegate.h */,
 				3D4EE4102279E55A00AF9E93 /* AppDelegate.m */,
 				3D600A4922701A5C0068FB7B /* Info.plist */,
-				3D4EE4142279E94B00AF9E93 /* MainMenu.xib */,
 				3D600A4A22701A5C0068FB7B /* Launcher.entitlements */,
 			);
 			path = Launcher;
@@ -143,15 +141,18 @@
 		3DD4B652226C1C3200451B7B /* FUnlock */ = {
 			isa = PBXGroup;
 			children = (
-				3D95379322784D550017D8B9 /* AboutBox.swift */,
-				3D953799227853E20017D8B9 /* AboutBox.xib */,
+				B200000222784D550017D8B9 /* AboutView.swift */,
+				B200000422784D550017D8B9 /* FUnlockUtils.swift */,
+				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
 				3DD4B665226C1DF200451B7B /* FUn.swift */,
 				AA000002226C1DF200000001 /* FUnManager.swift */,
 				AA000004226C1DF200000001 /* MenuDashboardView.swift */,
+				CC000002226C1DF200000001 /* ProfileManager.swift */,
 				AA000006226C1DF200000001 /* CalibrationWizardView.swift */,
 				3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */,
 				3DD4B653226C1C3200451B7B /* AppDelegate.swift */,
+				CC00000F22784D550017D8B9 /* main.m */,
 				3DC0BC6922728FF1001145EC /* Info.plist */,
 				3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */,
 				3DD4B662226C1CEF00451B7B /* lowlevel.h */,
@@ -170,6 +171,7 @@
 			children = (
 				3D2CF85A255102B300157996 /* MediaRemote.framework */,
 				3DD4B668226C1E3700451B7B /* login.framework */,
+				WF0000010000000100000004 /* CoreWLAN.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -283,7 +285,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3D4EE4152279E94B00AF9E93 /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -293,7 +294,6 @@
 			files = (
 				3D2FCF08226C99CB007A06E7 /* Images.xcassets in Resources */,
 				3D600A37226CC1A40068FB7B /* Localizable.strings in Resources */,
-				3D953797227853E20017D8B9 /* AboutBox.xib in Resources */,
 				3DD4B659226C1C3400451B7B /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -338,12 +338,16 @@
 				3DD4B666226C1DF200451B7B /* FUn.swift in Sources */,
 				AA000001226C1DF200000001 /* FUnManager.swift in Sources */,
 				AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */,
+				CC000001226C1DF200000001 /* ProfileManager.swift in Sources */,
 				AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */,
 				3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */,
 				3DCAAA7D22ADE9830011A2DA /* checkUpdate.swift in Sources */,
-				3D95379522784D550017D8B9 /* AboutBox.swift in Sources */,
+				B200000122784D550017D8B9 /* AboutView.swift in Sources */,
+				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
+				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
 				3D79FD7D226C335100A373C0 /* appleDeviceNames.swift in Sources */,
+				CC00001022784D550017D8B9 /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -363,21 +367,6 @@
 				F749D28D277515C600C78C28 /* tr */,
 			);
 			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
-		3D953799227853E20017D8B9 /* AboutBox.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				3D953798227853E20017D8B9 /* Base */,
-				3D95379B227853EC0017D8B9 /* ja */,
-				B1EFF91422E010F50010DB0A /* zh-Hans */,
-				3D43D0112765FCCB00D15991 /* de */,
-				3D43D0132765FCFD00D15991 /* da */,
-				3D43D0152765FD1600D15991 /* nb */,
-				3D43D0172765FD2800D15991 /* sv */,
-				F749D28C277515C600C78C28 /* tr */,
-			);
-			name = AboutBox.xib;
 			sourceTree = "<group>";
 		};
 		3DD4B657226C1C3400451B7B /* MainMenu.xib */ = {
