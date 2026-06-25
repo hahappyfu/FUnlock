@@ -16,9 +16,11 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 - **靠近即解锁** — 手机靠近 Mac 自动输入密码解锁，无需手动操作
 - **离开即锁定** — 手机离开范围后自动锁屏，保护隐私
 - **无需 iPhone App** — 纯 macOS 端实现，利用 BLE 广播信号
-- **SwiftUI 控制中心** — 现代化面板，实时显示信号强度和设备状态
-- **多设备支持** — 可同时监测多个 BLE 设备
+- **侧边栏导航控制中心** — 毛玻璃风格（NSVisualEffectView），7 个 Tab 分类管理，SF Symbols 矢量图标
+- **多设备支持** — 可同时监测多个 BLE 设备，自动扫描 + RSSI 排序 + 增量更新
 - **智能信号处理** — 非对称卡尔曼滤波 + 时间衰减丢包惩罚，靠近解锁干脆、离开锁定可靠
+- **Wi-Fi 联动** — 连接指定 Wi-Fi 时暂停锁屏（如公司/家庭网络）
+- **多配置文件** — 支持创建多个配置，不同场景一键切换
 - **输入活动保护** — 检测键盘/触控板活动时暂缓锁定，打字不会误锁屏
 - **手动锁屏保护** — 可选手动锁屏后禁止自动解锁，防止旁人靠近时屏幕自动打开
 - **指纹解锁安全** — 指纹解锁时自动中断模拟密码输入，防止输入泄漏到前台应用
@@ -48,7 +50,7 @@ brew install funlock
 
 1. 启动 FUnlock，菜单栏出现蓝牙图标
 2. 点击图标打开控制中心面板
-3. 在「设备」区域选择你的 iPhone 或 Apple Watch
+3. 切换到「设备」tab，选择你的 iPhone 或 Apple Watch
 4. 调整锁定/解锁的 RSSI 阈值（默认 -80 / -60 dBm）
 5. 输入 Mac 登录密码（安全存储在 Keychain）
 
@@ -58,14 +60,17 @@ brew install funlock
 
 ## 🧭 控制中心
 
-点击菜单栏图标打开 SwiftUI 控制中心：
+点击菜单栏图标打开侧边栏导航控制中心（毛玻璃风格）：
 
-| 区域 | 功能 |
-|------|------|
-| **顶部** | 设备名称、锁定状态（颜色指示）、当前 RSSI |
-| **信号仪表** | 圆形进度条，实时显示信号强度 |
-| **快捷开关** | 启用/禁用、靠近唤醒、被动模式等 8 个开关 |
-| **底部** | 立即锁定、退出 |
+| Tab | 功能 |
+|-----|------|
+| **总览** | 信号仪表盘、RSSI、阈值调节、校准向导、统计/自动化/关于入口 |
+| **设备** | 已绑定设备、自动 BLE 扫描、设备列表（RSSI 排序） |
+| **基础** | 启用/禁用、开机自启 |
+| **解锁** | 靠近唤醒、唤醒不解锁、屏保模式 |
+| **锁定** | 暂停媒体、关闭显示器、延迟锁定、手动锁后不解锁 |
+| **网络** | Wi-Fi 暂停（指定 SSID）、被动模式 |
+| **配置** | 多配置文件管理 |
 
 ---
 
@@ -82,6 +87,7 @@ brew install funlock
 | **输入活动时暂缓锁定** | 检测到键盘/触控板活动时暂缓锁定，防止误锁 |
 | **手动锁屏不自动解锁** | 手动锁屏后禁止自动解锁，保护隐私 |
 | **被动模式** | 被动扫描模式，不主动连接设备 |
+| **Wi-Fi 暂停** | 连接指定 SSID 时暂停锁屏（适用于公司/家庭网络） |
 | **开机自启动** | 开机自动启动 FUnlock |
 
 ---
@@ -132,8 +138,16 @@ FUnlock/
 │   ├── FUnManager.swift          # 核心状态机（@MainActor）
 │   ├── FUn.swift                 # CoreBluetooth 驱动 + 信号滤波 + 输入保护
 │   ├── AppDelegate.swift         # 应用入口 + 权限检查 + 输入活动监听
-│   ├── MenuDashboardView.swift   # SwiftUI 控制中心面板
+│   ├── MenuDashboardView.swift   # 侧边栏导航控制中心
 │   ├── CalibrationWizardView.swift # 阈值校准向导
+│   ├── OnboardingView.swift      # 首次启动引导页
+│   ├── StatsView.swift           # 统计数据视图
+│   ├── AutomationView.swift      # 自动化设置视图
+│   ├── ProfileManager.swift      # 多配置文件管理
+│   ├── ToastView.swift           # 轻提示组件
+│   ├── WiFiMonitor.swift         # Wi-Fi SSID 监听（暂停锁屏）
+│   ├── Log.swift                 # 日志记录
+│   ├── FUnlockUtils.swift        # 通用工具函数
 │   ├── LEDeviceInfo.swift        # macOS 蓝牙设备数据库查询
 │   ├── appleDeviceNames.swift    # Apple 设备名称映射表
 │   ├── checkUpdate.swift         # 自动更新检查
@@ -151,7 +165,7 @@ FUnlock/
 
 ```
 ┌─────────────────────────────────────────────┐
-│            MenuDashboardView (SwiftUI)       │
+│       MenuDashboardView (侧边栏导航)        │
 │         控制中心 @ObservedObject              │
 └──────────────────┬──────────────────────────┘
                    │ @Published state/rssi/connected
