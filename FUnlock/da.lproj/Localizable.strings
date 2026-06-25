@@ -36,3 +36,108 @@
 "use_screensaver_to_lock" = "Brug screensaver til at låse";
 "wake_on_proximity" = "Vågn op på nærhed";
 "wake_without_unlocking" = "Vågn op uden at låse op";
+"ax_revoked_title" = "Tilgængelighedstilladelse mistet";
+"ax_revoked_info" = "FUnlock kan ikke indtaste adgangskoden, fordi tilgængelighedstilladelsen blev trukket tilbage. Gå til Systemindstillinger > Privatliv og sikkerhed > Tilgængelighed og aktiver FUnlock igen.";
+"open_settings" = "Åbn indstillinger";
+
+// MenuDashboardView
+"bound_device" = "Bound Device";
+"unbind" = "Unbind";
+"select_device" = "Select Device to Bind";
+"start_search" = "Start Search";
+"scan_hint" = "Tap \"Start Search\" to scan nearby devices";
+"calibration_wizard" = "Calibration Wizard";
+"lock" = "Lock";
+"unlock" = "Unlock";
+"applied" = "Applied";
+"apply_thresholds" = "Apply Thresholds";
+"enable" = "Enable";
+"wake_on_proximity" = "Wake on Proximity";
+"wake_without_unlock" = "Wake without Unlock";
+"pause_on_lock" = "Pause on Lock";
+"use_screensaver" = "Use Screensaver";
+"sleep_display_on_lock" = "Sleep Display on Lock";
+"defer_lock_on_input" = "Defer Lock on Input";
+"manual_lock_no_auto_unlock" = "Manual Lock No Auto Unlock";
+"passive_mode" = "Passive Mode";
+"launch_at_login" = "Launch at Login";
+"about_funlock" = "About FUnlock";
+"lock_now" = "Lock Now";
+"quit" = "Quit";
+"status_unlocked" = "Device Unlocked";
+"status_locked_away" = "Locked — Device Away";
+"status_locked_lost" = "Locked — Signal Lost";
+"status_locked_manual" = "Locked — Manual Lock";
+"status_locked_timeout" = "Locked — Signal Timeout";
+"status_screensaver" = "Screensaver Active";
+"status_display_sleeping" = "Display Sleeping";
+
+// CalibrationWizardView
+"calibration_header" = "Calibration Wizard";
+"calibration_step_header" = "Step %d/2";
+"calibration_welcome_title" = "Calibrate Your Lock Distance";
+"calibration_welcome_desc" = "The wizard will automatically measure Bluetooth signal strength when sitting together and walking to the door, generating optimal thresholds.";
+"calibration_start" = "Start Calibration";
+"calibration_unlock_step_title" = "Step 1/2: Set Unlock Distance";
+"calibration_unlock_step_desc" = "Please sit at your Mac with the device.";
+"calibration_countdown_sampling" = "seconds until sampling starts";
+"calibration_sampling_unlock" = "Collecting unlock signal...";
+"calibration_stay_still" = "Please stay in your current position";
+"calibration_lock_step_title" = "Step 2/2: Set Lock Distance";
+"calibration_lock_step_desc" = "After tapping start, walk to where you want\nMac to auto-lock (e.g. the door) within 15 seconds.";
+"calibration_hurry_to_target" = "Please walk to the target position...";
+"calibration_sampling_lock" = "Collecting lock signal...";
+"calibration_hold_target" = "Please stay at the target position";
+"calibration_complete" = "Calibration Complete";
+"calibration_avg_unlock" = "Unlock Signal Average";
+"calibration_avg_lock" = "Lock Signal Average";
+"calibration_suggested_unlock" = "Suggested Unlock Threshold";
+"calibration_suggested_lock" = "Suggested Lock Threshold";
+"calibration_apply_recommended" = "Apply Recommended";
+
+// PermissionCheckView
+"permission_check_title" = "Permission Check";
+"permission_check_desc" = "FUnlock needs the following permissions to work properly:";
+"permission_ax_name" = "Accessibility";
+"permission_ax_desc" = "Used to type password on lock screen";
+"permission_bt_name" = "Bluetooth";
+"permission_bt_desc" = "Used to detect device proximity";
+"permission_skip_all" = "Skip All";
+"permission_done" = "Done";
+"permission_refresh" = "Refresh Status";
+"permission_grant" = "Grant";
+"permission_check_window_title" = "FUnlock - Permission Check";
+
+// OnboardingView
+"onboarding_next" = "Next";
+"onboarding_skip" = "Skip";
+"onboarding_start" = "Get Started";
+"onboarding_title_0" = "Welcome to FUnlock";
+"onboarding_title_1" = "Bind Bluetooth Device";
+"onboarding_title_2" = "Calibrate Signal Thresholds";
+"onboarding_desc_0" = "FUnlock uses Bluetooth signals to automatically lock and unlock your Mac. Unlock when close, lock when away.";
+"onboarding_desc_1" = "Bind your iPhone or Apple Watch, and FUnlock will detect device distance via Bluetooth signal.";
+"onboarding_desc_2" = "Run the calibration wizard to let FUnlock learn your environment for the best lock and unlock experience.";
+
+// CalibrationWizardView (additional)
+"calibration_samples_collected" = "Collected ";
+"calibration_samples_unit" = " samples";
+"calibration_seconds_unit" = "seconds";
+
+// AppDelegate
+"default_paired_device" = "Paired Device";
+
+/* Toast */
+"toast_bt_connected" = "Bluetooth Connected";
+"toast_bt_disconnected" = "Bluetooth Disconnected";
+
+/* Password Mismatch */
+"password_mismatch_title" = "Password May Have Changed";
+"password_mismatch_info" = "Multiple unlock attempts have failed. Your system password may have changed. Please re-enter your password.";
+"re_enter_password" = "Re-enter Password";
+
+// Menu
+"menu_open_settings" = "Åbn indstillinger";
+"menu_lock_now" = "Lås nu";
+"menu_stats" = "Statistik";
+"menu_quit" = "Afslut FUnlock";

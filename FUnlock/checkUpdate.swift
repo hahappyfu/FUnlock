@@ -22,7 +22,7 @@ class UpdateChecker {
 
     private func doCheck() {
         checking = true
-        var request = URLRequest(url: URL(string: "https://gitee.com/api/v5/repos/fuhahah/bleunlock/releases/latest")!)
+        var request = URLRequest(url: URL(string: "https://gitee.com/api/v5/repos/fuhahah/FUnlock/releases/latest")!)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
             guard let self = self else { return }
