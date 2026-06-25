@@ -40,3 +40,164 @@
 "use_screensaver_to_lock" = "用屏保来锁定它";
 "wake_on_proximity" = "靠近唤醒";
 "wake_without_unlocking" = "唤醒时不需解锁";
+"ax_revoked_title" = "无障碍权限已丢失";
+"ax_revoked_info" = "FUnlock 无法输入密码，因为无障碍权限已被撤销。请前往「系统设置 > 隐私与安全性 > 辅助功能」重新启用 FUnlock。";
+"open_settings" = "打开设置";
+
+// MenuDashboardView - scenarioText
+"scenario_no_signal" = "无信号 — 等待设备";
+"scenario_very_close" = "非常近 — 稳定解锁";
+"scenario_in_range" = "在范围内 — 已解锁";
+"scenario_approaching" = "接近中 — 即将解锁";
+"scenario_weakening" = "信号减弱 — 即将锁定";
+"scenario_far" = "远离 — 已锁定";
+
+// MenuDashboardView
+"bound_device" = "已绑定设备";
+"unbind" = "解绑";
+"select_device" = "选择要绑定的设备";
+"start_search" = "开始搜索";
+"scan_hint" = "点击「开始搜索」扫描附近设备";
+"calibration_wizard" = "自动校准向导";
+"lock" = "锁定";
+"unlock" = "解锁";
+"applied" = "已应用";
+"apply_thresholds" = "应用阈值";
+"enable" = "启用";
+"wake_on_proximity" = "靠近时唤醒";
+"wake_without_unlock" = "唤醒但不解锁";
+"pause_on_lock" = "锁定时暂停播放";
+"use_screensaver" = "使用屏幕保护程序";
+"sleep_display_on_lock" = "锁定时关闭屏幕";
+"defer_lock_on_input" = "输入活动时暂缓锁定";
+"manual_lock_no_auto_unlock" = "手动锁屏不自动解锁";
+"passive_mode" = "被动模式";
+"launch_at_login" = "开机自启动";
+"about_funlock" = "关于 FUnlock";
+"export_diagnostics" = "导出诊断信息";
+"lock_now" = "立即锁定";
+"quit" = "退出";
+"status_unlocked" = "设备已解锁";
+"status_locked_away" = "已锁定 — 设备远离";
+"status_locked_lost" = "已锁定 — 信号丢失";
+"status_locked_manual" = "已锁定 — 手动锁定";
+"status_locked_timeout" = "已锁定 — 信号超时";
+"status_screensaver" = "屏幕保护中";
+"status_display_sleeping" = "显示器休眠";
+
+// CalibrationWizardView
+"calibration_header" = "空间校准向导";
+"calibration_step_header" = "步骤 %d/2";
+"calibration_welcome_title" = "校准你的锁定距离";
+"calibration_welcome_desc" = "向导会帮你自动测量「坐在一起」和「走到门口」时的蓝牙信号强度，生成最佳阈值。";
+"calibration_start" = "开始校准";
+"calibration_unlock_step_title" = "步骤 1/2：设置解锁距离";
+"calibration_unlock_step_desc" = "请带着设备坐在 Mac 前。";
+"calibration_countdown_sampling" = "秒后开始采样";
+"calibration_sampling_unlock" = "正在采集解锁信号…";
+"calibration_stay_still" = "请保持在当前位置不动";
+"calibration_lock_step_title" = "步骤 2/2：设置锁定距离";
+"calibration_lock_step_desc" = "点击开始后，请在 15 秒内走到你希望\nMac 自动锁屏的位置（如门口）。";
+"calibration_hurry_to_target" = "请尽快走到目标位置…";
+"calibration_sampling_lock" = "正在采集锁定信号…";
+"calibration_hold_target" = "请保持在目标位置不动";
+"calibration_complete" = "校准完成";
+"calibration_avg_unlock" = "解锁信号平均值";
+"calibration_avg_lock" = "锁定信号平均值";
+"calibration_suggested_unlock" = "建议解锁阈值";
+"calibration_suggested_lock" = "建议锁定阈值";
+"calibration_apply_recommended" = "应用推荐值";
+
+// PermissionCheckView
+"permission_check_title" = "权限检查";
+"permission_check_desc" = "FUnlock 需要以下权限才能正常工作：";
+"permission_ax_name" = "辅助功能";
+"permission_ax_desc" = "用于在锁屏界面输入密码";
+"permission_bt_name" = "蓝牙";
+"permission_bt_desc" = "用于检测设备靠近/远离";
+"permission_skip_all" = "全部跳过";
+"permission_done" = "完成";
+"permission_refresh" = "刷新状态";
+"permission_grant" = "授权";
+"permission_check_window_title" = "FUnlock - 权限检查";
+
+// OnboardingView
+"onboarding_next" = "下一步";
+"onboarding_skip" = "跳过";
+"onboarding_start" = "开始使用";
+"onboarding_title_0" = "欢迎使用 FUnlock";
+"onboarding_title_1" = "绑定蓝牙设备";
+"onboarding_title_2" = "校准信号阈值";
+"onboarding_desc_0" = "FUnlock 通过蓝牙信号自动锁屏和解锁你的 Mac，靠近即解锁，离开即锁屏。";
+"onboarding_desc_1" = "绑定你的 iPhone 或 Apple Watch，FUnlock 将通过蓝牙信号检测设备距离。";
+"onboarding_desc_2" = "运行校准向导，让 FUnlock 学习你的使用环境，获得最佳的锁屏和解锁体验。";
+
+// CalibrationWizardView (additional)
+"calibration_samples_collected" = "已采集 ";
+"calibration_samples_unit" = " 个样本";
+"calibration_seconds_unit" = "秒";
+
+// AppDelegate
+"default_paired_device" = "已配对设备";
+
+// AutomationView
+"automation" = "场景自动化";
+"automation_title" = "场景自动化";
+"automation_hint" = "将可执行脚本放入对应目录，事件触发时自动运行。";
+"automation_configured" = "已配置";
+"automation_not_configured" = "未配置";
+"automation_setup" = "设置";
+"event_away" = "设备远离";
+"event_lost" = "信号丢失";
+"event_unlocked" = "自动解锁";
+"event_intruded" = "手动解锁";
+"unlock_stats" = "解锁统计";
+"stats_no_data" = "暂无数据";
+"stats_today_unlocks" = "今日解锁";
+"stats_today_locks" = "今日锁定";
+"stats_week_unlocks" = "本周解锁";
+"stats_7day_trend" = "近 7 天解锁趋势";
+"stats_recent_events" = "最近事件";
+"stats_event_unlocked" = "自动解锁";
+"stats_event_locked" = "自动锁定";
+
+/* About */
+"about_visit_homepage" = "访问主页";
+"about_check_releases" = "查看更新";
+
+/* Toast */
+"toast_bt_connected" = "蓝牙已连接";
+"toast_bt_disconnected" = "蓝牙已断开";
+
+/* Password Mismatch */
+"password_mismatch_title" = "密码可能已更改";
+"password_mismatch_info" = "连续多次解锁失败，系统密码可能已更改。请重新输入密码。";
+"re_enter_password" = "重新输入密码";
+"password_changed_title" = "系统密码已更改";
+"password_changed_info" = "检测到系统密码已更改，存储的密码不再有效。请重新输入密码以继续自动解锁。";
+"later" = "稍后";
+
+// ProfileManager
+"profile" = "配置文件";
+"profile_add" = "新建配置";
+"profile_delete" = "删除配置";
+"profile_name_placeholder" = "配置名称";
+"profile_add_hint" = "用当前阈值创建新配置";
+"profile_delete_confirm" = "确定删除此配置？";
+"profile_default" = "默认";
+
+// Menu
+"menu_open_settings" = "打开设置";
+"menu_lock_now" = "立即锁定";
+"menu_stats" = "解锁统计";
+"menu_quit" = "退出 FUnlock";
+
+// WiFi Pause
+"pause_on_wifi" = "连接指定Wi-Fi时暂停解锁";
+"wifi_ssid" = "Wi-Fi名称";
+"wifi_ssid_placeholder" = "如 Office-WiFi";
+"current_wifi" = "使用当前Wi-Fi";
+
+/* Abnormal Unlock Detection */
+"abnormal_unlock_title" = "异常解锁检测";
+"abnormal_unlock_info" = "检测到短时间内大量自动解锁尝试失败。如果这不是您本人操作，建议检查蓝牙安全设置。";

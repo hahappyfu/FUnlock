@@ -45,11 +45,11 @@ struct CalibrationWizardView: View {
     @ViewBuilder
     private var headerBar: some View {
         HStack {
-            Text("空间校准向导")
+            Text(t("calibration_header"))
                 .font(.headline)
             Spacer()
             if step > 0 && step < 5 {
-                Text("步骤 \(min(step, 2))/2")
+                Text(t("calibration_step_header"))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -71,15 +71,15 @@ struct CalibrationWizardView: View {
             Image(systemName: "location.viewfinder")
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
-            Text("校准你的锁定距离")
+            Text(t("calibration_welcome_title"))
                 .font(.title3).fontWeight(.semibold)
-            Text("向导会帮你自动测量「坐在一起」和「走到门口」时的蓝牙信号强度，生成最佳阈值。")
+            Text(t("calibration_welcome_desc"))
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
             Spacer()
-            Button("开始校准") { startUnlockCalibration() }
+            Button(t("calibration_start")) { startUnlockCalibration() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
         }
@@ -91,9 +91,9 @@ struct CalibrationWizardView: View {
     @ViewBuilder private var unlockCountdownStep: some View {
         VStack(spacing: 20) {
             Spacer()
-            Text("步骤 1/2：设置解锁距离")
+            Text(t("calibration_unlock_step_title"))
                 .font(.headline)
-            Text("请带着设备坐在 Mac 前。")
+            Text(t("calibration_unlock_step_desc"))
                 .font(.callout)
                 .foregroundColor(.secondary)
             ZStack {
@@ -108,7 +108,7 @@ struct CalibrationWizardView: View {
                 Text("\(countdown)")
                     .font(.system(size: 36, weight: .bold, design: .monospaced))
             }
-            Text("秒后开始采样")
+            Text(t("calibration_countdown_sampling"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
@@ -121,9 +121,9 @@ struct CalibrationWizardView: View {
     @ViewBuilder private var unlockSamplingStep: some View {
         VStack(spacing: 20) {
             Spacer()
-            Text("正在采集解锁信号…")
+            Text(t("calibration_sampling_unlock"))
                 .font(.headline)
-            Text("请保持在当前位置不动")
+            Text(t("calibration_stay_still"))
                 .font(.callout)
                 .foregroundColor(.secondary)
 
@@ -145,7 +145,7 @@ struct CalibrationWizardView: View {
                 }
             }
 
-            Text("已采集 \(samples.count) 个样本")
+            Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
@@ -158,9 +158,9 @@ struct CalibrationWizardView: View {
     @ViewBuilder private var lockCountdownStep: some View {
         VStack(spacing: 20) {
             Spacer()
-            Text("步骤 2/2：设置锁定距离")
+            Text(t("calibration_lock_step_title"))
                 .font(.headline)
-            Text("点击开始后，请在 15 秒内走到你希望\nMac 自动锁屏的位置（如门口）。")
+            Text(t("calibration_lock_step_desc"))
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -177,14 +177,14 @@ struct CalibrationWizardView: View {
                 VStack(spacing: 2) {
                     Text("\(countdown)")
                         .font(.system(size: 40, weight: .bold, design: .monospaced))
-                    Text("秒")
+                    Text(t("calibration_seconds_unit"))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
             }
 
             if countdown > 0 {
-                Text("请尽快走到目标位置…")
+                Text(t("calibration_hurry_to_target"))
                     .font(.caption)
                     .foregroundColor(.orange)
             }
@@ -198,9 +198,9 @@ struct CalibrationWizardView: View {
     @ViewBuilder private var lockSamplingStep: some View {
         VStack(spacing: 20) {
             Spacer()
-            Text("正在采集锁定信号…")
+            Text(t("calibration_sampling_lock"))
                 .font(.headline)
-            Text("请保持在目标位置不动")
+            Text(t("calibration_hold_target"))
                 .font(.callout)
                 .foregroundColor(.secondary)
 
@@ -222,7 +222,7 @@ struct CalibrationWizardView: View {
                 }
             }
 
-            Text("已采集 \(samples.count) 个样本")
+            Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
@@ -238,17 +238,17 @@ struct CalibrationWizardView: View {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 40))
                 .foregroundColor(.green)
-            Text("校准完成")
+            Text(t("calibration_complete"))
                 .font(.title3).fontWeight(.semibold)
 
             VStack(spacing: 8) {
-                resultRow(icon: "lock.open.fill", label: "解锁信号平均值", value: "\(avgUnlock) dBm", color: .green)
-                resultRow(icon: "lock.fill", label: "锁定信号平均值", value: "\(avgLock) dBm", color: .orange)
+                resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"), value: "\(avgUnlock) dBm", color: .green)
+                resultRow(icon: "lock.fill", label: t("calibration_avg_lock"), value: "\(avgLock) dBm", color: .orange)
 
                 Divider().padding(.horizontal, 20)
 
-                resultRow(icon: "slider.horizontal.3", label: "建议解锁阈值", value: "\(suggestedUnlock) dBm", color: .blue)
-                resultRow(icon: "slider.horizontal.3", label: "建议锁定阈值", value: "\(suggestedLock) dBm", color: .purple)
+                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(suggestedUnlock) dBm", color: .blue)
+                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(suggestedLock) dBm", color: .purple)
             }
             .padding(14)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
@@ -256,9 +256,9 @@ struct CalibrationWizardView: View {
             .padding(.horizontal, 20)
 
             HStack(spacing: 12) {
-                Button("取消") { cancelAndClose() }
+                Button(t("cancel")) { cancelAndClose() }
                     .buttonStyle(.bordered)
-                Button("应用推荐值") { applyValues() }
+                Button(t("calibration_apply_recommended")) { applyValues() }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
             }
