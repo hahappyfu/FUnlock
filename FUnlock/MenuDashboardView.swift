@@ -1,14 +1,76 @@
 // MenuDashboardView.swift
-// SwiftUI 控制中心 — 毛玻璃风格 + 全中文化 + 设备扫描
+// SwiftUI 控制中心 — 侧边栏导航布局 + 毛玻璃风格 + 全中文化 + 设备扫描
 
 import SwiftUI
 import Combine
 import ServiceManagement
 
+// MARK: - Tab 枚举
+
+enum MenuTab: String, CaseIterable {
+    case overview   = "overview"
+    case device     = "device"
+    case basic      = "basic"
+    case unlock     = "unlock"
+    case lock       = "lock"
+    case network    = "network"
+    case config     = "config"
+
+    var icon: String {
+        switch self {
+        case .overview:  return "gauge.medium"
+        case .device:    return "antenna.radiowaves.left.and.right"
+        case .basic:     return "gearshape"
+        case .unlock:    return "lock.open"
+        case .lock:      return "lock"
+        case .network:   return "wifi"
+        case .config:    return "folder"
+        }
+    }
+
+    var label: String { t(rawValue) }
+}
+
+// MARK: - 通用 Toggle 行组件
+
+struct SettingToggleRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(iconColor)
+                .frame(width: 28, height: 28)
+                .background(iconColor.opacity(0.1))
+                .cornerRadius(7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13))
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(.green)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - 主视图
+
 struct MenuDashboardView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
 
+    // --- AppStorage ---
     @AppStorage("enabled") private var enabled = true
     @AppStorage("wakeOnProximity") private var wakeOnProximity = false
     @AppStorage("wakeWithoutUnlocking") private var wakeWithoutUnlocking = false
@@ -21,7 +83,10 @@ struct MenuDashboardView: View {
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("pauseOnWiFi") private var pauseOnWiFi = false
     @AppStorage("pauseOnWiFiSSID") private var pauseOnWiFiSSID = ""
+
+    // --- State ---
     @StateObject private var profileManager = ProfileManager.shared
+    @State private var selectedTab: MenuTab = .overview
     @State private var showCalibration = false
     @State private var showOnboarding = false
     @State private var showAutomation = false
@@ -35,6 +100,7 @@ struct MenuDashboardView: View {
     @State private var isSliderDragging: Bool = false
     @State private var isScanning = false
     @State private var frozenDevices: [Device] = []
+    @State private var scanTimer: Timer?
     @State private var toastMessage: String? = nil
     @State private var toastIcon: String = ""
     @State private var toastColor: Color = .green
@@ -44,41 +110,28 @@ struct MenuDashboardView: View {
         Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == (manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
     }
 
+    // MARK: - Body
+
     var body: some View {
         VStack(spacing: 0) {
-            // 1. 顶部：设备区域
-            deviceSection
-            Divider().padding(.horizontal, 12)
+            // 顶部设备状态栏
+            deviceStatusBar
+            Divider().padding(.horizontal, 8)
 
-            // 2. 信号仪表（仅在已绑定时显示）
-            if manager.monitoredDeviceName != nil {
-                signalSection
-                Divider().padding(.horizontal, 12)
+            // 侧边栏 + 内容区
+            HStack(spacing: 0) {
+                sidebarView
+                Divider()
+                contentView
             }
+            .frame(height: 440)
 
-            // 2.5 配置文件选择器
-            if manager.monitoredDeviceName != nil {
-                profileSelector
-                Divider().padding(.horizontal, 12)
-            }
+            Divider().padding(.horizontal, 8)
 
-            // 3. 开关区域
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 10) {
-                    toggleSection
-                    wifiSection
-                    otherSection
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-
-            Divider().padding(.horizontal, 12)
-
-            // 4. 底部按钮
+            // 底部按钮
             footerSection
         }
-        .frame(width: 320, height: manager.monitoredDeviceName != nil ? 600 : 440)
+        .frame(width: 440, height: 520)
         .background(.regularMaterial)
         .overlay(alignment: .top) {
             if let msg = toastMessage {
@@ -128,423 +181,599 @@ struct MenuDashboardView: View {
         }
     }
 
-    // MARK: - 设备区域
+    // MARK: - 顶部设备状态栏
 
-    private var deviceSection: some View {
-        VStack(spacing: 0) {
+    private var deviceStatusBar: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            if let name = manager.monitoredDeviceName {
+                Text(name)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Spacer()
+                Text(statusText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            } else {
+                Text(t("no_device"))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - 侧边栏
+
+    private var sidebarView: some View {
+        VStack(spacing: 2) {
+            ForEach(MenuTab.allCases, id: \.self) { tab in
+                sidebarTabButton(tab)
+            }
+            Spacer()
+        }
+        .frame(width: 140)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial.opacity(0.5))
+    }
+
+    private func sidebarTabButton(_ tab: MenuTab) -> some View {
+        let isSelected = selectedTab == tab
+        return Button {
+            selectedTab = tab
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 14))
+                    .frame(width: 20, alignment: .center)
+                Text(tab.label)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                Spacer()
+            }
+            .foregroundColor(isSelected ? .accentColor : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            .cornerRadius(7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 内容区
+
+    private var contentView: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                switch selectedTab {
+                case .overview:  overviewContent
+                case .device:    deviceContent
+                case .basic:     basicContent
+                case .unlock:    unlockContent
+                case .lock:      lockContent
+                case .network:   networkContent
+                case .config:    configContent
+                }
+            }
+            .padding(.vertical, 12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 总览页
+
+    private var overviewContent: some View {
+        VStack(spacing: 16) {
+            // 信号仪表盘
+            if manager.monitoredDeviceName != nil {
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.15), lineWidth: 10)
+                            .frame(width: 108, height: 108)
+                        Circle()
+                            .trim(from: 0, to: signalStrength)
+                            .stroke(
+                                AngularGradient(
+                                    gradient: Gradient(colors: [signalColor.opacity(0.4), signalColor]),
+                                    center: .center
+                                ),
+                                style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                            )
+                            .frame(width: 108, height: 108)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.easeInOut(duration: 0.5), value: signalStrength)
+
+                        VStack(spacing: 2) {
+                            Text(manager.rssi.map { "\($0)" } ?? "—")
+                                .font(.system(size: 30, weight: .thin, design: .monospaced))
+                            Text("dBm")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.top, 12)
+
+                    // 场景状态
+                    HStack(spacing: 6) {
+                        Circle().fill(scenarioColor).frame(width: 7, height: 7)
+                        Text(scenarioText)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 28))
+                        .foregroundColor(.secondary)
+                    Text(t("select_device"))
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                    Text(t("scan_hint"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            }
+
+            Divider().padding(.leading, 14)
+
+            // 阈值调节（仅已绑定时显示）
+            if manager.monitoredDeviceName != nil {
+                VStack(spacing: 12) {
+                    // 锁定阈值
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .frame(width: 16)
+                        Text(t("lock"))
+                            .font(.system(size: 12))
+                            .frame(width: 30, alignment: .leading)
+                        Button(action: { sliderLock = max(-95, sliderLock - 1) }) {
+                            Image(systemName: "minus.circle").font(.caption)
+                        }.buttonStyle(.plain)
+                        Slider(value: $sliderLock, in: Double(-95)...Double(-30))
+                        Button(action: { sliderLock = min(-30, sliderLock + 1) }) {
+                            Image(systemName: "plus.circle").font(.caption)
+                        }.buttonStyle(.plain)
+                        Text("\(Int(sliderLock))")
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 32, alignment: .trailing)
+                        Text("dBm").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+
+                    // 解锁阈值
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.open.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .frame(width: 16)
+                        Text(t("unlock"))
+                            .font(.system(size: 12))
+                            .frame(width: 30, alignment: .leading)
+                        Button(action: { sliderUnlock = max(-95, sliderUnlock - 1) }) {
+                            Image(systemName: "minus.circle").font(.caption)
+                        }.buttonStyle(.plain)
+                        Slider(value: $sliderUnlock, in: Double(-95)...Double(-30))
+                        Button(action: { sliderUnlock = min(-30, sliderUnlock + 1) }) {
+                            Image(systemName: "plus.circle").font(.caption)
+                        }.buttonStyle(.plain)
+                        Text("\(Int(sliderUnlock))")
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 32, alignment: .trailing)
+                        Text("dBm").font(.system(size: 9)).foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+
+                // 应用阈值按钮
+                Button(action: {
+                    manager.setLockRSSI(Int(sliderLock))
+                    manager.setUnlockRSSI(Int(sliderUnlock))
+                }) {
+                    HStack {
+                        Image(systemName: isThresholdApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                            .foregroundColor(isThresholdApplied ? .green : .accentColor)
+                        Text(isThresholdApplied ? t("applied") : t("apply_thresholds"))
+                            .font(.system(size: 13))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.accentColor.opacity(isThresholdApplied ? 0.15 : 0.1))
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 14)
+
+                .onReceive(manager.$lockRSSI) { newValue in
+                    if Int(sliderLock) != newValue && !isSliderDragging {
+                        sliderLock = Double(newValue)
+                    }
+                }
+                .onReceive(manager.$unlockRSSI) { newValue in
+                    let expected = (newValue == 1 ? -95 : newValue)
+                    if Int(sliderUnlock) != expected && !isSliderDragging {
+                        sliderUnlock = Double(expected)
+                    }
+                }
+
+                Divider().padding(.leading, 14)
+
+                // 校准向导入口
+                Button(action: { showCalibration = true }) {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                            .frame(width: 20)
+                        Text(t("calibration_wizard"))
+                            .font(.system(size: 13))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 附加功能入口
+            Divider().padding(.leading, 14)
+            otherEntriesSection
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 设备页
+
+    private var deviceContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 已绑定设备卡片
             if let deviceName = manager.monitoredDeviceName {
-                // 已绑定设备
                 HStack(spacing: 12) {
                     Circle()
                         .fill(statusColor)
-                        .frame(width: 12, height: 12)
-                        .shadow(color: statusColor.opacity(0.6), radius: 4)
-
+                        .frame(width: 10, height: 10)
+                        .shadow(color: statusColor.opacity(0.6), radius: 3)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(deviceName)
-                            .font(.headline)
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                         Text(statusText)
-                            .font(.subheadline)
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
-
                     Spacer()
-
                     Button(action: { manager.unbindDevice() }) {
                         Text(t("unbind"))
-                            .font(.caption)
+                            .font(.system(size: 11))
                             .foregroundColor(.red)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                 }
-                .padding(14)
+                .padding(12)
                 .background(statusColor.opacity(0.06))
+                .cornerRadius(10)
 
-            } else {
-                // 未绑定 — 搜索按钮 + 设备列表
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .foregroundColor(.accentColor)
-                        Text(t("select_device"))
-                            .font(.headline)
-                        Spacer()
-                        if isScanning {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Button(action: {
-                                isScanning = true
-                                frozenDevices = []
-                                manager.startScanning()
-                                // 3秒后冻结列表
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                    frozenDevices = manager.discoveredDevices.sorted(by: { $0.rssi > $1.rssi })
-                                    isScanning = false
-                                    manager.stopScanning()
-                                }
-                            }) {
-                                Text(t("start_search"))
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                        }
-                    }
+                Divider().padding(.leading, 8)
+            }
 
-                    if frozenDevices.isEmpty && !isScanning {
-                        HStack {
-                            Spacer()
-                            VStack(spacing: 6) {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.title2)
-                                    .foregroundColor(.secondary)
-                                Text(t("scan_hint"))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 20)
-                            Spacer()
-                        }
+            // 扫描状态 / 可用设备
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundColor(.accentColor)
+                    Text(t("select_device"))
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    if isScanning {
+                        ProgressView().controlSize(.mini)
                     } else {
-                        ScrollView(.vertical, showsIndicators: true) {
-                            VStack(spacing: 4) {
-                                ForEach(isScanning ? manager.discoveredDevices.sorted(by: { $0.rssi > $1.rssi }) : frozenDevices, id: \.uuid) { device in
-                                    DeviceRow(device: device) {
-                                        manager.selectDevice(device)
-                                    }
-                                }
-                            }
+                        Button(action: startScan) {
+                            Text(t("start_search"))
+                                .font(.system(size: 11))
                         }
-                        .frame(maxHeight: 160)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
                     }
                 }
-                .padding(14)
-                .background(Color.accentColor.opacity(0.04))
-            }
-        }
-        .onAppear { manager.startScanning() }
-        .onDisappear { manager.stopScanning() }
-    }
 
-    // MARK: - 设备行
+                // 扫描中旋转提示
+                if isScanning && frozenDevices.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(t("scan_hint"))
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                }
 
-    private struct DeviceRow: View {
-        let device: Device
-        let onSelect: () -> Void
-
-        var body: some View {
-            Button(action: onSelect) {
-                HStack {
-                    Image(systemName: "iphone")
-                        .foregroundColor(.accentColor)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(device.description)
-                            .font(.callout)
-                            .lineLimit(1)
-                        if let mac = device.macAddr {
-                            Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())
-                                .font(.system(size: 10, design: .monospaced))
+                // 空状态
+                if frozenDevices.isEmpty && !isScanning {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.title2)
+                                .foregroundColor(.secondary)
+                            Text(t("scan_hint"))
+                                .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
+                        .padding(.vertical, 16)
+                        Spacer()
                     }
-                    Spacer()
-                    Text("\(device.rssi) dBm")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(rssiColor(device.rssi))
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
-            .cornerRadius(6)
-        }
-
-        private func rssiColor(_ rssi: Int) -> Color {
-            if rssi >= -50 { return .green }
-            if rssi >= -70 { return .yellow }
-            return .red
-        }
-    }
-
-    // MARK: - 配置文件选择器
-
-    private var profileSelector: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "folder.badge.gearshape")
-                .foregroundColor(.accentColor)
-                .frame(width: 16)
-
-            Text(t("profile"))
-                .font(.callout)
-
-            Spacer()
-
-            Picker("", selection: $profileManager.activeProfileID) {
-                ForEach(profileManager.profiles) { profile in
-                    Text(profile.name).tag(profile.id)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 100)
-            .onChange(of: profileManager.activeProfileID) { id in
-                profileManager.setActive(id)
-                profileManager.applyActiveProfile(to: manager)
-                // 同步滑块
-                sliderLock = Double(manager.lockRSSI)
-                sliderUnlock = Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
-            }
-
-            Button(action: {
-                newProfileName = ""
-                showAddProfile = true
-            }) {
-                Image(systemName: "plus.circle")
-                    .font(.callout)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.accentColor)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .alert(t("profile_add"), isPresented: $showAddProfile) {
-            TextField(t("profile_name_placeholder"), text: $newProfileName)
-            Button(t("ok")) {
-                guard !newProfileName.isEmpty else { return }
-                profileManager.saveCurrentAsProfile(
-                    name: newProfileName,
-                    lockRSSI: manager.lockRSSI,
-                    unlockRSSI: manager.unlockRSSI
-                )
-            }
-            Button(t("cancel"), role: .cancel) {}
-        } message: {
-            Text(t("profile_add_hint"))
-        }
-    }
-
-    // MARK: - 信号仪表
-
-    private var signalSection: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.15), lineWidth: 10)
-                    .frame(width: 90, height: 90)
-                Circle()
-                    .trim(from: 0, to: signalStrength)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [signalColor.opacity(0.4), signalColor]),
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                    )
-                    .frame(width: 90, height: 90)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.easeInOut(duration: 0.5), value: signalStrength)
-
-                VStack(spacing: 1) {
-                    Text(manager.rssi.map { "\($0)" } ?? "—")
-                        .font(.system(size: 26, weight: .bold, design: .monospaced))
-                    Text("dBm")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.vertical, 8)
-
-            // 场景状态文字
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(scenarioColor)
-                    .frame(width: 6, height: 6)
-                Text(scenarioText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // 校准按钮
-            Button(action: { showCalibration = true }) {
-                HStack {
-                    Image(systemName: "wand.and.stars")
-                    Text(t("calibration_wizard"))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .font(.callout)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(Color.accentColor.opacity(0.08))
-            .cornerRadius(8)
-
-            // 阈值调节
-            VStack(spacing: 12) {
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .frame(width: 16)
-                    Text(t("lock"))
-                        .font(.caption)
-                        .frame(width: 30, alignment: .leading)
-                    Button(action: { sliderLock = max(-95, sliderLock - 1) }) {
-                        Image(systemName: "minus.circle").font(.caption)
-                    }.buttonStyle(.plain)
-                    Slider(value: $sliderLock, in: Double(-95)...Double(-30))
-                    Button(action: { sliderLock = min(-30, sliderLock + 1) }) {
-                        Image(systemName: "plus.circle").font(.caption)
-                    }.buttonStyle(.plain)
-                    Text("\(Int(sliderLock))")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 35, alignment: .trailing)
-                    Text("dBm")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
-                }
-
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.open.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                        .frame(width: 16)
-                    Text(t("unlock"))
-                        .font(.caption)
-                        .frame(width: 30, alignment: .leading)
-                    Button(action: { sliderUnlock = max(-95, sliderUnlock - 1) }) {
-                        Image(systemName: "minus.circle").font(.caption)
-                    }.buttonStyle(.plain)
-                    Slider(value: $sliderUnlock, in: Double(-95)...Double(-30))
-                    Button(action: { sliderUnlock = min(-30, sliderUnlock + 1) }) {
-                        Image(systemName: "plus.circle").font(.caption)
-                    }.buttonStyle(.plain)
-                    Text("\(Int(sliderUnlock))")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 35, alignment: .trailing)
-                    Text("dBm")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            Button(action: {
-                manager.setLockRSSI(Int(sliderLock))
-                manager.setUnlockRSSI(Int(sliderUnlock))
-            }) {
-                HStack {
-                    Image(systemName: isThresholdApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-                        .foregroundColor(isThresholdApplied ? .green : .accentColor)
-                    Text(isThresholdApplied ? t("applied") : t("apply_thresholds"))
-                        .font(.callout)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(isThresholdApplied ? 0.15 : 0.1))
-                .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-
-            .onReceive(manager.$lockRSSI) { newValue in
-                if Int(sliderLock) != newValue && !isSliderDragging {
-                    sliderLock = Double(newValue)
-                }
-            }
-            .onReceive(manager.$unlockRSSI) { newValue in
-                let expected = (newValue == 1 ? -95 : newValue)
-                if Int(sliderUnlock) != expected && !isSliderDragging {
-                    sliderUnlock = Double(expected)
+                } else {
+                    // 设备列表
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 4) {
+                            ForEach(frozenDevices, id: \.uuid) { device in
+                                DeviceRow(device: device) {
+                                    manager.selectDevice(device)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 260)
                 }
             }
         }
-        .padding(14)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .cornerRadius(10)
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .onAppear { startScan() }
+        .onDisappear { stopScan() }
     }
 
-    // MARK: - 开关
-
-    private var toggleSection: some View {
-        VStack(spacing: 0) {
-            toggleRow(t("enable"), isOn: $enabled, icon: "power")
-            divider
-            toggleRow(t("wake_on_proximity"), isOn: $wakeOnProximity, icon: "display")
-            divider
-            toggleRow(t("wake_without_unlock"), isOn: $wakeWithoutUnlocking, icon: "lock.open")
-            divider
-            toggleRow(t("pause_on_lock"), isOn: $pauseItunes, icon: "pause.circle")
-            divider
-            toggleRow(t("use_screensaver"), isOn: $useScreensaver, icon: "sparkles.tv")
-            divider
-            toggleRow(t("sleep_display_on_lock"), isOn: $sleepDisplay, icon: "moon.fill")
-            divider
-            toggleRow(t("defer_lock_on_input"), isOn: $lockOnIdle, icon: "keyboard")
-            divider
-            toggleRow(t("manual_lock_no_auto_unlock"), isOn: $manualLockNoAutoUnlock, icon: "hand.raised.fill")
-            divider
-            toggleRow(t("passive_mode"), isOn: $passiveMode, icon: "antenna.radiowaves.left.and.right")
-                .onChange(of: passiveMode) { v in fun.setPassiveMode(v) }
-            divider
-            toggleRow(t("launch_at_login"), isOn: $launchAtLogin, icon: "arrow.up.circle")
-                .onChange(of: launchAtLogin) { v in
-                    if #available(macOS 13.0, *) {
-                        do {
-                            if v { try SMAppService.mainApp.register() }
-                            else { try SMAppService.mainApp.unregister() }
-                        } catch { Log.sm.debug("SMAppService error: \(error)") }
-                    }
+    private func startScan() {
+        stopScan() // avoid duplicate timers
+        isScanning = true
+        frozenDevices = []
+        manager.startScanning()
+        // 每 1.5 秒从 manager.discoveredDevices 同步一次，按 RSSI 降序
+        scanTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+            DispatchQueue.main.async {
+                let boundUUID = self.fun.monitoredUUID
+                let sorted = manager.discoveredDevices
+                    .filter { boundUUID == nil || $0.uuid != boundUUID }
+                    .sorted { $0.rssi > $1.rssi }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    frozenDevices = sorted
                 }
+            }
         }
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .cornerRadius(10)
     }
 
-    // MARK: - Wi-Fi 设置
+    private func stopScan() {
+        scanTimer?.invalidate()
+        scanTimer = nil
+        isScanning = false
+        manager.stopScanning()
+    }
 
-    private var wifiSection: some View {
-        VStack(spacing: 0) {
-            toggleRow(t("pause_on_wifi"), isOn: $pauseOnWiFi, icon: "wifi")
+    // MARK: - 基础设置页
+
+    private var basicContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageTitle(t("basic_settings"))
+            SettingToggleRow(
+                icon: "power", iconColor: .green,
+                title: t("enable"),
+                description: t("enable_desc"),
+                isOn: $enabled
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "arrow.up.circle", iconColor: .blue,
+                title: t("launch_at_login"),
+                description: t("launch_at_login_desc"),
+                isOn: $launchAtLogin
+            )
+            .onChange(of: launchAtLogin) { v in
+                if #available(macOS 13.0, *) {
+                    do {
+                        if v { try SMAppService.mainApp.register() }
+                        else { try SMAppService.mainApp.unregister() }
+                    } catch { Log.sm.debug("SMAppService error: \(error)") }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 解锁设置页
+
+    private var unlockContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageTitle(t("unlock_behavior"))
+            SettingToggleRow(
+                icon: "display", iconColor: .blue,
+                title: t("wake_on_proximity"),
+                description: t("wake_on_proximity_desc"),
+                isOn: $wakeOnProximity
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "lock.open", iconColor: .orange,
+                title: t("wake_without_unlock"),
+                description: t("wake_without_unlock_desc"),
+                isOn: $wakeWithoutUnlocking
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "sparkles.tv", iconColor: .purple,
+                title: t("use_screensaver"),
+                description: t("use_screensaver_desc"),
+                isOn: $useScreensaver
+            )
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 锁定设置页
+
+    private var lockContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageTitle(t("lock_behavior"))
+            SettingToggleRow(
+                icon: "pause.circle", iconColor: .red,
+                title: t("pause_on_lock"),
+                description: t("pause_on_lock_desc"),
+                isOn: $pauseItunes
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "moon.fill", iconColor: .indigo,
+                title: t("sleep_display_on_lock"),
+                description: t("sleep_display_on_lock_desc"),
+                isOn: $sleepDisplay
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "keyboard", iconColor: .gray,
+                title: t("defer_lock_on_input"),
+                description: t("defer_lock_on_input_desc"),
+                isOn: $lockOnIdle
+            )
+            sidebarDivider
+            SettingToggleRow(
+                icon: "hand.raised.fill", iconColor: .orange,
+                title: t("manual_lock_no_auto_unlock"),
+                description: t("manual_lock_no_auto_unlock_desc"),
+                isOn: $manualLockNoAutoUnlock
+            )
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 网络设置页
+
+    private var networkContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageTitle(t("network_connection"))
+            SettingToggleRow(
+                icon: "wifi", iconColor: .blue,
+                title: t("pause_on_wifi"),
+                description: t("pause_on_wifi_desc"),
+                isOn: $pauseOnWiFi
+            )
             if pauseOnWiFi {
-                divider
                 HStack(spacing: 8) {
                     Text(t("wifi_ssid"))
-                        .font(.callout)
+                        .font(.system(size: 12))
                     TextField(t("wifi_ssid_placeholder"), text: $pauseOnWiFiSSID)
                         .textFieldStyle(.roundedBorder)
-                        .font(.callout)
+                        .font(.system(size: 12))
                     Button(t("current_wifi")) {
                         pauseOnWiFiSSID = WiFiMonitor.shared.currentSSID ?? ""
                     }
-                    .font(.caption)
+                    .font(.system(size: 10))
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                 }
-                .padding(.horizontal, 14).padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
+            sidebarDivider
+            SettingToggleRow(
+                icon: "antenna.radiowaves.left.and.right", iconColor: .orange,
+                title: t("passive_mode"),
+                description: t("passive_mode_desc"),
+                isOn: $passiveMode
+            )
+            .onChange(of: passiveMode) { v in fun.setPassiveMode(v) }
         }
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .cornerRadius(10)
+        .padding(.horizontal, 12)
     }
 
-    private var otherSection: some View {
+    // MARK: - 配置页
+
+    private var configContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            pageTitle(t("profile"))
+
+            HStack(spacing: 8) {
+                Image(systemName: "folder.badge.gearshape")
+                    .foregroundColor(.accentColor)
+                    .frame(width: 16)
+                Text(t("profile"))
+                    .font(.system(size: 13))
+                Spacer()
+                Picker("", selection: $profileManager.activeProfileID) {
+                    ForEach(profileManager.profiles) { profile in
+                        Text(profile.name).tag(profile.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 100)
+                .onChange(of: profileManager.activeProfileID) { id in
+                    profileManager.setActive(id)
+                    profileManager.applyActiveProfile(to: manager)
+                    sliderLock = Double(manager.lockRSSI)
+                    sliderUnlock = Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
+                }
+
+                Button(action: {
+                    newProfileName = ""
+                    showAddProfile = true
+                }) {
+                    Image(systemName: "plus.circle")
+                        .font(.callout)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+            }
+            .alert(t("profile_add"), isPresented: $showAddProfile) {
+                TextField(t("profile_name_placeholder"), text: $newProfileName)
+                Button(t("ok")) {
+                    guard !newProfileName.isEmpty else { return }
+                    profileManager.saveCurrentAsProfile(
+                        name: newProfileName,
+                        lockRSSI: manager.lockRSSI,
+                        unlockRSSI: manager.unlockRSSI
+                    )
+                }
+                Button(t("cancel"), role: .cancel) {}
+            } message: {
+                Text(t("profile_add_hint"))
+            }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 通用页面元素
+
+    private func pageTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 17, weight: .bold))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            .padding(.top, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sidebarDivider: some View {
+        Divider().padding(.leading, 42)
+    }
+
+    // MARK: - 附加功能入口（总览页底部）
+
+    private var otherEntriesSection: some View {
         VStack(spacing: 0) {
             Button(action: { showAutomation = true }) {
                 HStack {
-                    Image(systemName: "bolt.automation").frame(width: 20)
-                    Text(t("automation")).font(.callout)
+                    Image(systemName: "bolt.fill").frame(width: 20)
+                    Text(t("automation")).font(.system(size: 13))
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
                 }
@@ -552,13 +781,12 @@ struct MenuDashboardView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            divider
+            sidebarDivider
 
             Button(action: { showStats = true }) {
                 HStack {
                     Image(systemName: "chart.bar").frame(width: 20)
-                    Text(t("unlock_stats")).font(.callout)
+                    Text(t("unlock_stats")).font(.system(size: 13))
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
                 }
@@ -566,13 +794,12 @@ struct MenuDashboardView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            divider
+            sidebarDivider
 
             Button(action: { showAbout = true }) {
                 HStack {
                     Image(systemName: "info.circle").frame(width: 20)
-                    Text(t("about_funlock")).font(.callout)
+                    Text(t("about_funlock")).font(.system(size: 13))
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption2).foregroundColor(.secondary)
                 }
@@ -580,13 +807,12 @@ struct MenuDashboardView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            divider
+            sidebarDivider
 
             Button(action: { exportDiagnostics() }) {
                 HStack {
                     Image(systemName: "square.and.arrow.up").frame(width: 20)
-                    Text(t("export_diagnostics")).font(.callout)
+                    Text(t("export_diagnostics")).font(.system(size: 13))
                     Spacer()
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -594,8 +820,29 @@ struct MenuDashboardView: View {
             }
             .buttonStyle(.plain)
         }
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
         .cornerRadius(10)
+        .padding(.horizontal, 12)
+    }
+
+    // MARK: - 底部按钮
+
+    private var footerSection: some View {
+        HStack(spacing: 12) {
+            Button(action: { manager.lockNow() }) {
+                HStack { Image(systemName: "lock.fill"); Text(t("lock_now")) }
+                    .font(.system(size: 13)).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).tint(.orange)
+
+            Button(action: { NSApplication.shared.terminate(nil) }) {
+                HStack { Image(systemName: "power"); Text(t("quit")) }
+                    .font(.system(size: 13)).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered).tint(.red)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     // MARK: - 导出诊断信息
@@ -649,46 +896,53 @@ struct MenuDashboardView: View {
         NSWorkspace.shared.open(tempDir)
     }
 
-    // MARK: - 底部
+    // MARK: - 设备行
 
-    private var footerSection: some View {
-        HStack(spacing: 12) {
-            Button(action: { manager.lockNow() }) {
-                HStack { Image(systemName: "lock.fill"); Text(t("lock_now")) }
-                    .font(.callout).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).tint(.orange)
+    private struct DeviceRow: View {
+        let device: Device
+        let onSelect: () -> Void
 
-            Button(action: { NSApplication.shared.terminate(nil) }) {
-                HStack { Image(systemName: "power"); Text(t("quit")) }
-                    .font(.callout).frame(maxWidth: .infinity)
+        var body: some View {
+            Button(action: onSelect) {
+                HStack {
+                    Image(systemName: "iphone")
+                        .foregroundColor(.accentColor)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(device.description)
+                            .font(.callout)
+                            .lineLimit(1)
+                        if let mac = device.macAddr {
+                            Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Text("\(device.rssi) dBm")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(rssiColor(device.rssi))
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered).tint(.red)
+            .buttonStyle(.plain)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .cornerRadius(6)
         }
-        .padding(14)
-    }
 
-    // MARK: - 组件
-
-    private func toggleRow(_ title: String, isOn: Binding<Bool>, icon: String) -> some View {
-        Toggle(isOn: isOn) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(.accentColor)
-                    .frame(width: 20)
-                Text(title).font(.callout)
-            }
+        private func rssiColor(_ rssi: Int) -> Color {
+            if rssi >= -50 { return .green }
+            if rssi >= -70 { return .yellow }
+            return .red
         }
-        .toggleStyle(.switch).controlSize(.small)
-        .padding(.horizontal, 14).padding(.vertical, 8)
     }
 
-    private var divider: some View {
-        Divider().padding(.leading, 44)
-    }
-
-    // MARK: - 状态
+    // MARK: - 状态计算属性
 
     private var statusColor: Color {
         switch manager.state.screen {

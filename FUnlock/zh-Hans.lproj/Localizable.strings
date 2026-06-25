@@ -201,3 +201,29 @@
 /* Abnormal Unlock Detection */
 "abnormal_unlock_title" = "异常解锁检测";
 "abnormal_unlock_info" = "检测到短时间内大量自动解锁尝试失败。如果这不是您本人操作，建议检查蓝牙安全设置。";
+
+// MenuTab labels
+"overview" = "总览";
+"basic" = "基础";
+"network" = "网络";
+"config" = "配置";
+
+// Page titles
+"basic_settings" = "基础设置";
+"unlock_behavior" = "解锁行为";
+"lock_behavior" = "锁定行为";
+"network_connection" = "网络";
+"no_device" = "未绑定设备";
+
+// Setting descriptions (toggle row)
+"enable_desc" = "开启后启用自动锁定和解锁";
+"launch_at_login_desc" = "登录时自动启动 FUnlock";
+"wake_on_proximity_desc" = "检测到设备靠近时唤醒屏幕";
+"wake_without_unlock_desc" = "唤醒屏幕但不解锁";
+"use_screensaver_desc" = "锁定时启动屏幕保护程序";
+"pause_on_lock_desc" = "锁定屏幕时暂停媒体播放";
+"sleep_display_on_lock_desc" = "锁定屏幕时关闭显示器";
+"defer_lock_on_input_desc" = "有键盘或鼠标活动时暂缓自动锁定";
+"manual_lock_no_auto_unlock_desc" = "手动锁屏后跳过自动解锁";
+"pause_on_wifi_desc" = "连接指定 Wi-Fi 时暂停自动解锁";
+"passive_mode_desc" = "停止扫描，仅在手动触发时锁定/解锁";
