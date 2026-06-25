@@ -1,13 +1,23 @@
-name: CI
+# CI
+# [![CI](https://github.com/fuhahah/FUnlock/actions/workflows/test.yml/badge.svg)](https://github.com/fuhahah/FUnlock/actions/workflows/test.yml)
 
-on: [push]
+name: CI + Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
-  build:
-
-    runs-on: macOS-latest
-    
+  test:
+    runs-on: [macos-14, macos-15]
     steps:
-    - uses: actions/checkout@master
-    - name: Start xcodebuild test
-      run: xcodebuild clean build -project FUnlock.xcodeproj -scheme FUnlock
+    - uses: actions/checkout@v4
+    - name: Run tests
+      run: |
+        xcodebuild clean test \
+          -project FUnlock.xcodeproj \
+          -scheme FUnlock \
+          -destination 'platform=macOS' \
+          -enableCodeCoverage YES
