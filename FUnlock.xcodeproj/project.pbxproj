@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000010226C1DF200000012 /* FUnlockTests.swift */; };
 		3D2CF85B255102B300157996 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3D2CF85A255102B300157996 /* MediaRemote.framework */; };
 		3D2FCF08226C99CB007A06E7 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D2FCF07226C99CB007A06E7 /* Images.xcassets */; };
 		3D4EE4112279E55A00AF9E93 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 3D4EE4102279E55A00AF9E93 /* AppDelegate.m */; };
 		3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B653226C1C3200451B7B /* AppDelegate.swift */; };
 		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
+		DD000002226C1DF200000001 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000001226C1DF200000001 /* Log.swift */; };
 		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
 		CC000001226C1DF200000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000002226C1DF200000001 /* ProfileManager.swift */; };
 		AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004226C1DF200000001 /* MenuDashboardView.swift */; };
@@ -48,7 +50,19 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
+/* Begin PBXContainerItemProxy section */
+		AA000010226C1DF200000015 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3DD4B648226C1C3200451B7B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3DD4B64F226C1C3200451B7B;
+			remoteInfo = FUnlock;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		AA000010226C1DF200000012 /* FUnlockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockTests.swift; sourceTree = "<group>"; };
+		AA000010226C1DF200000013 /* FUnlockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FUnlockTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3D2CF85A255102B300157996 /* MediaRemote.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemote.framework; path = ../../../../System/Library/PrivateFrameworks/MediaRemote.framework; sourceTree = "<group>"; };
 		3D2FCF07226C99CB007A06E7 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		3D43D0122765FCCB00D15991 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -75,6 +89,7 @@
 		3DD4B662226C1CEF00451B7B /* lowlevel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lowlevel.h; sourceTree = "<group>"; };
 		3DD4B663226C1CF000451B7B /* lowlevel.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lowlevel.c; sourceTree = "<group>"; };
 		3DD4B665226C1DF200451B7B /* FUn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUn.swift; sourceTree = "<group>"; };
+		DD000001226C1DF200000001 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
 		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
@@ -131,6 +146,7 @@
 			isa = PBXGroup;
 			children = (
 				3DD4B652226C1C3200451B7B /* FUnlock */,
+				AA000010226C1DF200000014 /* FUnlockTests */,
 				3D600A4122701A5B0068FB7B /* Launcher */,
 				3DD4B651226C1C3200451B7B /* Products */,
 				3DD4B667226C1E3700451B7B /* Frameworks */,
@@ -141,6 +157,7 @@
 			isa = PBXGroup;
 			children = (
 				3DD4B650226C1C3200451B7B /* FUnlock.app */,
+				AA000010226C1DF200000013 /* FUnlockTests.xctest */,
 				3D600A4022701A5A0068FB7B /* Launcher.app */,
 			);
 			name = Products;
@@ -174,6 +191,7 @@
 				3DD4B661226C1CEF00451B7B /* FUnlock-Bridging-Header.h */,
 				3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */,
 				3D2FCF07226C99CB007A06E7 /* Images.xcassets */,
+				DD000001226C1DF200000001 /* Log.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -186,6 +204,14 @@
 				WF0000010000000100000004 /* CoreWLAN.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		AA000010226C1DF200000014 /* FUnlockTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA000010226C1DF200000012 /* FUnlockTests.swift */,
+			);
+			path = FUnlockTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -227,6 +253,22 @@
 			productReference = 3DD4B650226C1C3200451B7B /* FUnlock.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA000010226C1DF200000010 /* FUnlockTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000010226C1DF20000001A /* Build configuration list for PBXNativeTarget "FUnlockTests" */;
+			buildPhases = (
+				AA000010226C1DF20000001C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA000010226C1DF200000016 /* PBXTargetDependency */,
+			);
+			name = FUnlockTests;
+			productName = FUnlockTests;
+			productReference = AA000010226C1DF200000013 /* FUnlockTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -264,6 +306,10 @@
 							};
 						};
 					};
+					AA000010226C1DF200000010 = {
+						CreatedOnToolsVersion = 13.0;
+						TestTargetID = 3DD4B64F226C1C3200451B7B;
+					};
 				};
 			};
 			buildConfigurationList = 3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "FUnlock" */;
@@ -288,6 +334,7 @@
 			targets = (
 				3DD4B64F226C1C3200451B7B /* FUnlock */,
 				3D600A3F22701A5A0068FB7B /* Launcher */,
+				AA000010226C1DF200000010 /* FUnlockTests */,
 			);
 		};
 /* End PBXProject section */
@@ -362,12 +409,29 @@
 				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
 				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
+				DD000002226C1DF200000001 /* Log.swift in Sources */,
 				3D79FD7D226C335100A373C0 /* appleDeviceNames.swift in Sources */,
 				CC00001022784D550017D8B9 /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA000010226C1DF20000001C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA000010226C1DF200000016 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3DD4B64F226C1C3200451B7B /* FUnlock */;
+			targetProxy = AA000010226C1DF200000015 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		3D600A35226CC1A40068FB7B /* Localizable.strings */ = {
@@ -622,6 +686,57 @@
 			};
 			name = Release;
 		};
+		AA000010226C1DF200000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = JJYCS98SHK;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = FUnlockTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlockTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FUnlock.app/Contents/MacOS/FUnlock";
+			};
+			name = Debug;
+		};
+		AA000010226C1DF200000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = JJYCS98SHK;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = FUnlockTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlockTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FUnlock.app/Contents/MacOS/FUnlock";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -648,6 +763,15 @@
 			buildConfigurations = (
 				3DD4B65F226C1C3400451B7B /* Debug */,
 				3DD4B660226C1C3400451B7B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000010226C1DF20000001A /* Build configuration list for PBXNativeTarget "FUnlockTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000010226C1DF200000018 /* Debug */,
+				AA000010226C1DF200000019 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,6 +1,21 @@
 import Foundation
 import CoreBluetooth
 import Combine
+import os
+
+// MARK: - 线程安全锁
+
+private final class UnfairLock {
+    private var _lock = os_unfair_lock()
+    func lock() { os_unfair_lock_lock(&_lock) }
+    func unlock() { os_unfair_lock_unlock(&_lock) }
+    func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        let result = body()
+        unlock()
+        return result
+    }
+}
 
 // MARK: - 信号处理管道类型
 
@@ -257,6 +272,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     let UNLOCK_DISABLED = 1
     let LOCK_DISABLED = -100
     let bleQueue = DispatchQueue(label: "com.bleunlock.ble")
+    private let lock = UnfairLock()
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
     var delegate: FUnDelegate?
@@ -295,7 +311,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func scanForPeripherals() {
         guard !centralMgr.isScanning else { return }
         centralMgr.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-        //print("Start scanning")
+        //Log.sm.debug("Start scanning")
     }
 
     func startScanning() {
@@ -349,7 +365,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         // 直接获取已知外设（不依赖扫描发现）
         let known = centralMgr.retrievePeripherals(withIdentifiers: [uuid])
         if let peripheral = known.first {
-            print("[FUn] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state)")
+            Log.ble.debug("[FUn] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state.rawValue)")
             monitoredPeripheral = peripheral
             if peripheral.state == .disconnected {
                 centralMgr.connect(peripheral, options: nil)
@@ -363,16 +379,26 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         signalTimer?.invalidate()
         let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
-            self.signalLostCount += 1
-            if self.signalLostCount >= 3 {
-                print("Device is lost (3 consecutive timeouts)")
+            let shouldLose: Bool = self.lock.withLock {
+                self.signalLostCount += 1
+                if self.signalLostCount >= 3 {
+                    return true
+                } else {
+                    return false
+                }
+            }
+            if shouldLose {
+                Log.sm.debug("Device is lost (3 consecutive timeouts)")
                 self.delegate?.updateRSSI(rssi: nil, active: false)
-                if self.presence {
+                let wasPresent = self.lock.withLock { self.presence }
+                if wasPresent {
+                    self.lock.lock()
                     self.presence = false
-                    self.delegate?.updatePresence(presence: self.presence, reason: "lost")
+                    self.lock.unlock()
+                    self.delegate?.updatePresence(presence: false, reason: "lost")
                 }
             } else {
-                print("Signal timeout \(self.signalLostCount)/3, waiting...")
+                Log.sm.debug("Signal timeout \(self.lock.withLock { self.signalLostCount })/3, waiting...")
                 DispatchQueue.main.async { self.resetSignalTimer() }
             }
         })
@@ -383,16 +409,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
-            print("Bluetooth powered on")
+            Log.ble.debug("Bluetooth powered on")
             if activeModeTimer == nil {
                 scanForPeripherals()
             }
             powerWarn = false
         case .poweredOff:
-            print("Bluetooth powered off")
+            Log.ble.debug("Bluetooth powered off")
+            invalidateAllTimers()
+            lock.lock()
             presence = false
-            signalTimer?.invalidate()
-            signalTimer = nil
+            lock.unlock()
             if powerWarn {
                 powerWarn = false
                 DispatchQueue.main.async {
@@ -403,99 +430,157 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             break
         }
     }
-    
+
     // MARK: - Time decay computation (heartbeat fallback, reads self.effectiveRSSI)
     func getEffectiveRSSI() -> Double {
-        let elapsed = Date().timeIntervalSince(lastReceiveTime)
-        // 使用管道相同的自适应衰减率（heartbeat 读取时的增量惩罚）
+        let (lastRecv, effRSSI) = lock.withLock { (lastReceiveTime, effectiveRSSI) }
+        let elapsed = Date().timeIntervalSince(lastRecv)
         let rate: Double
         if abs(pipeline.smoothedSlope) > 2.0 {
             rate = 0.5 * (1 + 0.3 * abs(pipeline.smoothedSlope))
         } else {
             rate = 0.5 / (1 + 0.05 * elapsed)
         }
-        let eff = self.effectiveRSSI - rate * elapsed
+        let eff = effRSSI - rate * elapsed
         return max(eff, -100.0)
     }
 
     // MARK: - Direction 3: Heartbeat — proactive lock check
     private func ensureHeartbeat() {
-        guard heartbeatTimer == nil else { return }
-        lastHeartbeatInterval = computeHeartbeatInterval()
-        heartbeatTimer = makeHeartbeatTimer(interval: lastHeartbeatInterval)
+        let alreadyExists = lock.withLock { heartbeatTimer != nil }
+        guard !alreadyExists else { return }
+        let interval = computeHeartbeatInterval()
+        lock.lock()
+        lastHeartbeatInterval = interval
+        heartbeatTimer = makeHeartbeatTimer(interval: interval)
         RunLoop.main.add(heartbeatTimer!, forMode: .common)
+        lock.unlock()
     }
 
     private func computeHeartbeatInterval() -> TimeInterval {
         let eff = getEffectiveRSSI()
         let baseTh = Double(unlockRSSI) + 10.0
         let lockTh = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) + 10.0
-        if eff > baseTh { return 5.0 }       // device very close, save power
-        if eff < lockTh { return 1.0 }       // device moving away, respond fast
-        return 2.0                           // normal proximity
+        if eff > baseTh { return 5.0 }
+        if eff < lockTh { return 1.0 }
+        return 2.0
     }
 
     private func makeHeartbeatTimer(interval: TimeInterval) -> Timer {
         return Timer(timeInterval: interval, repeats: true, block: { [weak self] _ in
             guard let self = self else { return }
-            guard self.presence else {
-                self.heartbeatTimer?.invalidate()
-                self.heartbeatTimer = nil
-                return
+            let shouldStop = self.lock.withLock {
+                guard self.presence else {
+                    self.heartbeatTimer?.invalidate()
+                    self.heartbeatTimer = nil
+                    return true
+                }
+                return false
             }
+            guard !shouldStop else { return }
             let eff = self.getEffectiveRSSI()
             let threshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
-            if eff < threshold && self.proximityTimer == nil && self.inputMonitor?.isActive != true {
-                print("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
+            let hasTimer = self.lock.withLock { self.proximityTimer != nil }
+            if eff < threshold && !hasTimer && self.inputMonitor?.isActive != true {
+                Log.sm.debug("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
                 self.startLockTimer()
             }
-            // Adaptive: rebuild timer if interval should change
             let newInterval = self.computeHeartbeatInterval()
-            if abs(newInterval - self.lastHeartbeatInterval) > 0.5 {
-                print("[HB] interval \(self.lastHeartbeatInterval)s → \(newInterval)s")
+            let (lastInterval, currentTimer) = self.lock.withLock { (self.lastHeartbeatInterval, self.heartbeatTimer) }
+            if abs(newInterval - lastInterval) > 0.5 {
+                Log.sm.debug("[HB] interval \(lastInterval)s → \(newInterval)s")
+                currentTimer?.invalidate()
+                let newTimer = self.makeHeartbeatTimer(interval: newInterval)
+                self.lock.lock()
                 self.lastHeartbeatInterval = newInterval
-                self.heartbeatTimer?.invalidate()
-                self.heartbeatTimer = self.makeHeartbeatTimer(interval: newInterval)
-                RunLoop.main.add(self.heartbeatTimer!, forMode: .common)
+                self.heartbeatTimer = newTimer
+                self.lock.unlock()
+                RunLoop.main.add(newTimer, forMode: .common)
             }
         })
     }
 
     func cancelHeartbeat() {
+        lock.lock()
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
+        lock.unlock()
+    }
+
+    func invalidateAllTimers() {
+        lock.lock()
+        signalTimer?.invalidate()
+        signalTimer = nil
+        proximityTimer?.invalidate()
+        proximityTimer = nil
+        activeModeTimer?.invalidate()
+        activeModeTimer = nil
+        connectionTimer?.invalidate()
+        connectionTimer = nil
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        lock.unlock()
     }
 
     // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
     private func startLockTimer() {
         let timer = Timer(timeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
-            // Direction 3: final input check before locking
             let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                 || UserDefaults.standard.bool(forKey: "lockOnIdle")
             if lockOnIdle && self.inputMonitor?.isActive == true {
-                print("[SM] input active at lock timer fire, deferring")
+                Log.sm.debug("[SM] input active at lock timer fire, deferring")
+                self.lock.lock()
                 self.proximityTimer = nil
+                self.lock.unlock()
                 return
             }
-            print("Device is away")
+            Log.sm.debug("Device is away")
+            self.lock.lock()
             self.presence = false
+            self.lock.unlock()
             self.cancelHeartbeat()
             DispatchQueue.main.async {
                 self.delegate?.updatePresence(presence: false, reason: "away")
             }
+            self.lock.lock()
             self.proximityTimer = nil
+            self.lock.unlock()
         })
         RunLoop.main.add(timer, forMode: .common)
+        lock.lock()
         proximityTimer = timer
+        lock.unlock()
     }
 
     func updateMonitoredPeripheral(_ rssi: Int) {
         let now = Date()
         let source: SignalSource = (activeModeTimer != nil) ? .connected : .scanning
+
+        // 1. 信号处理（纯计算）
+        let decision = processSignal(rssi: rssi, source: source, now: now)
+
+        // 2. 更新 displayRSSI
+        updateDisplayRSSI(rssi: rssi)
+
+        // 3. 在场检测（基于原始 RSSI 快速解锁）
+        checkProximity(rssi: rssi)
+
+        // 4. 锁定决策（基于 effectiveRSSI）
+        applyLockTimer(effectiveRSSI: decision.effectiveRSSI)
+
+        // 5. 心跳 + 信号超时
+        ensureHeartbeat()
+        resetSignalTimer()
+    }
+
+    // MARK: - updateMonitoredPeripheral 拆分方法
+
+    private func processSignal(rssi: Int, source: SignalSource, now: Date) -> SignalDecision {
         let decision = pipeline.process(rssi: rssi, source: source, now: now)
 
-        // 维护窗口
+        // 维护滑动窗口
+        lock.lock()
         pipeline.latestRSSIs.append(Double(rssi))
         pipeline.rssiTimestamps.append(now)
         let cutoff = now.addingTimeInterval(-pipeline.windowDuration)
@@ -504,58 +589,71 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             pipeline.latestRSSIs.removeFirst()
         }
 
-        // 更新有效 RSSI（来自管道 S4 自适应衰减）
         lastReceiveTime = now
         effectiveRSSI = decision.effectiveRSSI
+        lock.unlock()
 
-        // displayRSSI: raw RSSI EMA（在管道 process 中已计算，这里用旧路径保持兼容）
+        return decision
+    }
+
+    private func updateDisplayRSSI(rssi: Int) {
+        lock.lock()
         displayRSSI = 0.1 * Double(rssi) + 0.9 * displayRSSI
+        lock.unlock()
+    }
 
-        // Presence check: use raw rssi for fast unlock detection
+    private func checkProximity(rssi: Int) {
+        let dispRSSI: Double
+        lock.lock()
+        dispRSSI = displayRSSI
+        let wasPresent = presence
+        lock.unlock()
+
         let unlockThreshold = unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI
         if rssi >= unlockThreshold {
-            if !presence {
-                print("Device is close")
+            if !wasPresent {
+                Log.sm.debug("Device is close")
+                lock.lock()
                 presence = true
+                lock.unlock()
                 DispatchQueue.main.async {
                     self.delegate?.updatePresence(presence: true, reason: "close")
                 }
+                lock.lock()
                 pipeline.latestRSSIs.removeAll()
                 pipeline.rssiTimestamps.removeAll()
+                lock.unlock()
             }
-            // Always attempt unlock when signal is strong and screen might be locked
             DispatchQueue.main.async {
-                self.delegate?.updateRSSI(rssi: Int(self.displayRSSI), active: self.activeModeTimer != nil)
+                self.delegate?.updateRSSI(rssi: Int(dispRSSI), active: self.activeModeTimer != nil)
                 self.delegate?.onDeviceApproached()
             }
         } else {
             DispatchQueue.main.async {
-                self.delegate?.updateRSSI(rssi: Int(self.displayRSSI), active: self.activeModeTimer != nil)
+                self.delegate?.updateRSSI(rssi: Int(dispRSSI), active: self.activeModeTimer != nil)
             }
         }
+    }
 
-        // Direction 2 + 3: use effectiveRSSI for lock decision
+    private func applyLockTimer(effectiveRSSI: Double) {
         let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
         if effectiveRSSI >= threshold {
-            // Signal strong → cancel any pending lock
-            if let timer = proximityTimer {
-                timer.invalidate()
-                proximityTimer = nil
-            }
-        } else if presence && proximityTimer == nil {
-            // Direction 3: input activity veto — no timer, no locking
-            let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
-                || UserDefaults.standard.bool(forKey: "lockOnIdle")
-            if lockOnIdle && inputMonitor?.isActive == true {
-                print("[SM] input active, rejecting lock signal")
-                // Don't start proximityTimer; heartbeat will catch it later if needed
-            } else {
-                startLockTimer()
+            lock.lock()
+            proximityTimer?.invalidate()
+            proximityTimer = nil
+            lock.unlock()
+        } else {
+            let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
+            if curPresence && curTimer == nil {
+                let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
+                    || UserDefaults.standard.bool(forKey: "lockOnIdle")
+                if lockOnIdle && inputMonitor?.isActive == true {
+                    Log.sm.debug("[SM] input active, rejecting lock signal")
+                } else {
+                    startLockTimer()
+                }
             }
         }
-
-        ensureHeartbeat()
-        resetSignalTimer()
     }
 
     func resetScanTimer(device: Device) {
@@ -581,12 +679,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         p.readRSSI()
 
         guard p.state == .disconnected else { return }
-        print("Connecting")
+        Log.ble.debug("Connecting")
         centralMgr.connect(p, options: nil)
         connectionTimer?.invalidate()
         let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] _ in
             if p.state == .connecting {
-                print("Connection timeout")
+                Log.ble.debug("Connection timeout")
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
         })
@@ -596,10 +694,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func restartActiveModeTimer(peripheral: CBPeripheral) {
         activeModeTimer?.invalidate()
-        let timer = Timer(timeInterval: activePollInterval, repeats: true, block: { [weak self] _ in
+        let pollInterval = lock.withLock { activePollInterval }
+        let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] _ in
             guard let self = self else { return }
-            if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
-                print("Falling back to passive mode")
+            let lastRead = self.lock.withLock { self.lastReadAt }
+            if Date().timeIntervalSince1970 > lastRead + 10 {
+                Log.ble.debug("Falling back to passive mode")
                 self.centralMgr.cancelPeripheralConnection(peripheral)
                 self.activeModeTimer?.invalidate()
                 self.activeModeTimer = nil
@@ -639,7 +739,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if let uuids = advertisementData["kCBAdvDataServiceUUIDs"] as? [CBUUID] {
                 for uuid in uuids {
                     if uuid == ExposureNotification {
-                        //print("Device \(peripheral.identifier) Exposure Notification")
+                        //Log.sm.debug("Device \(peripheral.identifier) Exposure Notification")
                         return
                     }
                 }
@@ -687,7 +787,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             peripheral.discoverServices([DeviceInformation])
         }
         if peripheral == monitoredPeripheral && !passiveMode {
-            print("Connected")
+            Log.ble.debug("Connected")
             connectionTimer?.invalidate()
             connectionTimer = nil
             peripheral.readRSSI()
@@ -695,20 +795,33 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     //MARK:CBCentralManagerDelegate end -
-    
+
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        Log.ble.debug("didDisconnectPeripheral: \(peripheral.identifier)")
+        if peripheral == monitoredPeripheral {
+            invalidateAllTimers()
+            lock.lock()
+            presence = false
+            signalLostCount = 0
+            lock.unlock()
+        }
+    }
+
     //MARK:- CBPeripheralDelegate start
 
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        // 按 UUID 匹配，不依赖对象引用相等
         guard peripheral.identifier == monitoredUUID else { return }
         if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
         updateMonitoredPeripheral(rssi)
-        lastReadAt = Date().timeIntervalSince1970
 
-        // Track RSSI stability for adaptive polling
-        let fluctuation = abs(pipeline.kalmanEstimate - Double(lastEstimatedRSSI))
-        lastEstimatedRSSI = Int(pipeline.kalmanEstimate)
+        let now = Date().timeIntervalSince1970
+        let kalmanNow = pipeline.kalmanEstimate
+        var restartPolling = false
+        lock.lock()
+        lastReadAt = now
+        let fluctuation = abs(kalmanNow - Double(lastEstimatedRSSI))
+        lastEstimatedRSSI = Int(kalmanNow)
         if fluctuation < 5 {
             stableCount += 1
         } else {
@@ -716,22 +829,30 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         if stableCount >= 10 && activePollInterval < 8.0 {
             activePollInterval = 8.0
-            restartActiveModeTimer(peripheral: peripheral)
+            restartPolling = true
         } else if fluctuation >= 5 && activePollInterval > 2.0 {
             activePollInterval = 2.0
             stableCount = 0
+            restartPolling = true
+        }
+        lock.unlock()
+
+        if restartPolling {
             restartActiveModeTimer(peripheral: peripheral)
         }
 
-        if activeModeTimer == nil && !passiveMode {
-            print("Entering active mode")
+        let shouldStartActiveMode = lock.withLock { activeModeTimer == nil && !passiveMode }
+        if shouldStartActiveMode {
+            Log.ble.debug("Entering active mode")
             if !scanMode {
                 centralMgr.stopScan()
             }
-            let timer = Timer(timeInterval: activePollInterval, repeats: true, block: { [weak self] _ in
+            let pollInterval = lock.withLock { activePollInterval }
+            let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] _ in
                 guard let self = self else { return }
-                if Date().timeIntervalSince1970 > self.lastReadAt + 10 {
-                    print("Falling back to passive mode")
+                let lastRead = self.lock.withLock { self.lastReadAt }
+                if Date().timeIntervalSince1970 > lastRead + 10 {
+                    Log.ble.debug("Falling back to passive mode")
                     self.centralMgr.cancelPeripheralConnection(peripheral)
                     self.activeModeTimer?.invalidate()
                     self.activeModeTimer = nil

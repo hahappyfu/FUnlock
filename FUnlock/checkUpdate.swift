@@ -1,20 +1,20 @@
-import Cocoa
 import UserNotifications
 
 class UpdateChecker {
     private let key = "lastUpdateCheck"
-    private let interval: TimeInterval = 24 * 60 * 60  // 24h
+    private let interval: TimeInterval = 24 * 60 * 60
     private var notified = false
     private var checking = false
     private var lastCheckAt: TimeInterval
+    private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
-        lastCheckAt = defaults.double(forKey: "lastUpdateCheck")
+        self.defaults = defaults
+        lastCheckAt = defaults.double(forKey: key)
     }
 
     func check() {
-        guard !notified else { return }
-        guard !checking else { return }
+        guard !notified, !checking else { return }
         let now = Date().timeIntervalSince1970
         guard now - lastCheckAt >= interval else { return }
         doCheck()
@@ -31,7 +31,7 @@ class UpdateChecker {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let version = json["tag_name"] as? String else { return }
             self.lastCheckAt = Date().timeIntervalSince1970
-            UserDefaults.standard.set(self.lastCheckAt, forKey: self.key)
+            self.defaults.set(self.lastCheckAt, forKey: self.key)
             self.compareVersionsAndNotify(version)
         }
         task.resume()
@@ -52,10 +52,4 @@ class UpdateChecker {
         let req = UNNotificationRequest(identifier: "funlock-update", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
-}
-
-private let sharedUpdater = UpdateChecker()
-
-func checkUpdate() {
-    sharedUpdater.check()
 }
