@@ -17,7 +17,7 @@
                BlueprintIdentifier = "3DD4B64F226C1C3200451B7B"
                BuildableName = "FUnlock.app"
                BlueprintName = "FUnlock"
-               ReferencedContainer = "container:BLEUnlock.xcodeproj">
+               ReferencedContainer = "container:FUnlock.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "3DD4B64F226C1C3200451B7B"
-            BuildableName = "BLEUnlock.app"
-            BlueprintName = "BLEUnlock"
-            ReferencedContainer = "container:BLEUnlock.xcodeproj">
+            BuildableName = "FUnlock.app"
+            BlueprintName = "FUnlock"
+            ReferencedContainer = "container:FUnlock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "3DD4B64F226C1C3200451B7B"
-            BuildableName = "BLEUnlock.app"
-            BlueprintName = "BLEUnlock"
-            ReferencedContainer = "container:BLEUnlock.xcodeproj">
+            BuildableName = "FUnlock.app"
+            BlueprintName = "FUnlock"
+            ReferencedContainer = "container:FUnlock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
