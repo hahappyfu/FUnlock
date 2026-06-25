@@ -728,23 +728,27 @@ final class FUnManager: ObservableObject {
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
 
     func cleanup() {
-        // 安全地 invalidate 所有 Timer（已修复重复 RunLoop 注册）
-        fun.signalTimer?.invalidate()
-        fun.signalTimer = nil
-        fun.proximityTimer?.invalidate()
-        fun.proximityTimer = nil
-        fun.activeModeTimer?.invalidate()
-        fun.activeModeTimer = nil
-        fun.connectionTimer?.invalidate()
-        fun.connectionTimer = nil
-        fun.heartbeatTimer?.invalidate()
-        fun.heartbeatTimer = nil
-        // 清理扫描设备的 timer
-        for (_, device) in fun.devices {
-            device.scanTimer?.invalidate()
-            device.scanTimer = nil
+        // 退出时不要同步 invalidate Timer —— RunLoop 正在销毁 Timer 列表，
+        // 同步 invalidate 会导致 __CFRunLoopDeallocateTimers 数组越界崩溃。
+        // 延迟到下一个 RunLoop 迭代（退出时不会执行，Timer 随 RunLoop 一起释放）。
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.fun.signalTimer?.invalidate()
+            self.fun.signalTimer = nil
+            self.fun.proximityTimer?.invalidate()
+            self.fun.proximityTimer = nil
+            self.fun.activeModeTimer?.invalidate()
+            self.fun.activeModeTimer = nil
+            self.fun.connectionTimer?.invalidate()
+            self.fun.connectionTimer = nil
+            self.fun.heartbeatTimer?.invalidate()
+            self.fun.heartbeatTimer = nil
+            for (_, device) in self.fun.devices {
+                device.scanTimer?.invalidate()
+                device.scanTimer = nil
+            }
+            releaseWakeAssertion()
         }
-        releaseWakeAssertion()
         wakeTask?.cancel()
         unlockTask?.cancel()
         intrudeCheckTask?.cancel()
