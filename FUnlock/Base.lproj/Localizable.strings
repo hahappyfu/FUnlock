@@ -203,3 +203,29 @@
 /* Abnormal Unlock Detection */
 "abnormal_unlock_title" = "Abnormal Unlock Activity";
 "abnormal_unlock_info" = "A large number of auto-unlock attempts failed in a short period. If this wasn't you, consider checking your Bluetooth security settings.";
+
+// MenuTab labels
+"overview" = "Overview";
+"basic" = "Basic";
+"network" = "Network";
+"config" = "Config";
+
+// Page titles
+"basic_settings" = "Basic Settings";
+"unlock_behavior" = "Unlock Behavior";
+"lock_behavior" = "Lock Behavior";
+"network_connection" = "Network";
+"no_device" = "No Device";
+
+// Setting descriptions (toggle row)
+"enable_desc" = "Turn on to enable auto-lock and unlock";
+"launch_at_login_desc" = "Automatically start when you log in";
+"wake_on_proximity_desc" = "Wake display when device is detected nearby";
+"wake_without_unlock_desc" = "Wake display without unlocking the screen";
+"use_screensaver_desc" = "Start screensaver instead of locking the screen";
+"pause_on_lock_desc" = "Pause media playback when screen locks";
+"sleep_display_on_lock_desc" = "Turn off display when screen locks";
+"defer_lock_on_input_desc" = "Defer auto-lock while keyboard or mouse is active";
+"manual_lock_no_auto_unlock_desc" = "Skip auto-unlock after a manual lock";
+"pause_on_wifi_desc" = "Pause auto-unlock when connected to specified Wi-Fi";
+"passive_mode_desc" = "Stop scanning; lock/unlock only on manual trigger";
