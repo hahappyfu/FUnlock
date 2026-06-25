@@ -10,11 +10,11 @@ import CoreBluetooth
 import IOKit.hid
 import os.lock
 
-func t(_ key: String) -> String {
-    return NSLocalizedString(key, comment: "")
-}
-
 // MARK: - 输入活动监听
+
+extension Notification.Name {
+    static let menuShowStats = Notification.Name("menuShowStats")
+}
 
 class InputActivityMonitor {
     private var hidManager: IOHIDManager?
@@ -83,17 +83,17 @@ struct PermissionCheckView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("权限检查").font(.title2.bold())
-            Text("FUnlock 需要以下权限才能正常工作：").foregroundColor(.secondary)
+            Text(t("permission_check_title")).font(.title2.bold())
+            Text(t("permission_check_desc")).foregroundColor(.secondary)
 
             VStack(spacing: 12) {
-                row("辅助功能", "用于在锁屏界面输入密码", accessibilityGranted) { requestAX() }
-                row("蓝牙", "用于检测设备靠近/远离", bluetoothGranted) { requestBT() }
+                row(t("permission_ax_name"), t("permission_ax_desc"), accessibilityGranted) { requestAX() }
+                row(t("permission_bt_name"), t("permission_bt_desc"), bluetoothGranted) { requestBT() }
             }.padding(.horizontal, 24)
 
             HStack(spacing: 12) {
-                Button("全部跳过") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(allGranted ? "完成" : "刷新状态") {
+                Button(t("permission_skip_all")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(allGranted ? t("permission_done") : t("permission_refresh")) {
                     refresh()
                     if allGranted { dismiss() }
                 }.keyboardShortcut(.defaultAction)
@@ -110,7 +110,7 @@ struct PermissionCheckView: View {
                 Text(desc).font(.caption).foregroundColor(.secondary)
             }
             Spacer()
-            if !granted { Button("授权") { action() }.buttonStyle(.bordered) }
+            if !granted { Button(t("permission_grant")) { action() }.buttonStyle(.bordered) }
         }.padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
     }
 
@@ -135,19 +135,20 @@ struct PermissionCheckView: View {
     }
 }
 
-@MainActor
-@main
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
+
+    override init() {
+        super.init()
+    }
 
     // MARK: - UI 组件
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var settingsWindow: NSWindow!
-    var aboutBox: AboutBox? = nil
 
     // MARK: - 核心依赖
 
-    let fun = FUn()
+    lazy var fun = FUn()
     var manager: FUnManager!
     let inputMonitor = InputActivityMonitor()
     let prefs = UserDefaults.standard
@@ -155,44 +156,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - FUnDelegate（UI 更新 + 转发设备事件）
 
-    func newDevice(device: Device) {
+    @MainActor func newDevice(device: Device) {
         manager.onDeviceDiscovered(device)
     }
-    func updateDevice(device: Device) {
+    @MainActor func updateDevice(device: Device) {
         manager.onDeviceUpdated(device)
     }
-    func removeDevice(device: Device) {
+    @MainActor func removeDevice(device: Device) {
         manager.onDeviceRemoved(device)
     }
 
-    func updateRSSI(rssi: Int?, active: Bool) {
+    @MainActor func updateRSSI(rssi: Int?, active: Bool) {
         manager.onRSSIUpdated(rssi: rssi, active: active)
         if let _ = rssi {
             if !manager.connected {
                 manager.updateConnected(true)
-                statusItem.button?.image = NSImage(named: "StatusBarConnected")
             }
         } else {
             if manager.connected {
                 manager.updateConnected(false)
-                statusItem.button?.image = NSImage(named: "StatusBarDisconnected")
             }
         }
+        updateStatusBarIcon()
     }
 
-    func updatePresence(presence: Bool, reason: String) {
+    @MainActor func updatePresence(presence: Bool, reason: String) {
         if presence {
             manager.onDeviceApproached()
         } else {
             manager.onDeviceLeft(reason: reason)
         }
+        updateStatusBarIcon()
     }
 
-    func bluetoothPowerWarn() {
+    /// 根据连接状态和屏幕状态更新菜单栏图标
+    @MainActor private func updateStatusBarIcon() {
+        guard let button = statusItem.button else { return }
+        if manager.state.screen == .unlocked {
+            // 已解锁：用绿色渲染连接图标
+            let img = NSImage(named: "StatusBarConnected")?.copy() as? NSImage
+            img?.isTemplate = false
+            img?.lockFocus()
+            NSColor.controlAccentColor.set()
+            NSRect(origin: .zero, size: img?.size ?? .zero).fill(using: .sourceAtop)
+            img?.unlockFocus()
+            button.image = img
+            button.toolTip = "FUnlock — Unlocked"
+        } else if manager.connected {
+            // 已连接但锁屏：默认模板图标
+            button.image = NSImage(named: "StatusBarConnected")
+            button.toolTip = "FUnlock — Connected"
+        } else {
+            // 未连接
+            button.image = NSImage(named: "StatusBarDisconnected")
+            button.toolTip = "FUnlock — Disconnected"
+        }
+    }
+
+    @MainActor func bluetoothPowerWarn() {
         manager.errorModal(t("bluetooth_power_warn"))
     }
 
-    func onDeviceApproached() {
+    @MainActor func onDeviceApproached() {
         manager.onDeviceApproached()
     }
 
@@ -203,12 +228,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/bleunlock/releases")!)
+        NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/FUnlock/releases")!)
     }
 
     // MARK: - Popover
 
-    @objc func toggleSettingsWindow(_ sender: AnyObject?) {
+    @MainActor @objc func toggleSettingsWindow(_ sender: AnyObject?) {
         if settingsWindow.isVisible {
             settingsWindow.orderOut(nil)
             fun.stopScanning()
@@ -219,6 +244,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             NSApp.activate(ignoringOtherApps: true)
             fun.startScanning()
         }
+    }
+
+    @MainActor @objc func lockNow() {
+        manager.lockNow()
+    }
+
+    @MainActor @objc func showStats() {
+        toggleSettingsWindow(nil)
+        // 通知 MenuDashboardView 打开统计页
+        NotificationCenter.default.post(name: .menuShowStats, object: nil)
+    }
+
+    @MainActor @objc func quitApp() {
+        NSApplication.shared.terminate(nil)
     }
 
     // MARK: - Accessibility
@@ -274,35 +313,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         fun.delegate = self
         manager.inputMonitor = inputMonitor
         fun.inputMonitor = inputMonitor
-        if prefs.object(forKey: "lockOnIdle") == nil || prefs.bool(forKey: "lockOnIdle") {
-            inputMonitor.start()
-        }
+        // InputActivityMonitor 延迟到首次需要时再启动（macOS Sequoia TCC 兼容）
+        // 原代码在此处直接 start() 会导致 TCC 崩溃
 
         // 恢复已保存的设备
         if let str = prefs.string(forKey: "device"), let uuid = UUID(uuidString: str) {
             manager.updateConnected(false)
-            manager.monitoredDeviceName = prefs.string(forKey: "deviceName") ?? "已配对设备"
+            manager.monitoredDeviceName = prefs.string(forKey: "deviceName") ?? t("default_paired_device")
             fun.startMonitor(uuid: uuid)
         }
 
-        // 初始化设置窗口
-        let dashboard = MenuDashboardView(manager: manager, fun: fun)
-        let hostingVC = NSHostingController(rootView: dashboard)
-        settingsWindow = NSWindow(contentViewController: hostingVC)
-        settingsWindow.title = "FUnlock"
-        settingsWindow.styleMask = [.titled, .closable, .resizable]
-        settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
-        settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
-        settingsWindow.isReleasedWhenClosed = false
-        settingsWindow.center()
-
-        // 绑定状态栏按钮
+        // 延迟初始化设置窗口（避免 macOS Sequoia TCC 框架崩溃）
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.setupSettingsWindow()
+        }
         if let button = statusItem.button {
             button.image = NSImage(named: "StatusBarDisconnected")
-            button.action = #selector(toggleSettingsWindow(_:))
             button.target = self
             button.toolTip = "FUnlock"
         }
+
+        // 右键快捷菜单
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: t("menu_lock_now"), action: #selector(lockNow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: t("menu_stats"), action: #selector(showStats), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: t("menu_quit"), action: #selector(quitApp), keyEquivalent: ""))
+        statusItem.menu = menu
 
         // 点击外部关闭窗口 —— 已不需要（独立窗口自带关闭按钮）
 
@@ -313,36 +353,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 转发系统通知 → FUnManager
         let nc = NSWorkspace.shared.notificationCenter
         nc.publisher(for: NSWorkspace.screensDidSleepNotification)
-            .sink { [weak self] _ in self?.manager.onDisplaySleep() }
+            .sink { [weak self] _ in self?.manager.onDisplaySleep(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.screensDidWakeNotification)
-            .sink { [weak self] _ in self?.manager.onDisplayWake() }
+            .sink { [weak self] _ in self?.manager.onDisplayWake(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.willSleepNotification)
-            .sink { [weak self] _ in self?.manager.onSystemSleep() }
+            .sink { [weak self] _ in self?.manager.onSystemSleep(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.didWakeNotification)
-            .sink { [weak self] _ in self?.manager.onSystemWake() }
+            .sink { [weak self] _ in self?.manager.onSystemWake(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
 
         let dnc = DistributedNotificationCenter.default
         dnc.publisher(for: NSNotification.Name("com.apple.screenIsUnlocked"))
-            .sink { [weak self] _ in self?.manager.onUnlock() }
+            .sink { [weak self] _ in self?.manager.onUnlock(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screenIsLocked"))
-            .sink { [weak self] _ in self?.manager.onSystemScreenLocked() }
+            .sink { [weak self] _ in self?.manager.onSystemScreenLocked(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstart"))
-            .sink { [weak self] _ in self?.manager.onScreensaverStart() }
+            .sink { [weak self] _ in self?.manager.onScreensaverStart(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstop"))
-            .sink { [weak self] _ in self?.manager.onScreensaverStop() }
+            .sink { [weak self] _ in self?.manager.onScreensaverStop(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
-
-        // 首次引导
-        if !prefs.bool(forKey: "hasShownGuide") {
-            prefs.set(true, forKey: "hasShownGuide")
-        }
+        dnc.publisher(for: NSNotification.Name("com.apple.security.loginwindow.passwordChanged"))
+            .sink { [weak self] _ in self?.manager.handlePasswordChanged() }
+            .store(in: &cancellables)
 
         // 密码检查
         if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && manager.fetchPassword() == nil {
@@ -354,6 +392,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             if !isAccessibilityGranted {
                 requestAccessibilityIfNeeded()
             }
+            // InputActivityMonitor 延迟到权限确认后启动（macOS Sequoia TCC 兼容）
         }
         checkAccessibility()
         FUnlock.checkUpdate()
@@ -370,6 +409,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NSApp.setActivationPolicy(.accessory)
     }
 
+    func setupSettingsWindow() {
+        let dashboard = MenuDashboardView(manager: manager, fun: fun)
+        let hostingVC = NSHostingController(rootView: dashboard)
+        settingsWindow = NSWindow(contentViewController: hostingVC)
+        settingsWindow.title = "FUnlock"
+        settingsWindow.styleMask = [.titled, .closable, .resizable]
+        settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
+        settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
+        settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.center()
+    }
+
     // MARK: - 权限检查
 
     private var permissionWindow: NSWindow?
@@ -377,12 +428,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func showPermissionCheck() {
         let ax = AXIsProcessTrusted()
         let bt = (CBManager.authorization == .allowedAlways)
-        guard !ax || !bt else { return }
+        guard !ax || !bt else {
+            // 权限已全部授予，暂不启动输入监控（macOS Sequoia TCC 兼容）
+            return
+        }
 
         let view = PermissionCheckView()
         let hosting = NSHostingController(rootView: view)
         let win = NSWindow(contentViewController: hosting)
-        win.title = "FUnlock - 权限检查"
+        win.title = t("permission_check_window_title")
         win.styleMask = [.titled, .closable]
         win.contentMinSize = NSSize(width: 420, height: 320)
         win.isReleasedWhenClosed = false
