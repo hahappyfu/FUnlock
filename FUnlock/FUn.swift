@@ -283,6 +283,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var lastReceiveTime: Date = Date()
     // Heartbeat timer (独立状态机，不在管道内)
     var heartbeatTimer: Timer?
+    var heartbeatInterval: TimeInterval = 2.0
+    private var lastHeartbeatInterval: TimeInterval = 2.0
     var activeModeTimer : Timer? = nil
     var connectionTimer : Timer? = nil
     var stableCount: Int = 0
@@ -419,8 +421,22 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     // MARK: - Direction 3: Heartbeat — proactive lock check
     private func ensureHeartbeat() {
         guard heartbeatTimer == nil else { return }
-        // Check every 2s if we should lock even without RSSI packets
-        heartbeatTimer = Timer(timeInterval: 2.0, repeats: true, block: { [weak self] _ in
+        lastHeartbeatInterval = computeHeartbeatInterval()
+        heartbeatTimer = makeHeartbeatTimer(interval: lastHeartbeatInterval)
+        RunLoop.main.add(heartbeatTimer!, forMode: .common)
+    }
+
+    private func computeHeartbeatInterval() -> TimeInterval {
+        let eff = getEffectiveRSSI()
+        let baseTh = Double(unlockRSSI) + 10.0
+        let lockTh = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) + 10.0
+        if eff > baseTh { return 5.0 }       // device very close, save power
+        if eff < lockTh { return 1.0 }       // device moving away, respond fast
+        return 2.0                           // normal proximity
+    }
+
+    private func makeHeartbeatTimer(interval: TimeInterval) -> Timer {
+        return Timer(timeInterval: interval, repeats: true, block: { [weak self] _ in
             guard let self = self else { return }
             guard self.presence else {
                 self.heartbeatTimer?.invalidate()
@@ -433,8 +449,16 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 print("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
                 self.startLockTimer()
             }
+            // Adaptive: rebuild timer if interval should change
+            let newInterval = self.computeHeartbeatInterval()
+            if abs(newInterval - self.lastHeartbeatInterval) > 0.5 {
+                print("[HB] interval \(self.lastHeartbeatInterval)s → \(newInterval)s")
+                self.lastHeartbeatInterval = newInterval
+                self.heartbeatTimer?.invalidate()
+                self.heartbeatTimer = self.makeHeartbeatTimer(interval: newInterval)
+                RunLoop.main.add(self.heartbeatTimer!, forMode: .common)
+            }
         })
-        RunLoop.main.add(heartbeatTimer!, forMode: .common)
     }
 
     func cancelHeartbeat() {
