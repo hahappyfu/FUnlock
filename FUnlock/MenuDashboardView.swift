@@ -504,7 +504,7 @@ struct MenuDashboardView: View {
                         do {
                             if v { try SMAppService.mainApp.register() }
                             else { try SMAppService.mainApp.unregister() }
-                        } catch { print("SMAppService error: \(error)") }
+                        } catch { Log.sm.debug("SMAppService error: \(error)") }
                     }
                 }
         }

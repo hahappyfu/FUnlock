@@ -10,13 +10,13 @@ private func connect() {
     if inited { return }
 
     if sqlite3_open("/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.paired.db", &db_paired) == SQLITE_OK {
-        print("paired.db open success")
+        Log.dev.debug("paired.db open success")
     } else {
         db_paired = nil
     }
 
     if sqlite3_open("/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.other.db", &db_other) == SQLITE_OK {
-        print("other.db open success")
+        Log.dev.debug("other.db open success")
     } else {
         db_other = nil
     }
@@ -41,7 +41,7 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_paired else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address, ResolvedAddress FROM PairedDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        print("failed to prepare")
+        Log.dev.debug("failed to prepare")
         return nil
     }
     uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
@@ -66,7 +66,7 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_other else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address FROM OtherDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        print("failed to prepare")
+        Log.dev.debug("failed to prepare")
         return nil
     }
     uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
