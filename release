@@ -7,9 +7,11 @@ if [ ! "$PASSWORD" ]; then
     exit 1
 fi
 
+# TODO: 替换为新维护者的 Apple ID
 USERNAME=takeshi.sone@gmail.com
+# TODO: 替换为新维护者的 Team ID
 TEAM=42LGPQYC7M
-APPNAME=BLEUnlock
+APPNAME=FUnlock
 
 BASEDIR=$(cd $(dirname $0); pwd)
 BUILDDIR=$BASEDIR/build
