@@ -139,6 +139,11 @@
 // Menu
 "menu_open_settings" = "Ayarları Aç";
 "menu_change_password" = "Şifreyi yeniden girin";
+"menu_check_update" = "Güncellemeleri kontrol et";
+"menu_checking" = "Kontrol ediliyor...";
+"menu_downloading" = "İndiriliyor...";
+"menu_download_progress" = "İndiriliyor (%d%%)…";
+"already_latest" = "Zaten en son sürüm";
 "menu_lock_now" = "Hemen Kilitle";
 "menu_stats" = "İstatistikler";
 "menu_quit" = "FUnlock\'dan Çık";

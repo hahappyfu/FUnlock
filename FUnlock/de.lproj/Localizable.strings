@@ -139,6 +139,11 @@
 // Menu
 "menu_open_settings" = "Einstellungen öffnen";
 "menu_change_password" = "Passwort erneut eingeben";
+"menu_check_update" = "Nach Updates suchen";
+"menu_checking" = "Überprüfung...";
+"menu_downloading" = "Wird heruntergeladen...";
+"menu_download_progress" = "Wird heruntergeladen (%d%%)…";
+"already_latest" = "Bereits die neueste Version";
 "menu_lock_now" = "Jetzt sperren";
 "menu_stats" = "Statistiken";
 "menu_quit" = "FUnlock beenden";

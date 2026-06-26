@@ -168,6 +168,11 @@
 // Menu
 "menu_open_settings" = "設定を開く";
 "menu_change_password" = "パスワードを再設定";
+"menu_check_update" = "アップデートを確認";
+"menu_checking" = "確認中...";
+"menu_downloading" = "ダウンロード中...";
+"menu_download_progress" = "ダウンロード中 (%d%%)…";
+"already_latest" = "最新バージョンです";
 "menu_lock_now" = "今すぐロック";
 "menu_stats" = "解除統計";
 "menu_quit" = "FUnlock を終了";

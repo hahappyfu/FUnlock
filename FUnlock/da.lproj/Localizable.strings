@@ -139,6 +139,11 @@
 // Menu
 "menu_open_settings" = "Åbn indstillinger";
 "menu_change_password" = "Indtast adgangskode igen";
+"menu_check_update" = "Søg efter opdateringer";
+"menu_checking" = "Kontrollerer...";
+"menu_downloading" = "Downloader...";
+"menu_download_progress" = "Downloader (%d%%)…";
+"already_latest" = "Allerede den nyeste version";
 "menu_lock_now" = "Lås nu";
 "menu_stats" = "Statistik";
 "menu_quit" = "Afslut FUnlock";

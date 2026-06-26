@@ -139,6 +139,11 @@
 // Menu
 "menu_open_settings" = "Åpne innstillinger";
 "menu_change_password" = "Skriv inn passord på nytt";
+"menu_check_update" = "Se etter oppdateringer";
+"menu_checking" = "Sjekker...";
+"menu_downloading" = "Laster ned...";
+"menu_download_progress" = "Laster ned (%d%%)…";
+"already_latest" = "Allerede den nyeste versjonen";
 "menu_lock_now" = "Lås nå";
 "menu_stats" = "Statistikk";
 "menu_quit" = "Avslutt FUnlock";

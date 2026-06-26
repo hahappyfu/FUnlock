@@ -191,6 +191,11 @@
 // Menu
 "menu_open_settings" = "Open Settings";
 "menu_change_password" = "Re-enter Password";
+"menu_check_update" = "Check for Updates";
+"menu_checking" = "Checking...";
+"menu_downloading" = "Downloading update...";
+"menu_download_progress" = "Downloading update (%d%%)…";
+"already_latest" = "Already the latest version";
 "menu_lock_now" = "Lock Now";
 "menu_stats" = "Statistics";
 "menu_quit" = "Quit FUnlock";
