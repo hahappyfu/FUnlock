@@ -106,6 +106,8 @@ final class FUnManager: ObservableObject {
     var inputMonitor: InputActivityMonitor?
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let updateChecker = UpdateChecker()
+    private let downloader = UpdateDownloader()
+    private(set) var updateState: UpdateDownloader.State = .idle
     private let prefs = UserDefaults.standard
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
@@ -127,6 +129,17 @@ final class FUnManager: ObservableObject {
         self.fun = fun
         self.lockRSSI = fun.lockRSSI
         self.unlockRSSI = fun.unlockRSSI
+
+        // 接线：updateChecker → downloader → installer
+        updateChecker.onNewVersion = { [weak self] version in
+            self?.downloader.download(version: version)
+        }
+        downloader.onStateChange = { [weak self] state in
+            self?.updateState = state
+            if case .completed(let appPath) = state {
+                try? UpdateInstaller.install(appPath: appPath)
+            }
+        }
     }
 
     deinit {
@@ -723,6 +736,11 @@ final class FUnManager: ObservableObject {
 
     func checkUpdate() {
         updateChecker.check()
+    }
+
+    /// 手动触发检查更新
+    func forceCheckUpdate(completion: ((String?) -> Void)? = nil) {
+        updateChecker.forceCheck(completion: completion)
     }
 
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
