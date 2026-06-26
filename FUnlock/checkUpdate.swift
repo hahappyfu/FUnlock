@@ -8,6 +8,9 @@ class UpdateChecker {
     private var lastCheckAt: TimeInterval
     private let defaults: UserDefaults
 
+    /// 检测到新版本时回调，参数为版本号（不含 v 前缀）
+    var onNewVersion: ((String) -> Void)?
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         lastCheckAt = defaults.double(forKey: key)
@@ -20,29 +23,49 @@ class UpdateChecker {
         doCheck()
     }
 
-    private func doCheck() {
+    /// 忽略 24h 间隔，立即检测（用于手动触发）
+    func forceCheck(completion: ((String?) -> Void)? = nil) {
+        guard !checking else { return }
+        doCheck(completion: completion)
+    }
+
+    private func doCheck(completion: ((String?) -> Void)? = nil) {
         checking = true
-        var request = URLRequest(url: URL(string: "https://gitee.com/api/v5/repos/fuhahah/FUnlock/releases/latest")!)
+        var request = URLRequest(url: URL(string: "https://gitee.com/api/v5/repos/fuhahah/bleunlock/releases/latest")!)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
             guard let self = self else { return }
             defer { self.checking = false }
+            if error != nil {
+                completion?(nil)
+                return
+            }
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let version = json["tag_name"] as? String else { return }
+                  let tagName = json["tag_name"] as? String else {
+                completion?(nil)
+                return
+            }
             self.lastCheckAt = Date().timeIntervalSince1970
             self.defaults.set(self.lastCheckAt, forKey: self.key)
-            self.compareVersionsAndNotify(version)
+            let version = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+            if self.isNewVersion(version) {
+                self.notify()
+                self.notified = true
+                self.onNewVersion?(version)
+                completion?(version)
+            } else {
+                completion?(nil)
+            }
         }
         task.resume()
     }
 
-    private func compareVersionsAndNotify(_ latestVersion: String) {
-        if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-           version != latestVersion {
-            notify()
-            notified = true
+    private func isNewVersion(_ remoteVersion: String) -> Bool {
+        guard let local = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
+            return false
         }
+        return local != remoteVersion
     }
 
     private func notify() {
