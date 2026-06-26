@@ -190,6 +190,7 @@
 
 // Menu
 "menu_open_settings" = "Open Settings";
+"menu_change_password" = "Re-enter Password";
 "menu_lock_now" = "Lock Now";
 "menu_stats" = "Statistics";
 "menu_quit" = "Quit FUnlock";

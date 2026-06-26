@@ -138,6 +138,7 @@
 
 // Menu
 "menu_open_settings" = "Ayarları Aç";
+"menu_change_password" = "Şifreyi yeniden girin";
 "menu_lock_now" = "Hemen Kilitle";
 "menu_stats" = "İstatistikler";
 "menu_quit" = "FUnlock\'dan Çık";

@@ -138,6 +138,7 @@
 
 // Menu
 "menu_open_settings" = "Åpne innstillinger";
+"menu_change_password" = "Skriv inn passord på nytt";
 "menu_lock_now" = "Lås nå";
 "menu_stats" = "Statistikk";
 "menu_quit" = "Avslutt FUnlock";
