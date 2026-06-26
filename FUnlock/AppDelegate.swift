@@ -276,6 +276,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         manager.askPassword()
     }
 
+    @MainActor @objc func checkForUpdates() {
+        // 更新菜单项状态
+        guard let menu = statusItem.menu else { return }
+        for item in menu.items where item.action == #selector(checkForUpdates) {
+            item.title = t("menu_checking")
+            item.isEnabled = false
+        }
+        manager.forceCheckUpdate { [weak self] version in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                guard let menu = self.statusItem.menu else { return }
+                if version != nil {
+                    // 有新版本，downloader 会自动开始下载
+                    self.observeDownloadProgress()
+                } else {
+                    // 已是最新
+                    for item in menu.items where item.action == #selector(self.checkForUpdates) {
+                        item.title = t("menu_check_update")
+                        item.isEnabled = true
+                    }
+                    self.showSimpleAlert(title: t("already_latest"))
+                }
+            }
+        }
+    }
+
+    private func observeDownloadProgress() {
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            guard let menu = self.statusItem.menu else { timer.invalidate(); return }
+            switch self.manager.updateState {
+            case .downloading(let progress):
+                for item in menu.items where item.action == #selector(self.checkForUpdates) {
+                    item.title = String(format: t("menu_download_progress"), Int(progress * 100))
+                }
+            case .completed:
+                timer.invalidate()
+                for item in menu.items where item.action == #selector(self.checkForUpdates) {
+                    item.title = t("menu_check_update")
+                    item.isEnabled = true
+                }
+            case .failed:
+                timer.invalidate()
+                for item in menu.items where item.action == #selector(self.checkForUpdates) {
+                    item.title = t("menu_check_update")
+                    item.isEnabled = true
+                }
+            case .idle:
+                break
+            }
+        }
+    }
+
+    private func showSimpleAlert(title: String) {
+        let alert = NSAlert()
+        alert.messageText = "FUnlock"
+        alert.informativeText = title
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @MainActor @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }
@@ -411,6 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: t("menu_change_password"), action: #selector(changePassword), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: t("menu_check_update"), action: #selector(checkForUpdates), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: t("menu_lock_now"), action: #selector(lockNow), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: t("menu_stats"), action: #selector(showStats), keyEquivalent: ""))
