@@ -189,6 +189,11 @@
 // Menu
 "menu_open_settings" = "打开设置";
 "menu_change_password" = "重新设置密码";
+"menu_check_update" = "检查更新";
+"menu_checking" = "检查中...";
+"menu_downloading" = "正在下载更新...";
+"menu_download_progress" = "正在下载更新 (%d%%)…";
+"already_latest" = "已是最新版本";
 "menu_lock_now" = "立即锁定";
 "menu_stats" = "解锁统计";
 "menu_quit" = "退出 FUnlock";
