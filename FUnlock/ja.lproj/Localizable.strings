@@ -167,6 +167,7 @@
 
 // Menu
 "menu_open_settings" = "設定を開く";
+"menu_change_password" = "パスワードを再設定";
 "menu_lock_now" = "今すぐロック";
 "menu_stats" = "解除統計";
 "menu_quit" = "FUnlock を終了";

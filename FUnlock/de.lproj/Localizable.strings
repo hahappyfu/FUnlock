@@ -138,6 +138,7 @@
 
 // Menu
 "menu_open_settings" = "Einstellungen öffnen";
+"menu_change_password" = "Passwort erneut eingeben";
 "menu_lock_now" = "Jetzt sperren";
 "menu_stats" = "Statistiken";
 "menu_quit" = "FUnlock beenden";

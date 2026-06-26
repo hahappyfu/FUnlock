@@ -188,6 +188,7 @@
 
 // Menu
 "menu_open_settings" = "打开设置";
+"menu_change_password" = "重新设置密码";
 "menu_lock_now" = "立即锁定";
 "menu_stats" = "解锁统计";
 "menu_quit" = "退出 FUnlock";
