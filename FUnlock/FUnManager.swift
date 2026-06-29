@@ -202,9 +202,10 @@ final class FUnManager: ObservableObject {
     func onSystemWake() {
         Log.sm.debug("[SM] systemWake")
         // 延迟 1 秒等待蓝牙栈恢复
-        Task {
+        Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
+            guard let self else { return }
             NSApp.setActivationPolicy(.accessory)
             self.state.system = .awake
             self.attemptAutoUnlock()
@@ -221,17 +222,18 @@ final class FUnManager: ObservableObject {
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         intrudeCheckTask?.cancel()
-        intrudeCheckTask = Task {
+        intrudeCheckTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
-            if Date().timeIntervalSince1970 >= state.unlockedAt.timeIntervalSince1970 + 10 {
-                if fun.unlockRSSI != fun.UNLOCK_DISABLED {
-                    ScriptRunner.shared.runScript("intruded", rssi: rssi, deviceName: monitoredDeviceName)
-                    ScriptRunner.shared.logEvent("intruded", rssi: rssi)
+            guard let self else { return }
+            if Date().timeIntervalSince1970 >= self.state.unlockedAt.timeIntervalSince1970 + 10 {
+                if self.fun.unlockRSSI != self.fun.UNLOCK_DISABLED {
+                    ScriptRunner.shared.runScript("intruded", rssi: self.rssi, deviceName: self.monitoredDeviceName)
+                    ScriptRunner.shared.logEvent("intruded", rssi: self.rssi)
                 }
-                resumeMediaIfNeeded()
+                self.resumeMediaIfNeeded()
             }
-            checkUpdate()
+            self.checkUpdate()
         }
     }
 
@@ -439,10 +441,11 @@ final class FUnManager: ObservableObject {
             startWakeRetry()
             // 并行：等 0.8s 后尝试解锁，不等唤醒完成
             unlockTask?.cancel()
-            unlockTask = Task {
+            unlockTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                 guard !Task.isCancelled else { return }
-                tryUnlock()
+                guard let self else { return }
+                self.tryUnlock()
             }
             return
         }
