@@ -183,6 +183,8 @@
 "profile_delete" = "删除配置";
 "profile_name_placeholder" = "配置名称";
 "profile_add_hint" = "用当前阈值创建新配置";
+"profile_delete_confirm" = "删除配置";
+"profile_delete_hint" = "确定删除当前配置？此操作不可撤销。";
 "profile_delete_confirm" = "确定删除此配置？";
 "profile_default" = "默认";
 

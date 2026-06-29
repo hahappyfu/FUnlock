@@ -188,7 +188,8 @@
 "profile_delete" = "Profil löschen";
 "profile_name_placeholder" = "Profilname";
 "profile_add_hint" = "Neues Profil mit aktuellen Schwellenwerten erstellen";
-"profile_delete_confirm" = "Dieses Profil löschen?";
+"profile_delete_confirm" = "Profil löschen";
+"profile_delete_hint" = "Dieses Profil löschen? Dies kann nicht rückgängig gemacht werden.";
 "profile_default" = "Standard";
 "pause_on_wifi" = "Entsperren bei Wi-Fi pausieren";
 "wifi_ssid" = "Wi-Fi-Name";

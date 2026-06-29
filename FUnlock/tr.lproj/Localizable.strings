@@ -188,7 +188,8 @@
 "profile_delete" = "Profili Sil";
 "profile_name_placeholder" = "Profil Adı";
 "profile_add_hint" = "Mevcut eşik değerleriyle yeni profil oluştur";
-"profile_delete_confirm" = "Bu profili sil?";
+"profile_delete_confirm" = "Profili sil";
+"profile_delete_hint" = "Bu profil silinsin mi? Bu işlem geri alınamaz.";
 "profile_default" = "Varsayılan";
 "pause_on_wifi" = "Wi-Fi'de kilidi açmayı duraklat";
 "wifi_ssid" = "Wi-Fi Adı";
