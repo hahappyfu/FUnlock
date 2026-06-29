@@ -93,6 +93,7 @@ struct MenuDashboardView: View {
     @State private var showAbout = false
     @State private var showStats = false
     @State private var showAddProfile = false
+    @State private var showDeleteProfile = false
     @State private var newProfileName = ""
     @State private var onboardingStep = 0
     @State private var sliderLock: Double = 0
@@ -732,6 +733,16 @@ struct MenuDashboardView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.accentColor)
+
+                // 删除当前非默认配置
+                if profileManager.activeProfileID != "default" {
+                    Button(action: { showDeleteProfile = true }) {
+                        Image(systemName: "minus.circle")
+                            .font(.callout)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.red)
+                }
             }
             .alert(t("profile_add"), isPresented: $showAddProfile) {
                 TextField(t("profile_name_placeholder"), text: $newProfileName)
@@ -746,6 +757,17 @@ struct MenuDashboardView: View {
                 Button(t("cancel"), role: .cancel) {}
             } message: {
                 Text(t("profile_add_hint"))
+            }
+            .alert(t("profile_delete_confirm"), isPresented: $showDeleteProfile) {
+                Button(t("ok"), role: .destructive) {
+                    let id = profileManager.activeProfileID
+                    profileManager.activeProfileID = "default"
+                    profileManager.deleteProfile(id: id)
+                    profileManager.applyActiveProfile(to: manager)
+                }
+                Button(t("cancel"), role: .cancel) {}
+            } message: {
+                Text(t("profile_delete_hint"))
             }
         }
         .padding(.horizontal, 12)
@@ -881,13 +903,16 @@ struct MenuDashboardView: View {
         }
 
         // 3. 系统信息
-        var modelSize = ""
-        var size = 0
-        var sizeLen = MemoryLayout.size(ofValue: size)
-        sysctlbyname("hw.model", &modelSize, &sizeLen, nil, 0)
+        var modelName = "Unknown"
+        var size = 128
+        let buffer = UnsafeMutablePointer<CChar>.allocate(capacity: size)
+        defer { buffer.deallocate() }
+        if sysctlbyname("hw.model", buffer, &size, nil, 0) == 0 {
+            modelName = String(cString: buffer)
+        }
         let sysInfo = """
         macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
-        Model: \(modelSize)
+        Model: \(modelName)
         FUnlock: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))
         """
         try? sysInfo.write(to: tempDir.appendingPathComponent("system_info.txt"), atomically: true, encoding: .utf8)
