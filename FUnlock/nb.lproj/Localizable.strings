@@ -188,7 +188,8 @@
 "profile_delete" = "Slett profil";
 "profile_name_placeholder" = "Profilnavn";
 "profile_add_hint" = "Opprett en ny profil med gjeldende terskelverdier";
-"profile_delete_confirm" = "Slette denne profilen?";
+"profile_delete_confirm" = "Slett profil";
+"profile_delete_hint" = "Slette denne profilen? Dette kan ikke angres.";
 "profile_default" = "Standard";
 "pause_on_wifi" = "Pause opplåsing ved Wi-Fi";
 "wifi_ssid" = "Wi-Fi-navn";

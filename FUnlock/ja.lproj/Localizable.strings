@@ -192,7 +192,8 @@
 "profile_delete" = "プロファイルを削除";
 "profile_name_placeholder" = "プロファイル名";
 "profile_add_hint" = "現在の閾値で新規プロファイルを作成";
-"profile_delete_confirm" = "このプロファイルを削除しますか？";
+"profile_delete_confirm" = "プロファイルを削除";
+"profile_delete_hint" = "このプロファイルを削除しますか？この操作は元に戻せません。";
 "profile_default" = "デフォルト";
 "pause_on_wifi" = "Wi-Fi接続時にロック解除を一時停止";
 "wifi_ssid" = "Wi-Fi名";

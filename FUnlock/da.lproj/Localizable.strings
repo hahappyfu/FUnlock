@@ -188,7 +188,8 @@
 "profile_delete" = "Slet profil";
 "profile_name_placeholder" = "Profilnavn";
 "profile_add_hint" = "Opret en ny profil med nuværende grænseværdier";
-"profile_delete_confirm" = "Slet denne profil?";
+"profile_delete_confirm" = "Slet profil";
+"profile_delete_hint" = "Slet denne profil? Dette kan ikke fortrydes.";
 "profile_default" = "Standard";
 "pause_on_wifi" = "Pausér oplåsning ved Wi-Fi";
 "wifi_ssid" = "Wi-Fi-navn";

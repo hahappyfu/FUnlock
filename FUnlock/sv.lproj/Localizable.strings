@@ -188,7 +188,8 @@
 "profile_delete" = "Ta bort profil";
 "profile_name_placeholder" = "Profilnamn";
 "profile_add_hint" = "Skapa en ny profil med nuvarande tröskelvärden";
-"profile_delete_confirm" = "Ta bort denna profil?";
+"profile_delete_confirm" = "Ta bort profil";
+"profile_delete_hint" = "Ta bort denna profil? Detta kan inte ångras.";
 "profile_default" = "Standard";
 "pause_on_wifi" = "Pausera upplåsning vid Wi-Fi";
 "wifi_ssid" = "Wi-Fi-namn";

@@ -185,7 +185,8 @@
 "profile_delete" = "Delete Profile";
 "profile_name_placeholder" = "Profile Name";
 "profile_add_hint" = "Create a new profile with current thresholds";
-"profile_delete_confirm" = "Delete this profile?";
+"profile_delete_confirm" = "Delete Profile";
+"profile_delete_hint" = "Delete this profile? This cannot be undone.";
 "profile_default" = "Default";
 
 // Menu
