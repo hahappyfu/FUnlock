@@ -321,7 +321,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private var currentScanAllowDuplicates: Bool = false
     // 冷静期：解锁后短时间内不触发锁定，防止振荡
     private var lastProximityEventTime: Date = .distantPast
-    private let proximityGracePeriod: TimeInterval = 3.0
+    private let proximityGracePeriod: TimeInterval = 5.0
 
     func scanForPeripherals() {
         // 优化：根据当前模式动态决定 AllowDuplicates
@@ -497,15 +497,15 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func getEffectiveRSSI() -> Double {
         let (lastRecv, effRSSI, slope) = lock.withLock { (lastReceiveTime, effectiveRSSI, pipeline.smoothedSlope) }
         let elapsed = Date().timeIntervalSince(lastRecv)
-        // 分段衰减：短间隔温和（避免误触发），长间隔激进（确保快速锁屏）
+        // 分段衰减：短间隔温和（避免误触发），长间隔适度（不叠加心跳惩罚）
         let penalty: Double
-        if elapsed < 2.0 {
-            // 正常 BLE 采样间隔内：温和衰减，与管道 decay 一致
+        if elapsed < 3.0 {
+            // 正常 BLE 采样间隔内（含偶尔延迟）：温和衰减，与管道 decay 一致
             penalty = 0.5 * elapsed
         } else {
-            // 超过 2 秒无采样：快速衰减，斜率大时进一步加速
-            let slopeBoost = abs(slope) > 2.0 ? (1.0 + 0.3 * abs(slope)) : 1.0
-            penalty = 1.0 + 8.0 * slopeBoost * (elapsed - 2.0)
+            // 超过 3 秒无采样：适度衰减，避免心跳叠加导致误锁
+            let slopeBoost = abs(slope) > 2.0 ? (1.0 + 0.2 * abs(slope)) : 1.0
+            penalty = 1.5 + 3.0 * slopeBoost * (elapsed - 3.0)
         }
         let eff = effRSSI - penalty
         return max(eff, -100.0)
@@ -527,9 +527,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let eff = getEffectiveRSSI()
         let baseTh = Double(unlockRSSI) + 10.0
         let lockTh = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) + 10.0
-        if eff > baseTh { return 5.0 }
-        if eff < lockTh { return 1.0 }
-        return 2.0
+        if eff > baseTh { return 8.0 }
+        if eff < lockTh { return 2.0 }
+        return 3.0
     }
 
     private func makeHeartbeatTimer(interval: TimeInterval) -> Timer {
@@ -547,7 +547,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let eff = self.getEffectiveRSSI()
             let threshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
-            if eff < threshold && !hasTimer {
+            // 冷静期：刚解锁后不立即触发锁定
+            let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
+            if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
                 if self.isUserInputActive {
                     // 用户活跃时重置衰减基准，阻止衰减累积后绕过 input 检查
                     self.lock.withLock { self.lastReceiveTime = Date() }
