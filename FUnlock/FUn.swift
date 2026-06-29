@@ -307,11 +307,40 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var activePollInterval: TimeInterval = 2.0
     var lastEstimatedRSSI: Int = 0
     var signalLostCount: Int = 0
+    // 节流：非监控设备的 UI 刷新时间戳
+    private var lastUIUpdateTime: [UUID: Date] = [:]
+    private let uiThrottleInterval: TimeInterval = 1.0
+    // 跟踪当前扫描的 AllowDuplicates 状态，避免重复启动
+    private var currentScanAllowDuplicates: Bool = false
 
     func scanForPeripherals() {
-        guard !centralMgr.isScanning else { return }
-        centralMgr.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
-        //Log.sm.debug("Start scanning")
+        // 优化：根据当前模式动态决定 AllowDuplicates
+        let allowDuplicates: Bool
+        let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
+        if !hasMonitor {
+            // 未绑定设备，只需发现列表，不需要重复广播
+            allowDuplicates = false
+        } else if lock.withLock({ passiveMode }) {
+            // 被动模式：靠扫描回调获取 RSSI，需要重复
+            allowDuplicates = true
+        } else {
+            // 主动模式 + 有目标：靠 readRSSI 轮询，不需要重复
+            allowDuplicates = false
+        }
+        // 参数没变且正在扫描，跳过重启
+        if centralMgr.isScanning && currentScanAllowDuplicates == allowDuplicates {
+            return
+        }
+        // 参数变了，需要先停再启
+        if centralMgr.isScanning {
+            centralMgr.stopScan()
+        }
+        currentScanAllowDuplicates = allowDuplicates
+        let options: [String: Any] = allowDuplicates
+            ? [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+            : [:]
+        centralMgr.scanForPeripherals(withServices: nil, options: options)
+        //Log.sm.debug("Start scanning (allowDuplicates=\(allowDuplicates))")
     }
 
     func startScanning() {
@@ -322,6 +351,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func stopScanning() {
         scanMode = false
         centralMgr.stopScan()
+        currentScanAllowDuplicates = false
     }
 
     func setPassiveMode(_ mode: Bool) {
@@ -407,6 +437,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 self.delegate?.updateRSSI(rssi: nil, active: false)
                 let wasPresent = self.lock.withLock { self.presence }
                 if wasPresent {
+                    // P1: 记录信号丢失锁定事件
+                    SignalDataStore.shared.record(
+                        rawRSSI: -100, kalmanEstimate: -100,
+                        effectiveRSSI: -100, slope: 0, isAnomalous: false,
+                        event: "locked: lost")
                     self.lock.lock()
                     self.presence = false
                     self.lock.unlock()
@@ -553,6 +588,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 return
             }
             Log.sm.debug("Device is away")
+            // P1: 记录锁定事件
+            SignalDataStore.shared.record(
+                rawRSSI: -100, kalmanEstimate: -100,
+                effectiveRSSI: -100, slope: 0, isAnomalous: false,
+                event: "locked")
             self.lock.lock()
             self.presence = false
             self.lock.unlock()
@@ -609,6 +649,15 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         effectiveRSSI = decision.effectiveRSSI
         lock.unlock()
 
+        // P1: 采集信号样本到数据仓库（低开销，仅追加到环形缓冲）
+        SignalDataStore.shared.record(
+            rawRSSI: Double(rssi),
+            kalmanEstimate: decision.kalmanEstimate,
+            effectiveRSSI: decision.effectiveRSSI,
+            slope: decision.slope,
+            isAnomalous: decision.isAnomalous
+        )
+
         return decision
     }
 
@@ -637,6 +686,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
         if rssi >= unlockThreshold {
             if shouldNotifyClose {
+                // P1: 记录解锁事件
+                SignalDataStore.shared.record(
+                    rawRSSI: Double(rssi), kalmanEstimate: effectiveRSSI,
+                    effectiveRSSI: effectiveRSSI, slope: 0, isAnomalous: false,
+                    event: "unlocked")
                 DispatchQueue.main.async {
                     self.delegate?.updatePresence(presence: true, reason: "close")
                 }
@@ -675,6 +729,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func resetScanTimer(device: Device) {
         device.scanTimer?.invalidate()
+        guard let uuid = device.uuid else { return }
         let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             DispatchQueue.main.async {
                 self?.delegate?.removeDevice(device: device)
@@ -682,7 +737,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if let p = device.peripheral {
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
-            self?.devices.removeValue(forKey: device.uuid)
+            self?.devices.removeValue(forKey: uuid)
+            // 防泄漏：设备过期时清理节流记录
+            self?.lastUIUpdateTime.removeValue(forKey: uuid)
         })
         RunLoop.main.add(timer, forMode: .common)
         device.scanTimer = timer
@@ -764,6 +821,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
         }
 
+        // 优化 1：监控模式下，非目标设备直接丢弃
+        let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
+        if hasMonitor && !monitoredUUIDs.contains(peripheral.identifier) {
+            return
+        }
+
         if (scanMode) {
             if let uuids = advertisementData["kCBAdvDataServiceUUIDs"] as? [CBUUID] {
                 for uuid in uuids {
@@ -800,8 +863,20 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             } else {
                 device = dev!
                 device.rssi = rssi
-                DispatchQueue.main.async {
-                    self.delegate?.updateDevice(device: device)
+                // 优化 3：非监控设备 UI 刷新节流（1 秒 1 次）
+                let now = Date()
+                // 防泄漏：字典超限时清空（丢弃节流记录的代价仅是一次多余 UI 刷新）
+                if lastUIUpdateTime.count > 200 {
+                    lastUIUpdateTime.removeAll()
+                }
+                if let lastUpdate = lastUIUpdateTime[peripheral.identifier],
+                   now.timeIntervalSince(lastUpdate) < uiThrottleInterval {
+                    // 节流窗口内，只更新数据不派发 UI
+                } else {
+                    lastUIUpdateTime[peripheral.identifier] = now
+                    DispatchQueue.main.async {
+                        self.delegate?.updateDevice(device: device)
+                    }
                 }
             }
             resetScanTimer(device: device)
@@ -824,6 +899,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             connectionTimer?.invalidate()
             connectionTimer = nil
             lock.unlock()
+            // 优化 4：主动模式已连接，停掉全局扫描
+            centralMgr.stopScan()
             peripheral.readRSSI()
         }
     }
@@ -838,6 +915,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             presence = false
             signalLostCount = 0
             lock.unlock()
+            // 优化 4：断开连接后恢复扫描，重新发现设备
+            scanForPeripherals()
         }
     }
 

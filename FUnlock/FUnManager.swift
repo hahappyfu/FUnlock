@@ -4,9 +4,7 @@
 
 import Foundation
 import Combine
-import UserNotifications
 import Cocoa
-import Quartz
 
 // MARK: - 状态枚举
 
@@ -112,10 +110,11 @@ final class FUnManager: ObservableObject {
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
     private var intrudeCheckTask: Task<Void, Never>?
-    private var userNotificationId = ""
     private var displayWakeRequested = false
     private var consecutiveUnlockAttempts = 0
     private let maxUnlockAttempts = 3
+    private var lastAXRevokedAlertTime: Date = .distantPast
+    private var mediaWasPlaying = false
 
     // MARK: - 异常解锁频率检测（滑动窗口）
     private var unlockAttemptTimestamps: [Date] = []
@@ -227,10 +226,10 @@ final class FUnManager: ObservableObject {
             guard !Task.isCancelled else { return }
             if Date().timeIntervalSince1970 >= state.unlockedAt.timeIntervalSince1970 + 10 {
                 if fun.unlockRSSI != fun.UNLOCK_DISABLED {
-                    runScript("intruded")
-                    logEvent("intruded")
+                    ScriptRunner.shared.runScript("intruded", rssi: rssi, deviceName: monitoredDeviceName)
+                    ScriptRunner.shared.logEvent("intruded", rssi: rssi)
                 }
-                playNowPlaying()
+                resumeMediaIfNeeded()
             }
             checkUpdate()
         }
@@ -275,11 +274,7 @@ final class FUnManager: ObservableObject {
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
 
         // 清除锁屏通知
-        if !userNotificationId.isEmpty {
-            UNUserNotificationCenter.current()
-                .removeDeliveredNotifications(withIdentifiers: [userNotificationId])
-            userNotificationId = ""
-        }
+        SystemInteractionService.shared.clearLockNotification()
 
         // 显示器休眠中 → 确保已唤醒（早唤醒可能已触发，这里做兜底）
         if state.screen == .displaySleeping
@@ -299,12 +294,14 @@ final class FUnManager: ObservableObject {
 
         displayWakeRequested = false
         state.screen = .displaySleeping
-        pauseNowPlaying()
+        checkAndPauseMedia()
         isSelfLocking = true
-        lockOrSaveScreen()
-        notifyUser(reason)
-        runScript(reason)
-        logEvent("locked: \(reason)")
+        let sys = SystemInteractionService.shared
+        sys.lockOrSaveScreen(useScreensaver: prefs.bool(forKey: "screensaver"),
+                             sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
+        sys.notifyLock(reason: reason)
+        ScriptRunner.shared.runScript(reason, rssi: rssi, deviceName: monitoredDeviceName)
+        ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
     }
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {
@@ -390,17 +387,20 @@ final class FUnManager: ObservableObject {
     // MARK: - 用户操作
 
     func lockNow() {
-        guard !isScreenLocked() else { return }
+        guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
         state.intent = .manualLock(deadline: Date().addingTimeInterval(10))
         state.screen = .locked(reason: .manual)
-        pauseNowPlaying()
-        lockOrSaveScreen()
+        checkAndPauseMedia()
+        SystemInteractionService.shared.lockOrSaveScreen(
+            useScreensaver: prefs.bool(forKey: "screensaver"),
+            sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
     }
 
     // MARK: - 核心：自动解锁
 
     private func attemptAutoUnlock() {
-        let screenLocked = isScreenLocked()
+        let sys = SystemInteractionService.shared
+        let screenLocked = sys.isScreenLocked(screenState: state.screen)
         let axGranted = AXIsProcessTrusted()
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); return }
@@ -443,17 +443,19 @@ final class FUnManager: ObservableObject {
         let delay: UInt64 = 300_000_000
         unlockTask?.cancel()
         unlockTask = Task {
-            Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(self.isScreenLocked())")
+            Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             try? await Task.sleep(nanoseconds: UInt64(delay))
             guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); return }
-            Log.sm.debug("unlockTask WOKE — isScreenLocked=\(self.isScreenLocked())")
+            Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             tryUnlock()
         }
     }
 
     // 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     private func tryUnlock() {
-        let locked = isScreenLocked()
+        let sys = SystemInteractionService.shared
+        let sec = SecurityService.shared
+        let locked = sys.isScreenLocked(screenState: state.screen)
         Log.sm.debug("screen locked check: \(locked)")
         guard locked else { Log.sm.debug("SKIP: screen not locked"); return }
         let sinceUnlock = Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
@@ -461,30 +463,33 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
             return
         }
-        guard let password = fetchPassword(warn: true) else { Log.sm.debug("SKIP: no password"); return }
+        guard let password = sec.fetchPassword(warn: true) else { Log.sm.debug("SKIP: no password"); return }
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
-        guard isSecureToInject() else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
+        guard sys.isSecureToInject(screenState: state.screen) else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
 
         Log.sm.debug("typing password (\(password.count) chars)")
         self.state.unlockedAt = Date()
-        let posted = fakeKeyStrokes(password)
+        let posted = sys.fakeKeyStrokes(password) {
+            self.state.screen != .unlocked
+            && sys.isSecureToInject(screenState: self.state.screen)
+        }
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
-            showAXRevokedAlertIfNeeded()
+            sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             self.consecutiveUnlockAttempts += 1
             recordUnlockAttempt()
             Log.sm.debug("unlock attempt #\(self.consecutiveUnlockAttempts)")
             if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
-                showPasswordMismatchAlert()
+                sys.showPasswordMismatchAlert()
                 self.consecutiveUnlockAttempts = 0
             }
         }
-        playNowPlaying()
-        runScript("unlocked")
-        logEvent("unlocked")
+        resumeMediaIfNeeded()
+        ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
+        ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
         Log.sm.debug("unlock complete")
     }
 
@@ -505,7 +510,7 @@ final class FUnManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
                 // wakeDisplay() 不一定触发 screensDidWakeNotification，
                 // 直接检测屏幕是否已解锁
-                if state.wake == .succeeded || !isScreenLocked() {
+                if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
                     state.wake = .succeeded
                     releaseWakeAssertion()
                     self.attemptAutoUnlock()
@@ -519,220 +524,26 @@ final class FUnManager: ObservableObject {
         }
     }
 
-    // MARK: - Now Playing
+    // MARK: - Now Playing（委托 SystemInteractionService）
 
-    private func pauseNowPlaying() {
+    private func checkAndPauseMedia() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
         state.media = .idle
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { [weak self] playing in
-            guard let self = self else { return }
-            if playing {
-                self.state.media = .wasPlaying
-                MRMediaRemoteSendCommand(MRCommandPause, nil)
-            } else {
-                self.state.media = .paused
-            }
+        SystemInteractionService.shared.checkAndPauseMedia(enabled: true) { [weak self] playing in
+            self?.mediaWasPlaying = playing
+            self?.state.media = playing ? .wasPlaying : .paused
         }
     }
 
-    private func playNowPlaying() {
+    private func resumeMediaIfNeeded() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
         guard state.media == .wasPlaying else { return }
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            MRMediaRemoteSendCommand(MRCommandPlay, nil)
-            state.media = .idle
-        }
+        SystemInteractionService.shared.resumeMediaIfNeeded(wasPlaying: mediaWasPlaying, enabled: true)
+        state.media = .idle
     }
 
-    // MARK: - 屏幕操作
-
-    private func lockOrSaveScreen() {
-        if prefs.bool(forKey: "screensaver") {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ScreenSaver.Engine") {
-                let config = NSWorkspace.OpenConfiguration()
-                config.activates = false
-                NSWorkspace.shared.openApplication(at: url, configuration: config)
-            }
-        } else {
-            _ = SACLockScreenImmediate()
-        }
-        if prefs.bool(forKey: "sleepDisplay") {
-            sleepDisplay()
-        }
-    }
-
-    private func isScreenLocked() -> Bool {
-        // 优先用 CGSession 检测系统原生锁屏
-        if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-            if dict["CGSSessionScreenIsLocked"] as? Int == 1 { return true }
-        }
-        // CGSession 不覆盖屏幕保护程序，用进程检测兜底
-        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").count > 0 {
-            return true
-        }
-        // 最终兜底：状态机知道屏幕是否锁着（覆盖 Cmd+Ctrl+Q 等所有场景）
-        return state.screen != .unlocked
-    }
-
-    /// 双重安全检查：确保密码注入时屏幕确实锁定且前台是 loginwindow
-    private func isSecureToInject() -> Bool {
-        // 检查1: 系统锁屏状态
-        guard isScreenLocked() else { return false }
-        // 检查2: 前台应用必须是 loginwindow
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-           frontApp.bundleIdentifier != "com.apple.loginwindow" {
-            Log.sm.debug("ABORT: frontmost=\(frontApp.bundleIdentifier ?? "nil"), not loginwindow")
-            return false
-        }
-        return true
-    }
-
-    // MARK: - 键盘模拟
-
-    private func fakeKeyStrokes(_ string: String) -> Bool {
-        // 直接尝试 CGEvent（不依赖 AXIsProcessTrusted，它对 agent 应用不可靠）
-        return fakeKeyStrokesCGEvent(string)
-    }
-
-    @discardableResult
-    private func fakeKeyStrokesCGEvent(_ string: String) -> Bool {
-        let src = CGEventSource(stateID: .hidSystemState)
-        var anyEventPosted = false
-        let uniCharCount = string.utf16.count
-        var strIndex = string.utf16.startIndex
-        for offset in stride(from: 0, to: uniCharCount, by: 20) {
-            // 每批按键前双重检查：屏幕仍锁定 + 前台仍是 loginwindow
-            guard isSecureToInject() else {
-                Log.sm.debug("ABORT: screen no longer secure during keystroke injection")
-                return anyEventPosted
-            }
-            let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
-            let len = offset + 20 < uniCharCount ? 20 : uniCharCount - offset
-            let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
-            defer { buffer.deallocate() }
-            for i in 0..<len {
-                buffer[i] = string.utf16[strIndex]
-                strIndex = string.utf16.index(after: strIndex)
-            }
-            pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: buffer)
-            pressEvent?.post(tap: .cgSessionEventTap)
-            CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cgSessionEventTap)
-            if pressEvent != nil { anyEventPosted = true }
-        }
-        // Return 键发送前再次确认
-        guard isSecureToInject() else {
-            Log.sm.debug("ABORT: screen no longer secure before Return key")
-            return anyEventPosted
-        }
-        let returnDown = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
-        let returnUp = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
-        returnDown?.post(tap: .cgSessionEventTap)
-        returnUp?.post(tap: .cgSessionEventTap)
-        if returnDown != nil { anyEventPosted = true }
-        return anyEventPosted
-    }
-
-    // MARK: - Keychain
-
-    func storePassword(_ password: String) {
-        guard let pw = password.data(using: .utf8) else { return }
-        let query: [String: Any] = [
-            String(kSecClass): kSecClassGenericPassword,
-            String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
-            String(kSecAttrLabel): "FUnlock",
-            String(kSecAttrAccessible): kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            String(kSecValueData): pw,
-        ]
-        SecItemDelete(query as CFDictionary)
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            let err = SecCopyErrorMessageString(status, nil)
-            errorModal(t("failed_store_password"), info: err as String? ?? "Status \(status)")
-            return
-        }
-    }
-
-    func fetchPassword(warn: Bool = false) -> String? {
-        let query: [String: Any] = [
-            String(kSecClass): kSecClassGenericPassword,
-            String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
-            String(kSecReturnData): true as CFBoolean,
-            String(kSecMatchLimit): kSecMatchLimitOne,
-        ]
-        var item: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound {
-            if warn { errorModal(t("password_not_set")) }
-            return nil
-        }
-        guard status == errSecSuccess else {
-            let info = SecCopyErrorMessageString(status, nil)
-            errorModal(t("failed_retrieve_password"), info: info as String? ?? "Status \(status)")
-            return nil
-        }
-        guard let data = item as? Data else {
-            errorModal(t("failed_convert_password"))
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    }
-
-    // MARK: - 通知
-
-    private func notifyUser(_ reason: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "FUnlock"
-        if reason == "lost" { content.subtitle = t("notification_lost_signal") }
-        else if reason == "away" { content.subtitle = t("notification_device_away") }
-        content.body = t("notification_locked")
-        let req = UNNotificationRequest(identifier: "funlock-lock", content: content, trigger: nil)
-        userNotificationId = req.identifier
-        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
-    }
-
-    // MARK: - 日志 / 脚本
-
-    func logEvent(_ event: String) {
-        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
-        let logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
-        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
-        let logFile = logDir.appendingPathComponent("events.log")
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let rssiStr = rssi.map { String($0) } ?? "N/A"
-        let line = "\(formatter.string(from: Date())) | \(event) | RSSI: \(rssiStr)\n"
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logFile.path) {
-                if let handle = try? FileHandle(forWritingTo: logFile) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                try? data.write(to: logFile)
-            }
-        }
-    }
-
-    func runScript(_ arg: String) {
-        guard let directory = try? FileManager.default.url(for: .applicationScriptsDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
-        let file = directory.appendingPathComponent("event")
-        let process = Process()
-        process.executableURL = file
-        var args = [arg]
-        if let r = rssi { args.append(String(r)) }
-        if let uuid = fun.monitoredUUID, let device = fun.devices[uuid] {
-            args.append(device.description)
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        args.append(formatter.string(from: Date()))
-        process.arguments = args
-        try? process.run()
-    }
+    // 屏幕操作、键盘注入、Keychain、通知、日志、脚本 — 已迁移至
+    // SystemInteractionService / SecurityService / ScriptRunner
 
     func checkUpdate() {
         updateChecker.check()
@@ -765,57 +576,6 @@ final class FUnManager: ObservableObject {
 
     // MARK: - UI 辅助
 
-    /// 同一小时内最多提示一次无障碍权限丢失
-    private func showAXRevokedAlertIfNeeded() {
-        let key = "lastAXRevokedAlert"
-        let now = Date().timeIntervalSince1970
-        if let last = prefs.object(forKey: key) as? Double, now - last < 3600 {
-            Log.sm.debug("AX revoked alert throttled (last shown \(Int(now - last))s ago)")
-            return
-        }
-        prefs.set(now, forKey: key)
-        let alert = NSAlert()
-        alert.messageText = t("ax_revoked_title")
-        alert.informativeText = t("ax_revoked_info")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("open_settings"))
-        alert.addButton(withTitle: t("ok"))
-        alert.window.title = "FUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
-
-    func errorModal(_ msg: String, info: String? = nil) {
-        let alert = NSAlert()
-        alert.messageText = msg
-        alert.informativeText = info ?? ""
-        alert.window.title = "FUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
-    func askPassword() {
-        let msg = NSAlert()
-        msg.addButton(withTitle: t("ok"))
-        msg.addButton(withTitle: t("cancel"))
-        msg.messageText = t("enter_password")
-        msg.informativeText = t("password_info")
-        msg.window.title = "FUnlock"
-        let txt = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 20))
-        msg.accessoryView = txt
-        txt.becomeFirstResponder()
-        NSApp.activate(ignoringOtherApps: true)
-        let response = msg.runModal()
-        if response == .alertFirstButtonReturn {
-            storePassword(txt.stringValue)
-        }
-    }
-
     /// 记录一次解锁尝试（失败时调用），滑动窗口检测异常频率
     private func recordUnlockAttempt() {
         let now = Date()
@@ -828,7 +588,8 @@ final class FUnManager: ObservableObject {
         if unlockAttemptTimestamps.count >= maxAttemptsInWindow {
             let timeSinceLastAlert = now.timeIntervalSince(lastAbnormalAlertTime)
             if timeSinceLastAlert > 3600 {  // 1小时内最多告警一次
-                showAbnormalUnlockAlert()
+                SystemInteractionService.shared.showAbnormalUnlockAlert(
+                    count: unlockAttemptTimestamps.count, window: Int(detectionWindow))
                 lastAbnormalAlertTime = now
             }
         }
@@ -837,63 +598,6 @@ final class FUnManager: ObservableObject {
     /// 成功解锁后清除失败记录
     private func recordUnlockSuccess() {
         unlockAttemptTimestamps.removeAll()
-    }
-
-    /// 异常解锁频率告警
-    @MainActor
-    private func showAbnormalUnlockAlert() {
-        Log.sm.debug("abnormal unlock alert: \(self.unlockAttemptTimestamps.count) attempts in \(Int(self.detectionWindow))s")
-        let alert = NSAlert()
-        alert.messageText = t("abnormal_unlock_title")
-        alert.informativeText = t("abnormal_unlock_info")
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: t("ok"))
-        alert.window.title = "FUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
-    /// 连续多次解锁尝试未收到 onUnlock，提示用户密码可能已更改
-    private func showPasswordMismatchAlert() {
-        Log.sm.debug("showing password mismatch alert after \(self.maxUnlockAttempts) attempts")
-        let alert = NSAlert()
-        alert.messageText = t("password_mismatch_title")
-        alert.informativeText = t("password_mismatch_info")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("re_enter_password"))
-        alert.addButton(withTitle: t("cancel"))
-        alert.window.title = "FUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            askPassword()
-        }
-    }
-
-    // MARK: - 密码变更检测
-
-    /// 系统密码变更通知回调：清除旧密码并提醒用户重新输入
-    func handlePasswordChanged() {
-        guard fetchPassword() != nil else { return }  // 没存密码，无需处理
-        Log.sm.debug("system password changed, clearing stored password")
-        // 清除 Keychain 中的旧密码
-        let query: [String: Any] = [
-            String(kSecClass): kSecClassGenericPassword,
-            String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
-        ]
-        SecItemDelete(query as CFDictionary)
-
-        let alert = NSAlert()
-        alert.messageText = t("password_changed_title")
-        alert.informativeText = t("password_changed_info")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("re_enter_password"))
-        alert.addButton(withTitle: t("later"))
-        alert.window.title = "FUnlock"
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            askPassword()
-        }
     }
 
     // MARK: - 便利属性

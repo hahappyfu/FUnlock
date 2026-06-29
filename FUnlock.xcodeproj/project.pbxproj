@@ -37,6 +37,11 @@
 		DD000002226C1DF200000001 /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000001226C1DF200000001 /* Log.swift */; };
 		WF0000010000000100000001 /* WiFiMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = WF0000010000000100000002 /* WiFiMonitor.swift */; };
 		WF0000010000000100000003 /* CoreWLAN.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = WF0000010000000100000004 /* CoreWLAN.framework */; };
+		AB0000012026062900000003 /* SecurityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000003 /* SecurityService.swift */; };
+		AB0000012026062900000004 /* SystemInteractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000004 /* SystemInteractionService.swift */; };
+		AB0000012026062900000005 /* ScriptRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000005 /* ScriptRunner.swift */; };
+		AB0000012026062900000001 /* RingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000001 /* RingBuffer.swift */; };
+		AB0000012026062900000002 /* SignalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000002 /* SignalDataStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +115,11 @@
 		F749D28D277515C600C78C28 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		WF0000010000000100000002 /* WiFiMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiMonitor.swift; sourceTree = "<group>"; };
 		WF0000010000000100000004 /* CoreWLAN.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreWLAN.framework; path = System/Library/Frameworks/CoreWLAN.framework; sourceTree = SDKROOT; };
+		AB0000022026062900000003 /* SecurityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityService.swift; sourceTree = "<group>"; };
+		AB0000022026062900000004 /* SystemInteractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemInteractionService.swift; sourceTree = "<group>"; };
+		AB0000022026062900000005 /* ScriptRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptRunner.swift; sourceTree = "<group>"; };
+		AB0000022026062900000001 /* RingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingBuffer.swift; sourceTree = "<group>"; };
+		AB0000022026062900000002 /* SignalDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalDataStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -174,6 +184,11 @@
 				AB0000022026062500000002 /* AutomationView.swift */,
 				AB0000022026062500000003 /* StatsView.swift */,
 				AB0000022026062500000004 /* ToastView.swift */,
+				AB0000022026062900000001 /* RingBuffer.swift */,
+				AB0000022026062900000002 /* SignalDataStore.swift */,
+				AB0000022026062900000003 /* SecurityService.swift */,
+				AB0000022026062900000004 /* SystemInteractionService.swift */,
+				AB0000022026062900000005 /* ScriptRunner.swift */,
 				B200000422784D550017D8B9 /* FUnlockUtils.swift */,
 				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
@@ -413,6 +428,11 @@
 				AB0000012026062500000002 /* AutomationView.swift in Sources */,
 				AB0000012026062500000003 /* StatsView.swift in Sources */,
 				AB0000012026062500000004 /* ToastView.swift in Sources */,
+				AB0000012026062900000001 /* RingBuffer.swift in Sources */,
+				AB0000012026062900000002 /* SignalDataStore.swift in Sources */,
+				AB0000012026062900000003 /* SecurityService.swift in Sources */,
+				AB0000012026062900000004 /* SystemInteractionService.swift in Sources */,
+				AB0000012026062900000005 /* ScriptRunner.swift in Sources */,
 				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
 				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
