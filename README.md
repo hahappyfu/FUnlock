@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013.0%2B-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-2.2.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-2.4.0-green.svg)]()
 [![Swift](https://img.shields.io/badge/Swift-5.7%2B-orange.svg)]()
 
 FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。
@@ -24,6 +24,7 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 - **输入活动保护** — 检测键盘/触控板活动时暂缓锁定，打字不会误锁屏
 - **手动锁屏保护** — 可选手动锁屏后禁止自动解锁，防止旁人靠近时屏幕自动打开
 - **指纹解锁安全** — 指纹解锁时自动中断模拟密码输入，防止输入泄漏到前台应用
+- **自动更新** — 每天检测 Gitee Release，有新版本自动下载安装并重启
 - **启动权限检查** — 启动时自动检查辅助功能和蓝牙权限，缺失时弹窗引导授权
 - **安全存储** — 密码使用 Keychain 加密
 - **多语言** — 支持中文、日文、德语、瑞典语、挪威语、丹麦语、土耳其语
@@ -98,6 +99,7 @@ brew install funlock
 - **竞态保护**：手动解锁后 3 秒内禁止自动解锁，防止密码注入到已解锁屏幕
 - **系统锁屏监听**：监听 `com.apple.screenIsLocked` 通知，通过系统菜单锁屏后禁止自动解锁
 - **SQL 参数化查询**：蓝牙设备数据库查询使用参数绑定，防止注入
+- **codesign 校验**：自动更新安装时校验应用签名，防止恶意替换
 
 ---
 
@@ -135,28 +137,37 @@ esac
 ```
 FUnlock/
 ├── FUnlock/
-│   ├── FUnManager.swift          # 核心状态机（@MainActor）
-│   ├── FUn.swift                 # CoreBluetooth 驱动 + 信号滤波 + 输入保护
-│   ├── AppDelegate.swift         # 应用入口 + 权限检查 + 输入活动监听
-│   ├── MenuDashboardView.swift   # 侧边栏导航控制中心
-│   ├── CalibrationWizardView.swift # 阈值校准向导
-│   ├── OnboardingView.swift      # 首次启动引导页
-│   ├── StatsView.swift           # 统计数据视图
-│   ├── AutomationView.swift      # 自动化设置视图
-│   ├── ProfileManager.swift      # 多配置文件管理
-│   ├── ToastView.swift           # 轻提示组件
-│   ├── WiFiMonitor.swift         # Wi-Fi SSID 监听（暂停锁屏）
-│   ├── Log.swift                 # 日志记录
-│   ├── FUnlockUtils.swift        # 通用工具函数
-│   ├── LEDeviceInfo.swift        # macOS 蓝牙设备数据库查询
-│   ├── appleDeviceNames.swift    # Apple 设备名称映射表
-│   ├── checkUpdate.swift         # 自动更新检查
-│   ├── AboutBox.swift            # 关于窗口
-│   ├── lowlevel.h / .c           # 系统级 API（锁屏/唤醒显示器）
-│   └── MediaRemote.h             # 私有框架（Now Playing 控制）
-├── Launcher/                      # 开机自启动 Helper
-├── docs/                          # 开发文档与设计 spec
-└── BUGS.md                        # 问题登记
+│   ├── AppDelegate.swift              # 应用入口 + 权限检查 + 通知处理
+│   ├── FUnManager.swift               # 核心状态机（@MainActor）
+│   ├── FUn.swift                      # CoreBluetooth 驱动 + 信号滤波
+│   ├── MenuDashboardView.swift        # 侧边栏导航控制中心
+│   ├── SystemInteractionService.swift # 锁屏/唤醒/密码输入（从 FUnManager 解耦）
+│   ├── SecurityService.swift          # Keychain 读写 + 密码验证（从 FUnManager 解耦）
+│   ├── ScriptRunner.swift             # 脚本事件执行（从 FUnManager 解耦）
+│   ├── TelemetryLogger.swift          # 结构化日志 + 关键路径埋点
+│   ├── InputActivityMonitor           # IOKit HID 键盘/触控板活动检测
+│   ├── CalibrationWizardView.swift    # 阈值校准向导
+│   ├── OnboardingView.swift           # 首次启动引导页
+│   ├── StatsView.swift                # 统计数据视图
+│   ├── AutomationView.swift           # 自动化设置视图
+│   ├── ProfileManager.swift           # 多配置文件管理
+│   ├── ToastView.swift                # 轻提示组件
+│   ├── WiFiMonitor.swift              # Wi-Fi SSID 监听（暂停锁屏）
+│   ├── Log.swift                      # 日志记录
+│   ├── SignalDataStore.swift          # 信号数据存储
+│   ├── RingBuffer.swift               # 环形缓冲区
+│   ├── UpdateDownloader.swift         # 自动更新下载器
+│   ├── UpdateInstaller.swift          # 自动更新安装器
+│   ├── checkUpdate.swift              # 自动更新检查
+│   ├── FUnlockUtils.swift             # 通用工具函数
+│   ├── LEDeviceInfo.swift             # macOS 蓝牙设备数据库查询
+│   ├── appleDeviceNames.swift         # Apple 设备名称映射表
+│   ├── AboutView.swift                # 关于窗口
+│   ├── lowlevel.h / .c                # 系统级 API（锁屏/唤醒显示器）
+│   └── MediaRemote.h                  # 私有框架（Now Playing 控制）
+├── Launcher/                           # 开机自启动 Helper
+├── docs/                               # 开发文档与设计 spec
+└── BUGS.md                             # 问题登记
 ```
 
 ---
@@ -175,6 +186,15 @@ FUnlock/
 │    决策：lockOrSaveScreen / fakeKeyStrokes    │
 │    输入活动否决 + 心跳检查                     │
 └──────────────────┬──────────────────────────┘
+                   │ 依赖注入（解耦后）
+    ┌──────────────┼──────────────┐
+    ▼              ▼              ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐
+│SystemInt.│ │Security  │ │ Script   │
+│Service   │ │Service   │ │ Runner   │
+│锁屏/唤醒 │ │Keychain  │ │ 脚本事件 │
+└──────────┘ └──────────┘ └──────────┘
+
                    │ FUnDelegate
 ┌──────────────────▼──────────────────────────┐
 │              FUn (CoreBluetooth)             │
@@ -189,6 +209,11 @@ FUnlock/
 └─────────────────────────────────────────────┘
 ```
 
+**v2.4.0 架构改进**：
+- 从 FUnManager 拆分出 SystemInteractionService（锁屏/唤醒/密码）、SecurityService（Keychain）、ScriptRunner（脚本事件）
+- 新增 TelemetryLogger 结构化日志系统，关键路径埋点
+- 消除不必要的心跳定时器，降低后台 CPU 占用
+
 ---
 
 ## 🛠️ 开发
@@ -197,6 +222,15 @@ FUnlock/
 
 ```bash
 xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Release
+```
+
+### 安装（覆盖安装）
+
+```bash
+pkill FUnlock
+rm -rf /Applications/FUnlock.app
+cp -R build/Build/Products/Release/FUnlock.app /Applications/
+open /Applications/FUnlock.app
 ```
 
 ### 要求
