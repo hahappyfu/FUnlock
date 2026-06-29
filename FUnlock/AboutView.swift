@@ -18,10 +18,10 @@ struct AboutView: View {
             Divider()
 
             Button(t("about_visit_homepage")) {
-                NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/FUnlock")!)
+                NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/funlock")!)
             }
             Button(t("about_check_releases")) {
-                NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/FUnlock/releases")!)
+                NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/funlock/releases")!)
             }
 
             Divider()

@@ -244,7 +244,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/FUnlock/releases")!)
+        let id = response.notification.request.identifier
+        if id == "funlock-update" {
+            // 点击更新通知 → 触发下载安装
+            DispatchQueue.main.async { [weak self] in
+                self?.checkForUpdates()
+            }
+        } else {
+            NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/funlock/releases")!)
+        }
     }
 
     // MARK: - Popover

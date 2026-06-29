@@ -271,7 +271,7 @@ protocol FUnDelegate {
 class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     let UNLOCK_DISABLED = 1
     let LOCK_DISABLED = -100
-    let bleQueue = DispatchQueue(label: "com.bleunlock.ble")
+    let bleQueue = DispatchQueue(label: "com.funlock.ble")
     private let lock = UnfairLock()
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
