@@ -4,17 +4,31 @@ enum UpdateInstaller {
     enum InstallError: LocalizedError {
         case scriptCreationFailed
         case processLaunchFailed
+        case signatureInvalid
 
         var errorDescription: String? {
             switch self {
             case .scriptCreationFailed: return "安装脚本创建失败"
             case .processLaunchFailed: return "安装脚本启动失败"
+            case .signatureInvalid: return "下载的应用签名验证失败"
             }
         }
     }
 
-    /// 生成安装脚本并启动，然后退出 app
+    /// 校验代码签名后，生成安装脚本并启动，然后退出 app
     static func install(appPath: URL) throws {
+        // 代码签名校验
+        let codesign = Process()
+        codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        codesign.arguments = ["--verify", "--deep", "--strict", appPath.path]
+        codesign.standardOutput = FileHandle.nullDevice
+        codesign.standardError = FileHandle.nullDevice
+        try codesign.run()
+        codesign.waitUntilExit()
+        guard codesign.terminationStatus == 0 else {
+            throw InstallError.signatureInvalid
+        }
+
         let script = """
         #!/bin/bash
         sleep 2
@@ -36,10 +50,8 @@ enum UpdateInstaller {
             throw InstallError.scriptCreationFailed
         }
 
-        // 设置可执行权限
         chmod(scriptPath)
 
-        // 启动脚本（脱离父进程）
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [scriptPath]
@@ -51,7 +63,6 @@ enum UpdateInstaller {
             throw InstallError.processLaunchFailed
         }
 
-        // 退出 app
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             NSApplication.shared.terminate(nil)
         }
