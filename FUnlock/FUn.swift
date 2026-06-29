@@ -38,6 +38,8 @@ struct SignalPipeline {
     var smoothedSlope: Double = 0.0
     var latestRSSIs: [Double] = []
     var rssiTimestamps: [Date] = []
+    /// 输入活跃时重置衰减基准，防止用户操作期间 effectiveRSSI 因时间衰减跌破阈值
+    var decayBaseline: Date = .distantPast
     let windowDuration: TimeInterval = 1.5
 
     // Kalman 参数
@@ -79,8 +81,10 @@ struct SignalPipeline {
         let estimate = computeKalman(rssi: rssi, slope: slope, isAnomalous: isAnomalous)
 
         // S4: 自适应衰减
-        // elapsed 基于 rssiTimestamps.last（上一次 BLE 样本时间），新样本尚未 append
-        let elapsed = now.timeIntervalSince(rssiTimestamps.last ?? now)
+        // elapsed 基于 rssiTimestamps.last，但钳制到 lastReceiveTime（输入活跃时会重置）
+        let sampleTime = rssiTimestamps.last ?? now
+        let effectiveBaseline = max(sampleTime, decayBaseline)
+        let elapsed = now.timeIntervalSince(effectiveBaseline)
         let adaptiveRate: Double
         if abs(slope) > slopeSwitchThreshold {
             adaptiveRate = decayRate * (1 + slopeFactor * abs(slope))
@@ -166,6 +170,7 @@ struct SignalPipeline {
         smoothedSlope = 0.0
         latestRSSIs.removeAll()
         rssiTimestamps.removeAll()
+        decayBaseline = .distantPast
     }
 }
 
@@ -550,8 +555,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
             if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
                 if self.isUserInputActive {
-                    // 用户活跃时重置衰减基准，阻止衰减累积后绕过 input 检查
-                    self.lock.withLock { self.lastReceiveTime = Date() }
+                    // 用户活跃时重置衰减基准，阻止衰减累积
+                    self.lock.withLock {
+                        self.lastReceiveTime = Date()
+                        self.pipeline.decayBaseline = Date()
+                    }
                 } else {
                     Log.sm.debug("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
                     self.startLockTimer()
@@ -605,6 +613,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 self.lock.lock()
                 self.proximityTimer = nil
                 self.lastReceiveTime = Date()
+                self.pipeline.decayBaseline = Date()
                 self.lock.unlock()
                 return
             }
@@ -750,8 +759,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                     || UserDefaults.standard.bool(forKey: "lockOnIdle")
                 if lockOnIdle && isUserInputActive {
-                    Log.sm.debug("[SM] input active, rejecting lock signal")
-                    lock.withLock { lastReceiveTime = Date() }
+                    Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")
+                    lock.withLock {
+                        lastReceiveTime = Date()
+                        pipeline.decayBaseline = Date()
+                    }
                 } else {
                     startLockTimer()
                 }
