@@ -108,7 +108,7 @@ brew install funlock
 锁定/解锁时自动执行脚本：
 
 ```
-~/Library/Application Scripts/jp.sone.BLEUnlock/event
+~/Library/Application Scripts/FUnlock/event
 ```
 
 参数格式：`event rssi deviceName timestamp`
