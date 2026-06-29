@@ -530,6 +530,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 requestAccessibilityIfNeeded()
             }
             // InputActivityMonitor 延迟到权限确认后启动（macOS Sequoia TCC 兼容）
+            if isAccessibilityGranted {
+                inputMonitor.start()
+            }
         }
         checkAccessibility()
         // UpdateChecker 已注入到 FUnManager，由 manager.onUnlock() 触发

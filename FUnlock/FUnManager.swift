@@ -302,6 +302,17 @@ final class FUnManager: ObservableObject {
         sys.notifyLock(reason: reason)
         ScriptRunner.shared.runScript(reason, rssi: rssi, deviceName: monitoredDeviceName)
         ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
+        // P3: 形子模式遥测 — 记录自动锁屏事件
+        TelemetryLogger.shared.log(
+            event: .autoLock,
+            deviceModel: monitoredDeviceName,
+            rawRSSI: rssi ?? -100,
+            kalmanRSSI: fun.pipeline.kalmanEstimate,
+            effectiveRSSI: fun.effectiveRSSI,
+            slope: fun.pipeline.smoothedSlope,
+            isAnomalous: fun.lastSignalAnomalous
+        )
+
     }
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {
@@ -490,6 +501,16 @@ final class FUnManager: ObservableObject {
         resumeMediaIfNeeded()
         ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
         ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
+        // P3: 形子模式遥测 — 记录自动解锁事件
+        TelemetryLogger.shared.log(
+            event: .autoUnlock,
+            deviceModel: monitoredDeviceName,
+            rawRSSI: rssi ?? -100,
+            kalmanRSSI: fun.pipeline.kalmanEstimate,
+            effectiveRSSI: fun.effectiveRSSI,
+            slope: fun.pipeline.smoothedSlope,
+            isAnomalous: fun.lastSignalAnomalous
+        )
         Log.sm.debug("unlock complete")
     }
 
@@ -590,6 +611,16 @@ final class FUnManager: ObservableObject {
             if timeSinceLastAlert > 3600 {  // 1小时内最多告警一次
                 SystemInteractionService.shared.showAbnormalUnlockAlert(
                     count: unlockAttemptTimestamps.count, window: Int(detectionWindow))
+                // P3: 形子模式遥测 — 记录异常解锁告警
+                TelemetryLogger.shared.log(
+                    event: .abnormalAlert,
+                    deviceModel: self.monitoredDeviceName,
+                    rawRSSI: self.rssi ?? -100,
+                    kalmanRSSI: self.fun.pipeline.kalmanEstimate,
+                    effectiveRSSI: self.fun.effectiveRSSI,
+                    slope: self.fun.pipeline.smoothedSlope,
+                    isAnomalous: true
+                )
                 lastAbnormalAlertTime = now
             }
         }
