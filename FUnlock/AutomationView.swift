@@ -9,7 +9,8 @@ struct AutomationView: View {
 
     private static let eventScriptDir: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("jp.sone.BLEUnlock/event")
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.fuhahah.FUnlock"
+        return appSupport.appendingPathComponent("\(bundleId)/event")
     }()
 
     private struct EventItem {
