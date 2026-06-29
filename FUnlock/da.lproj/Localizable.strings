@@ -43,6 +43,8 @@
 // MenuDashboardView
 "bound_device" = "Bound Device";
 "unbind" = "Unbind";
+"unbind_confirm_title" = "Afbind enhet";
+"unbind_confirm_message" = "Afbind denne enhed? Auto-lås/lås op deaktiveres.";
 "select_device" = "Select Device to Bind";
 "start_search" = "Start Search";
 "scan_hint" = "Tap \"Start Search\" to scan nearby devices";

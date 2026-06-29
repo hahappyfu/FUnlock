@@ -94,6 +94,7 @@ struct MenuDashboardView: View {
     @State private var showStats = false
     @State private var showAddProfile = false
     @State private var showDeleteProfile = false
+    @State private var showUnbindConfirm = false
     @State private var newProfileName = ""
     @State private var onboardingStep = 0
     @State private var sliderLock: Double = 0
@@ -454,13 +455,19 @@ struct MenuDashboardView: View {
                             .foregroundColor(.secondary)
                     }
                     Spacer()
-                    Button(action: { manager.unbindDevice() }) {
+                    Button(action: { showUnbindConfirm = true }) {
                         Text(t("unbind"))
                             .font(.system(size: 11))
                             .foregroundColor(.red)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                    .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
+                        Button(t("ok"), role: .destructive) { manager.unbindDevice() }
+                        Button(t("cancel"), role: .cancel) {}
+                    } message: {
+                        Text(t("unbind_confirm_message"))
+                    }
                 }
                 .padding(12)
                 .background(statusColor.opacity(0.06))

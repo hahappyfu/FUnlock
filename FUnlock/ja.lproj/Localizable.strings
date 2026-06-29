@@ -43,6 +43,8 @@
 // MenuDashboardView
 "bound_device" = "Bound Device";
 "unbind" = "Unbind";
+"unbind_confirm_title" = "デバイスのバインド解除";
+"unbind_confirm_message" = "このデバイスのバインドを解除しますか？自動ロック/解除が無効になります。";
 "select_device" = "Select Device to Bind";
 "start_search" = "Start Search";
 "scan_hint" = "Tap \"Start Search\" to scan nearby devices";
