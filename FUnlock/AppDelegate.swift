@@ -555,8 +555,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "FUnlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
-        settingsWindow.contentMinSize = NSSize(width: 320, height: 480)
-        settingsWindow.contentMaxSize = NSSize(width: 320, height: 800)
+        settingsWindow.contentMinSize = NSSize(width: 440, height: 480)
+        settingsWindow.contentMaxSize = NSSize(width: 520, height: 800)
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()
     }
