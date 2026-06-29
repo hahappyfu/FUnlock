@@ -55,6 +55,8 @@
 // MenuDashboardView
 "bound_device" = "Bound Device";
 "unbind" = "Unbind";
+"unbind_confirm_title" = "Unbind Device";
+"unbind_confirm_message" = "Unbind this device? Auto lock/unlock will be disabled.";
 "select_device" = "Select Device to Bind";
 "start_search" = "Start Search";
 "scan_hint" = "Tap \"Start Search\" to scan nearby devices";

@@ -43,6 +43,8 @@
 // MenuDashboardView
 "bound_device" = "Bound Device";
 "unbind" = "Unbind";
+"unbind_confirm_title" = "Cihazı ayır";
+"unbind_confirm_message" = "Bu cihaz ayrılsın mı? Otomatik kilitleme/kilid açma devre dışı bırakılacak.";
 "select_device" = "Select Device to Bind";
 "start_search" = "Start Search";
 "scan_hint" = "Tap \"Start Search\" to scan nearby devices";

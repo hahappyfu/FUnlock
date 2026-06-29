@@ -55,6 +55,8 @@
 // MenuDashboardView
 "bound_device" = "已绑定设备";
 "unbind" = "解绑";
+"unbind_confirm_title" = "解绑设备";
+"unbind_confirm_message" = "确定解绑当前设备？解绑后自动锁定/解锁功能将停用。";
 "select_device" = "选择要绑定的设备";
 "start_search" = "开始搜索";
 "scan_hint" = "点击「开始搜索」扫描附近设备";
