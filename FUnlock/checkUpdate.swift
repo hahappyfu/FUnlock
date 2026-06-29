@@ -65,7 +65,21 @@ class UpdateChecker {
         guard let local = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
             return false
         }
-        return local != remoteVersion
+        return compareVersions(remoteVersion, local) == .orderedDescending
+    }
+
+    /// semver 比较：返回 .orderedAscending / .orderedSame / .orderedDescending
+    private func compareVersions(_ v1: String, _ v2: String) -> ComparisonResult {
+        let parts1 = v1.split(separator: ".").compactMap { Int($0) }
+        let parts2 = v2.split(separator: ".").compactMap { Int($0) }
+        let maxLen = max(parts1.count, parts2.count)
+        for i in 0..<maxLen {
+            let a = i < parts1.count ? parts1[i] : 0
+            let b = i < parts2.count ? parts2[i] : 0
+            if a < b { return .orderedAscending }
+            if a > b { return .orderedDescending }
+        }
+        return .orderedSame
     }
 
     private func notify() {
