@@ -1,0 +1,294 @@
+# FUnlock 开发会话记录
+## 日期：2026-06-29
+## 阶段：P0 CPU优化 → P1 可观测性 → P2 架构解耦
+
+---
+
+# 一、P0：CPU 优化（v2.2.0）
+
+## 1.1 问题发现
+FUnlock 长期占用 CPU 27-41%，实测确认 27.1%。
+
+## 1.2 根因分析
+`FUn.swift:313` 的 BLE 扫描配置：
+```swift
+centralMgr.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+```
+- `withServices: nil` → 扫描周围所有蓝牙设备
+- `AllowDuplicates: true` → 每个设备的每条广播都触发回调
+- 导致 `didDiscover` 高频触发，每次都往主线程 dispatch 多个 block
+
+## 1.3 实施的 4 个优化
+
+### 优化 1：didDiscover 中尽早丢弃无关设备
+监控模式下（monitoredUUID != nil），非目标设备直接 return：
+```swift
+let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
+if hasMonitor && !monitoredUUIDs.contains(peripheral.identifier) {
+    return
+}
+```
+
+### 优化 2：动态控制 AllowDuplicatesKey
+```swift
+func scanForPeripherals() {
+    let allowDuplicates: Bool
+    let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
+    if !hasMonitor {
+        allowDuplicates = false          // 未绑定，只需发现列表
+    } else if lock.withLock({ passiveMode }) {
+        allowDuplicates = true           // 被动模式：靠广播拿 RSSI
+    } else {
+        allowDuplicates = false           // 主动模式：靠 readRSSI() 轮询
+    }
+    if centralMgr.isScanning && currentScanAllowDuplicates == allowDuplicates {
+        return                            // 参数没变，跳过重启
+    }
+    if centralMgr.isScanning { centralMgr.stopScan() }
+    currentScanAllowDuplicates = allowDuplicates
+    let options: [String: Any] = allowDuplicates
+        ? [CBCentralManagerScanOptionAllowDuplicatesKey: true] : [:]
+    centralMgr.scanForPeripherals(withServices: nil, options: options)
+}
+```
+
+### 优化 3：UI 刷新节流（1 秒 1 次）
+```swift
+let now = Date()
+if lastUIUpdateTime.count > 200 { lastUIUpdateTime.removeAll() }  // 防泄漏
+if let lastUpdate = lastUIUpdateTime[peripheral.identifier],
+   now.timeIntervalSince(lastUpdate) < uiThrottleInterval {
+    // 节流窗口内，只更新数据不派发 UI
+} else {
+    lastUIUpdateTime[peripheral.identifier] = now
+    DispatchQueue.main.async { self.delegate?.updateDevice(device: device) }
+}
+```
+
+### 优化 4：连接成功后暂停全局扫描
+```swift
+// didConnect
+if shouldActivate {
+    centralMgr.stopScan()
+    peripheral.readRSSI()
+}
+// didDisconnectPeripheral
+if peripheral == monitoredPeripheral {
+    invalidateAllTimers()
+    // ...
+    scanForPeripherals()  // 恢复扫描
+}
+```
+
+## 1.4 内存泄漏防护（lastUIUpdateTime 字典）
+三层防护：
+1. **设备过期清理** — `resetScanTimer` 的 60 秒超时回调里同步移除
+2. **硬上限 200 条** — 超限时 `removeAll()` 清空
+3. **guard let uuid** — 修复 `UUID!` 隐式解包隐患
+
+## 1.5 效果
+- 优化前：27% CPU
+- 优化后：1.6-5.5% CPU（降 70-94%）
+
+---
+
+# 二、P1：可观测性 — StatsView 诊断仪表盘
+
+## 2.1 新增文件
+
+### RingBuffer.swift — O(1) 固定容量环形数组
+```swift
+struct RingBuffer<T> {
+    private var buffer: [T?]
+    private var head: Int = 0
+    private(set) var count: Int = 0
+    let capacity: Int
+
+    mutating func append(_ element: T) {
+        buffer[head] = element
+        head = (head + 1) % capacity
+        if count < capacity { count += 1 }
+    }
+
+    func toArray() -> [T] { /* 从最旧到最新 */ }
+}
+```
+
+### SignalDataStore.swift — 信号数据仓库
+```swift
+final class SignalDataStore: ObservableObject {
+    static let shared = SignalDataStore()
+    private var ring = RingBuffer<SignalSample>(capacity: 300)
+    @Published private(set) var samples: [SignalSample] = []
+
+    // Timer 1 秒节流：底层 ring → UI samples
+    // 底层可以毫秒级写入，UI 每秒刷新一次
+
+    func record(rawRSSI: Double, kalmanEstimate: Double,
+                effectiveRSSI: Double, slope: Double,
+                isAnomalous: Bool, event: String? = nil) {
+        ring.append(SignalSample(...))
+    }
+}
+```
+
+### SignalSample 数据结构
+```swift
+struct SignalSample: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let rawRSSI: Double
+    let kalmanEstimate: Double
+    let effectiveRSSI: Double
+    let slope: Double
+    let isAnomalous: Bool
+    let event: String?   // "unlocked" / "locked" / nil
+}
+```
+
+## 2.2 FUn.swift 埋点位置
+- `processSignal` — 每次 RSSI 处理后记录采样点
+- `checkProximity` — 解锁时记录 `"unlocked"` 事件
+- `startLockTimer` — 锁定时记录 `"locked"` 事件
+- 信号丢失 3 次超时 — 记录 `"locked: lost"` 事件
+
+## 2.3 StatsView 升级（Swift Charts）
+- 部署目标 macOS 12，Charts 需要 macOS 13+
+- 使用 `@available(macOS 13.0, *)` 注解兼容
+- macOS 12 fallback：文本列表显示最近 10 条采样
+
+### 信号曲线图（SignalChartView）
+- Raw RSSI（灰色）/ Kalman（蓝色）/ Effective（紫虚线）三线叠加
+- 红色异常点标记（isAnomalous）
+- 绿色/橙色虚线标记解锁/锁定阈值
+- lock/unlock 事件图标标注在时间轴上（RuleMark + annotation）
+
+### 斜率变化图（SlopeChartView）
+- EWLR 斜率曲线（橙色）
+- 正负面积填充（绿色上升区 / 红色下降区）
+- 斜率阈值线（±2.0）
+
+---
+
+# 三、P2：架构解耦 — FUnManager 副作用抽离
+
+## 3.1 重构前：FUnManager.swift 906 行 God Class
+混合了：状态机逻辑 + Keychain 读写 + 键盘注入 + 媒体控制 + 通知弹窗 + 日志脚本
+
+## 3.2 重构后：3 个 Service 单例
+
+### SecurityService.swift（123 行）
+```swift
+final class SecurityService {
+    static let shared = SecurityService()
+
+    @discardableResult
+    func storePassword(_ password: String) -> String?  // 返回 nil=成功, String=错误
+    func fetchPassword(warn: Bool = false) -> String?
+    func deletePassword()
+    func handlePasswordChanged()  // 清旧密码 + 弹窗提醒
+    func askPassword()            // 密码输入弹窗
+}
+
+enum UIHelper {
+    static func errorModal(_ msg: String, info: String? = nil)
+}
+```
+
+### SystemInteractionService.swift（187 行）
+```swift
+final class SystemInteractionService {
+    static let shared = SystemInteractionService()
+
+    // 屏幕状态检测
+    func isScreenLocked(screenState: ScreenState?) -> Bool
+    func isSecureToInject(screenState: ScreenState?) -> Bool
+
+    // 屏幕控制
+    func lockOrSaveScreen(useScreensaver: Bool, sleepDisplayAfter: Bool)
+
+    // 键盘注入（通过闭包回调检查安全性）
+    func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool
+
+    // 媒体控制
+    func checkAndPauseMedia(enabled: Bool, callback: @escaping (Bool) -> Void)
+    func resumeMediaIfNeeded(wasPlaying: Bool, enabled: Bool)
+
+    // 通知
+    func notifyLock(reason: String)
+    func clearLockNotification()
+
+    // Alert 弹窗
+    func showAXRevokedAlertIfNeeded(lastAlertTime: inout Date)
+    func showPasswordMismatchAlert()
+    func showAbnormalUnlockAlert(count: Int, window: Int)
+}
+```
+
+### ScriptRunner.swift（50 行）
+```swift
+final class ScriptRunner {
+    static let shared = ScriptRunner()
+
+    func logEvent(_ event: String, rssi: Int? = nil)
+    func runScript(_ arg: String, rssi: Int? = nil, deviceName: String? = nil, uuid: UUID? = nil)
+}
+```
+
+## 3.3 FUnManager 瘦身结果
+| 文件 | 重构前 | 重构后 |
+|------|--------|--------|
+| FUnManager.swift | 906 行 | 610 行（-33%） |
+| SecurityService.swift | — | 123 行 |
+| SystemInteractionService.swift | — | 187 行 |
+| ScriptRunner.swift | — | 50 行 |
+
+## 3.4 核心逻辑未动
+- `attemptAutoUnlock` / `startWakeRetry` / `tryUnlock` 流程不变
+- `ScreenState` / `LockScreenState` 状态机不变
+- 只做了结构上的代码搬移和依赖注入
+
+---
+
+# 四、v3.0 后续规划（P3 待启动）
+
+## P3：影子模式数据采集（暂不上线智能策略）
+
+### 隐式校准采集
+- 建立数据上报/本地落盘机制
+- 记录用户每天自然锁屏/解锁时的 RSSI 基线数据
+- 跑一段时间看样本量是否支撑 Q/R 参数收敛
+
+### 多设备特征标定
+- 针对 Apple Watch 和 iPhone 收集信号斜率（Slope）差异
+- 标记"手腕抬起" vs "口袋掏出"的物理特征数据
+- 积累足够数据后再做置信度算法
+
+---
+
+# 五、工程备忘
+
+## 安装流程（必须严格按顺序）
+1. `xcodebuild` 编译 Release
+2. `pkill FUnlock` 杀死旧进程
+3. 等 2 秒确认进程退出
+4. `rm -rf /Applications/FUnlock.app` 删除旧版本
+5. `cp -R` 安装到 /Applications
+6. `touch /Applications/FUnlock.app`
+7. `open /Applications/FUnlock.app`
+
+## pbxproj 操作注意
+- 不能用 sed 的多行替换，容易破坏格式
+- 推荐用 Python 脚本，通过 section marker（`/* End PBXBuildFile section */`）定位
+- `replace()` 只替换第一次出现，避免重复插入
+- 4 个位置都要加：PBXBuildFile / PBXFileReference / PBXGroup / PBXSourcesBuildPhase
+
+## 关键文件清单
+- `FUnlock/FUn.swift` — BLE 扫描与信号管道（含 P0 优化 + P1 埋点）
+- `FUnlock/FUnManager.swift` — 状态机（P2 已瘦身）
+- `FUnlock/RingBuffer.swift` — O(1) 环形数组（P1 新增）
+- `FUnlock/SignalDataStore.swift` — 信号数据仓库（P1 新增）
+- `FUnlock/StatsView.swift` — 诊断仪表盘（P1 升级）
+- `FUnlock/SecurityService.swift` — Keychain 服务（P2 新增）
+- `FUnlock/SystemInteractionService.swift` — 系统交互服务（P2 新增）
+- `FUnlock/ScriptRunner.swift` — 日志/脚本服务（P2 新增）
