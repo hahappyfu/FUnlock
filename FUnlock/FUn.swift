@@ -495,17 +495,16 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     // MARK: - Time decay computation (heartbeat fallback, reads self.effectiveRSSI)
     func getEffectiveRSSI() -> Double {
-        let (lastRecv, effRSSI, slope) = lock.withLock { (lastReceiveTime, effectiveRSSI, pipeline.smoothedSlope) }
+        let (lastRecv, effRSSI) = lock.withLock { (lastReceiveTime, effectiveRSSI) }
         let elapsed = Date().timeIntervalSince(lastRecv)
-        // 分段衰减：短间隔温和（避免误触发），长间隔适度（不叠加心跳惩罚）
+        // 仅在长时间无采样时施加轻量衰减，避免与管道衰减叠加
         let penalty: Double
-        if elapsed < 3.0 {
-            // 正常 BLE 采样间隔内（含偶尔延迟）：温和衰减，与管道 decay 一致
-            penalty = 0.5 * elapsed
+        if elapsed < 5.0 {
+            // 5 秒内：不额外衰减，信任管道的 effectiveRSSI
+            penalty = 0
         } else {
-            // 超过 3 秒无采样：适度衰减，避免心跳叠加导致误锁
-            let slopeBoost = abs(slope) > 2.0 ? (1.0 + 0.2 * abs(slope)) : 1.0
-            penalty = 1.5 + 3.0 * slopeBoost * (elapsed - 3.0)
+            // 超过 5 秒无采样：轻量衰减确保离场能锁
+            penalty = 2.0 * (elapsed - 5.0)
         }
         let eff = effRSSI - penalty
         return max(eff, -100.0)
