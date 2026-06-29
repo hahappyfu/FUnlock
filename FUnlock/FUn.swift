@@ -276,7 +276,13 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
     var delegate: FUnDelegate?
-    weak var inputMonitor: InputActivityMonitor?
+    var inputMonitor: InputActivityMonitor?
+
+    /// 用户是否有输入活动（nil-safe，线程安全）
+    private var isUserInputActive: Bool {
+        inputMonitor?.isActive == true
+    }
+
     var scanMode = false
     var monitoredUUID: UUID?
     var monitoredUUIDs: Set<UUID> = []
@@ -297,6 +303,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var effectiveRSSI: Double = -60.0
     var displayRSSI: Double = -60.0
     var lastReceiveTime: Date = Date()
+    var lastSignalAnomalous: Bool = false
     // Heartbeat timer (独立状态机，不在管道内)
     var heartbeatTimer: Timer?
     var heartbeatInterval: TimeInterval = 2.0
@@ -312,6 +319,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private let uiThrottleInterval: TimeInterval = 1.0
     // 跟踪当前扫描的 AllowDuplicates 状态，避免重复启动
     private var currentScanAllowDuplicates: Bool = false
+    // 冷静期：解锁后短时间内不触发锁定，防止振荡
+    private var lastProximityEventTime: Date = .distantPast
+    private let proximityGracePeriod: TimeInterval = 3.0
 
     func scanForPeripherals() {
         // 优化：根据当前模式动态决定 AllowDuplicates
@@ -487,13 +497,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func getEffectiveRSSI() -> Double {
         let (lastRecv, effRSSI, slope) = lock.withLock { (lastReceiveTime, effectiveRSSI, pipeline.smoothedSlope) }
         let elapsed = Date().timeIntervalSince(lastRecv)
-        let rate: Double
-        if abs(slope) > 2.0 {
-            rate = 0.5 * (1 + 0.3 * abs(slope))
+        // 分段衰减：短间隔温和（避免误触发），长间隔激进（确保快速锁屏）
+        let penalty: Double
+        if elapsed < 2.0 {
+            // 正常 BLE 采样间隔内：温和衰减，与管道 decay 一致
+            penalty = 0.5 * elapsed
         } else {
-            rate = 0.5 / (1 + 0.05 * elapsed)
+            // 超过 2 秒无采样：快速衰减，斜率大时进一步加速
+            let slopeBoost = abs(slope) > 2.0 ? (1.0 + 0.3 * abs(slope)) : 1.0
+            penalty = 1.0 + 8.0 * slopeBoost * (elapsed - 2.0)
         }
-        let eff = effRSSI - rate * elapsed
+        let eff = effRSSI - penalty
         return max(eff, -100.0)
     }
 
@@ -533,9 +547,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let eff = self.getEffectiveRSSI()
             let threshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
-            if eff < threshold && !hasTimer && self.inputMonitor?.isActive != true {
-                Log.sm.debug("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
-                self.startLockTimer()
+            if eff < threshold && !hasTimer {
+                if self.isUserInputActive {
+                    // 用户活跃时重置衰减基准，阻止衰减累积后绕过 input 检查
+                    self.lock.withLock { self.lastReceiveTime = Date() }
+                } else {
+                    Log.sm.debug("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
+                    self.startLockTimer()
+                }
             }
             let newInterval = self.computeHeartbeatInterval()
             let (lastInterval, currentTimer) = self.lock.withLock { (self.lastHeartbeatInterval, self.heartbeatTimer) }
@@ -580,10 +599,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             guard let self = self else { return }
             let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                 || UserDefaults.standard.bool(forKey: "lockOnIdle")
-            if lockOnIdle && self.inputMonitor?.isActive == true {
+            if lockOnIdle && self.isUserInputActive {
                 Log.sm.debug("[SM] input active at lock timer fire, deferring")
                 self.lock.lock()
                 self.proximityTimer = nil
+                self.lastReceiveTime = Date()
                 self.lock.unlock()
                 return
             }
@@ -647,6 +667,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
         lastReceiveTime = now
         effectiveRSSI = decision.effectiveRSSI
+        lastSignalAnomalous = decision.isAnomalous
         lock.unlock()
 
         // P1: 采集信号样本到数据仓库（低开销，仅追加到环形缓冲）
@@ -669,22 +690,25 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func checkProximity(rssi: Int) {
         let unlockThreshold = unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI
+        // 用 effectiveRSSI（与 applyLockTimer 同源）判断解锁，避免原始 RSSI 尖峰导致振荡
+        let signal = effectiveRSSI
         var shouldNotifyClose = false
 
         let dispRSSI: Double = lock.withLock {
             let disp = displayRSSI
             let wasPresent = presence
-            if rssi >= unlockThreshold && !wasPresent {
-                Log.sm.debug("Device is close")
+            if signal >= Double(unlockThreshold) && !wasPresent {
+                Log.sm.debug("Device is close (eff=\(String(format: "%.1f", signal)))")
                 presence = true
                 shouldNotifyClose = true
+                lastProximityEventTime = Date()
                 pipeline.latestRSSIs.removeAll()
                 pipeline.rssiTimestamps.removeAll()
             }
             return disp
         }
 
-        if rssi >= unlockThreshold {
+        if signal >= Double(unlockThreshold) {
             if shouldNotifyClose {
                 // P1: 记录解锁事件
                 SignalDataStore.shared.record(
@@ -716,10 +740,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         } else {
             let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
             if curPresence && curTimer == nil {
+                // 冷静期：刚解锁后不立即触发锁定，防止 effectiveRSSI 衰减导致振荡
+                let elapsed = Date().timeIntervalSince(lastProximityEventTime)
+                if elapsed < self.proximityGracePeriod {
+                    Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
+                    return
+                }
                 let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                     || UserDefaults.standard.bool(forKey: "lockOnIdle")
-                if lockOnIdle && inputMonitor?.isActive == true {
+                if lockOnIdle && isUserInputActive {
                     Log.sm.debug("[SM] input active, rejecting lock signal")
+                    lock.withLock { lastReceiveTime = Date() }
                 } else {
                     startLockTimer()
                 }
@@ -910,12 +941,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         Log.ble.debug("didDisconnectPeripheral: \(peripheral.identifier)")
         if peripheral == monitoredPeripheral {
-            invalidateAllTimers()
+            // 只取消主动模式定时器，保留心跳和信号超时链用于检测离场
             lock.lock()
-            presence = false
+            activeModeTimer?.invalidate()
+            activeModeTimer = nil
+            connectionTimer?.invalidate()
+            connectionTimer = nil
             signalLostCount = 0
             lock.unlock()
-            // 优化 4：断开连接后恢复扫描，重新发现设备
+            // 不立即锁屏 — BLE 连接可能因干扰短暂断开
+            // 由心跳衰减机制判断：设备真正离开后 ~10 秒锁屏
+            // 恢复扫描，尝试重新发现设备
             scanForPeripherals()
         }
     }

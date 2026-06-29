@@ -42,6 +42,7 @@
 		AB0000012026062900000005 /* ScriptRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000005 /* ScriptRunner.swift */; };
 		AB0000012026062900000001 /* RingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000001 /* RingBuffer.swift */; };
 		AB0000012026062900000002 /* SignalDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062900000002 /* SignalDataStore.swift */; };
+		TL0000010000000100000001 /* TelemetryLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = TL0000010000000100000002 /* TelemetryLogger.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -120,6 +121,7 @@
 		AB0000022026062900000005 /* ScriptRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptRunner.swift; sourceTree = "<group>"; };
 		AB0000022026062900000001 /* RingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingBuffer.swift; sourceTree = "<group>"; };
 		AB0000022026062900000002 /* SignalDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalDataStore.swift; sourceTree = "<group>"; };
+		TL0000010000000100000002 /* TelemetryLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryLogger.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -189,6 +191,7 @@
 				AB0000022026062900000003 /* SecurityService.swift */,
 				AB0000022026062900000004 /* SystemInteractionService.swift */,
 				AB0000022026062900000005 /* ScriptRunner.swift */,
+				TL0000010000000100000002 /* TelemetryLogger.swift */,
 				B200000422784D550017D8B9 /* FUnlockUtils.swift */,
 				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
@@ -433,6 +436,7 @@
 				AB0000012026062900000003 /* SecurityService.swift in Sources */,
 				AB0000012026062900000004 /* SystemInteractionService.swift in Sources */,
 				AB0000012026062900000005 /* ScriptRunner.swift in Sources */,
+				TL0000010000000100000001 /* TelemetryLogger.swift in Sources */,
 				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
 				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
