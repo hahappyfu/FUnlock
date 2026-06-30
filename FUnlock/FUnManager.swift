@@ -493,12 +493,25 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
-            self.consecutiveUnlockAttempts += 1
             recordUnlockAttempt()
-            Log.sm.debug("unlock attempt #\(self.consecutiveUnlockAttempts)")
-            if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
-                sys.showPasswordMismatchAlert()
-                self.consecutiveUnlockAttempts = 0
+            Log.sm.debug("unlock attempt posted, waiting 2s to verify screen state...")
+            // 等 2 秒检查屏幕是否真的解锁了，只有屏幕还锁着才判定为密码错误
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
+                if stillLocked {
+                    self.consecutiveUnlockAttempts += 1
+                    Log.sm.debug("screen still locked after attempt → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
+                        sys.showPasswordMismatchAlert()
+                        self.consecutiveUnlockAttempts = 0
+                    }
+                } else {
+                    // 屏幕已解锁 → 密码正确，清零计数器
+                    Log.sm.debug("screen unlocked → password correct, resetting counter")
+                    self.consecutiveUnlockAttempts = 0
+                }
             }
         }
         resumeMediaIfNeeded()
