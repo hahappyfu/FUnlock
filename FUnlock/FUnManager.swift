@@ -698,3 +698,31 @@ final class FUnManager: ObservableObject {
         connected = newValue
     }
 }
+
+// MARK: - 解锁结果确认辅助结构体
+
+/// 解锁结果确认结构体：封装屏幕锁定状态检查，提供 status 属性和扩展事件日志写入。
+/// 在 tryUnlock 的 CGEvent 发送后，2 秒延时检查屏幕状态时创建并使用。
+struct FUnlockResultVerifier {
+    private let isStillLocked: () -> Bool
+
+    /// 初始化器：isStillLocked 闭包返回 true 表示屏幕仍锁定（解锁失败）
+    init(isStillLocked: @escaping () -> Bool) {
+        self.isStillLocked = isStillLocked
+    }
+
+    /// 解锁结果：成功 / 失败
+    var status: String { isStillLocked() ? "failure" : "success" }
+
+    /// 解锁是否成功
+    var succeeded: Bool { !isStillLocked() }
+
+    /// 写入扩展事件日志，返回实际写入的日志行（方便测试断言）
+    func logUnlockResult(deviceName: String? = nil, rssi: Int? = nil) -> String {
+        var extras: [String: String] = ["status": status]
+        if let name = deviceName { extras["device"] = name }
+        let line = ScriptRunner.shared.buildEventLine("unlock_result", rssi: rssi, extraFields: extras)
+        ScriptRunner.shared.logEventIfNeeded("unlock_result", rssi: rssi, extraFields: extras)
+        return line
+    }
+}
