@@ -841,6 +841,29 @@ class ScriptRunnerDedupTests: XCTestCase {
         XCTAssertTrue(rssiRange.lowerBound < extraRange.lowerBound, "扩展字段应在 RSSI 之后")
     }
 
+    // MARK: - 边界场景
+
+    func testEmptyEventNameIsLogged() {
+        let logged = runner.logEventIfNeeded("")
+        XCTAssertTrue(logged, "空事件名应被记录（不崩溃）")
+        let line = runner.buildEventLine("", rssi: nil, extraFields: [:])
+        XCTAssertTrue(line.contains("RSSI: N/A"), "空事件名日志行格式应正确")
+    }
+
+    func testEventNameWithPipeSeparator() {
+        // 事件名含分隔符 '|'，应原样写入日志，不破坏格式
+        let logged = runner.logEventIfNeeded("a|b|c")
+        XCTAssertTrue(logged, "含分隔符的事件名应被记录")
+        let line = runner.buildEventLine("a|b|c", rssi: -50, extraFields: [:])
+        XCTAssertTrue(line.contains("a|b|c"), "含分隔符的事件名应原样出现在日志行中")
+    }
+
+    func testEventNameWithNewlineIsEscapedSafely() {
+        // 事件名含换行符，应原样写入（不额外转义），但不破坏去重
+        let logged = runner.logEventIfNeeded("line1\nline2")
+        XCTAssertTrue(logged, "含换行符的事件名应被记录")
+    }
+
     // MARK: - logEvent 兼容性
 
     func testLogEventStillWorks() {

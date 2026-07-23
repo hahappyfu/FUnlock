@@ -3,13 +3,14 @@ import Foundation
 /// Event logging (events.log) and user script execution (event script)
 final class ScriptRunner {
     static let shared = ScriptRunner()
-    private init() {}
+    private init() { nowProvider = { Date() } }
 
     // MARK: - Dedup & Extension Fields
 
     private var dedupWindow: TimeInterval = 3.0
-    private var nowProvider: (() -> Date)?
+    private var nowProvider: () -> Date
     private var lastLogTime: [String: Date] = [:]
+    private let lock = NSLock()
 
     /// 便利初始化器，用于测试或自定义去重窗口
     init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date) {
@@ -17,21 +18,24 @@ final class ScriptRunner {
         self.nowProvider = nowProvider
     }
 
-    private var now: Date { nowProvider?() ?? Date() }
+    private var now: Date { nowProvider() }
 
     /// 记录事件（带去重），返回 true 表示实际写入，false 表示在窗口内被跳过
-    func logEventIfNeeded(_ event: String, rssi: Int? = nil, extraFields: [String: String] = [:] ) -> Bool {
+    func logEventIfNeeded(_ event: String, rssi: Int? = nil, extraFields: [String: String] = [:]) -> Bool {
         let currentTime = now
+        lock.lock()
         if let last = lastLogTime[event], currentTime.timeIntervalSince(last) < dedupWindow {
+            lock.unlock()
             return false
         }
         lastLogTime[event] = currentTime
+        lock.unlock()
         let line = buildEventLine(event, rssi: rssi, extraFields: extraFields)
         writeLine(line)
         return true
     }
 
-    /// 构建日志行（纯函数，方便测试格式）
+    /// 构建日志行，格式：timestamp | event | RSSI: value [| key=value ...]
     func buildEventLine(_ event: String, rssi: Int?, extraFields: [String: String]) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
