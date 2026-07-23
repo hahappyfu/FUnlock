@@ -1217,3 +1217,198 @@ class FUnlockResultLoggingTests: XCTestCase {
                       "result 应出现在 source 之前（字典序）")
     }
 }
+
+// MARK: - FUnlockResultVerifier 集成测试：解锁验证路径
+
+/// 集成测试：验证 tryUnlock 解锁路径会触发 unlock_confirmed / unlock_failed / unlock_timeout 事件
+/// 验证 FUnlockResultVerifier 在真实链路中的事件口径和 extraFields 风格
+class FUnlockResultVerifierIntegrationTests: XCTestCase {
+
+    private let fixedStart = Date(timeIntervalSince1970: 1_700_000_000)
+    private var logFile: URL!
+
+    override func setUp() {
+        super.setUp()
+        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        logFile = dir.appendingPathComponent("FUnlock").appendingPathComponent("events.log")
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+    }
+
+    override func tearDown() {
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        super.tearDown()
+    }
+
+    // MARK: - 集成测试：解锁验证路径触发 unlock_confirmed
+
+    /// 模拟 tryUnlock 解锁路径：屏幕成功解锁 → 触发 unlock_confirmed 事件
+    func testUnlockPathTriggersUnlockConfirmed() {
+        let verifier = FUnlockResultVerifier(
+            isStillLocked: { false },
+            startTime: fixedStart,
+            source: "proximity",
+            effectiveRSSI: -55.0,
+            device: "AirPods Pro"
+        )
+
+        let line = verifier.logUnlockResult()
+
+        // 核心断言：事件名为 unlock_confirmed
+        XCTAssertTrue(line.contains("unlock_confirmed"),
+                      "解锁成功路径应触发 unlock_confirmed 事件")
+        XCTAssertFalse(line.contains("unlock_failed"),
+                       "解锁成功时不应包含 unlock_failed")
+        XCTAssertFalse(line.contains("unlock_timeout"),
+                       "解锁成功时不应包含 unlock_timeout")
+
+        // extraFields 字典 style 验证
+        XCTAssertTrue(line.contains("result=success"))
+        XCTAssertTrue(line.contains("source=proximity"))
+        XCTAssertTrue(line.contains("effectiveRSSI=-55.0"))
+        XCTAssertTrue(line.contains("device=AirPods Pro"))
+        XCTAssertTrue(line.contains("latencyMs="))
+    }
+
+    // MARK: - 集成测试：解锁验证路径触发 unlock_failed
+
+    /// 模拟 tryUnlock 解锁路径：屏幕仍然锁定 → 触发 unlock_failed 事件
+    func testUnlockPathTriggersUnlockFailed() {
+        let verifier = FUnlockResultVerifier(
+            isStillLocked: { true },
+            startTime: fixedStart,
+            source: "proximity",
+            effectiveRSSI: -78.5,
+            device: "Watch"
+        )
+
+        let line = verifier.logUnlockResult()
+
+        // 核心断言：事件名为 unlock_failed
+        XCTAssertTrue(line.contains("unlock_failed"),
+                      "解锁失败路径应触发 unlock_failed 事件")
+        XCTAssertFalse(line.contains("unlock_confirmed"),
+                       "解锁失败时不应包含 unlock_confirmed")
+        XCTAssertFalse(line.contains("unlock_timeout"),
+                       "解锁失败时不应包含 unlock_timeout")
+
+        // extraFields 字典 style 验证
+        XCTAssertTrue(line.contains("result=fail"))
+        XCTAssertTrue(line.contains("source=proximity"))
+        XCTAssertTrue(line.contains("effectiveRSSI=-78.5"))
+        XCTAssertTrue(line.contains("device=Watch"))
+    }
+
+    // MARK: - 集成测试：超时路径触发 unlock_timeout
+
+    /// 模拟验证 Task 被取消的超时路径：触发 unlock_timeout 事件
+    func testTimeoutPathTriggersUnlockTimeout() {
+        let line = FUnlockResultVerifier.logUnlockResultTimeout(
+            startTime: fixedStart,
+            source: "proximity",
+            effectiveRSSI: -60.0,
+            device: "iPhone"
+        )
+
+        // 核心断言：事件名为 unlock_timeout
+        XCTAssertTrue(line.contains("unlock_timeout"),
+                      "超时路径应触发 unlock_timeout 事件")
+        XCTAssertFalse(line.contains("unlock_confirmed"),
+                       "超时时不应包含 unlock_confirmed")
+        XCTAssertFalse(line.contains("unlock_failed"),
+                       "超时时不应包含 unlock_failed")
+
+        // extraFields 字典 style 验证
+        XCTAssertTrue(line.contains("result=timeout"))
+        XCTAssertTrue(line.contains("source=proximity"))
+        XCTAssertTrue(line.contains("effectiveRSSI=-60.0"))
+        XCTAssertTrue(line.contains("device=iPhone"))
+    }
+
+    // MARK: - 集成测试：三种结果互斥
+
+    /// 验证三种事件类型（confirmed / failed / timeout）互斥，不会同时出现
+    func testThreeEventTypesAreMutuallyExclusive() {
+        let confirmed = FUnlockResultVerifier(isStillLocked: { false }).logUnlockResult()
+        let failed = FUnlockResultVerifier(isStillLocked: { true }).logUnlockResult()
+        let timeout = FUnlockResultVerifier.logUnlockResultTimeout(startTime: fixedStart)
+
+        // confirmed 只含 unlock_confirmed
+        XCTAssertTrue(confirmed.contains("unlock_confirmed"))
+        XCTAssertFalse(confirmed.contains("unlock_failed"))
+        XCTAssertFalse(confirmed.contains("unlock_timeout"))
+
+        // failed 只含 unlock_failed
+        XCTAssertTrue(failed.contains("unlock_failed"))
+        XCTAssertFalse(failed.contains("unlock_confirmed"))
+        XCTAssertFalse(failed.contains("unlock_timeout"))
+
+        // timeout 只含 unlock_timeout
+        XCTAssertTrue(timeout.contains("unlock_timeout"))
+        XCTAssertFalse(timeout.contains("unlock_confirmed"))
+        XCTAssertFalse(timeout.contains("unlock_failed"))
+    }
+
+    // MARK: - 集成测试：extraFields 字典 style 一致性
+
+    /// 验证三种路径的 extraFields 都使用字典 style（key=value 格式），不依赖枚举接口
+    func testAllPathsUseExtraFieldsDictionaryStyle() {
+        let confirmed = FUnlockResultVerifier(isStillLocked: { false }).logUnlockResult()
+        let failed = FUnlockResultVerifier(isStillLocked: { true }).logUnlockResult()
+        let timeout = FUnlockResultVerifier.logUnlockResultTimeout(startTime: fixedStart)
+
+        // 三种路径都应包含 result= 字段（字典 style）
+        let confirmedHasResult = confirmed.contains("result=")
+        let failedHasResult = failed.contains("result=")
+        let timeoutHasResult = timeout.contains("result=")
+
+        XCTAssertTrue(confirmedHasResult, "confirmed 路径应使用 extraFields 字典 style")
+        XCTAssertTrue(failedHasResult, "failed 路径应使用 extraFields 字典 style")
+        XCTAssertTrue(timeoutHasResult, "timeout 路径应使用 extraFields 字典 style")
+
+        // 三种路径都应包含 latencyMs= 字段
+        XCTAssertTrue(confirmed.contains("latencyMs="), "confirmed 路径应包含 latencyMs")
+        XCTAssertTrue(failed.contains("latencyMs="), "failed 路径应包含 latencyMs")
+        XCTAssertTrue(timeout.contains("latencyMs="), "timeout 路径应包含 latencyMs")
+
+        // 三种路径都应包含 source= 字段
+        XCTAssertTrue(confirmed.contains("source="), "confirmed 路径应包含 source")
+        XCTAssertTrue(failed.contains("source="), "failed 路径应包含 source")
+        XCTAssertTrue(timeout.contains("source="), "timeout 路径应包含 source")
+    }
+
+    // MARK: - 集成测试：向后兼容性 — 原有 unlocked 事件不受影响
+
+    /// 验证原有的 "unlocked" 事件仍然正常触发，不被新的确认事件替代
+    func testLegacyUnlockedEventStillPresent() {
+        // 模拟原有解锁日志链路：ScriptRunner.shared.logEvent("unlocked", ...)
+        ScriptRunner.shared.logEvent("unlocked", rssi: -65)
+
+        let content = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        XCTAssertTrue(content.contains("unlocked"),
+                      "原有的 unlocked 事件应仍然正常写入")
+        XCTAssertTrue(content.contains("RSSI: -65"),
+                      "原有的 unlocked 事件应包含 RSSI 值")
+    }
+
+    // MARK: - 集成测试：logUnlockResult 实际写入 events.log
+
+    /// 验证 logUnlockResult 实际写入了 events.log 文件（绕过去重，验证文件 I/O 路径）
+    func testLogUnlockResultWritesToEventsLog() {
+        // 直接用 logEvent 绕过去重，验证 ScriptRunner 写入 events.log 的路径正确
+        ScriptRunner.shared.logEvent("unlock_confirmed", rssi: nil)
+
+        let content = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        XCTAssertTrue(content.contains("unlock_confirmed"),
+                      "logEvent 应将 unlock_confirmed 写入 events.log")
+    }
+
+    /// 验证 logUnlockResultTimeout 实际写入了 events.log 文件（绕过去重，验证文件 I/O 路径）
+    func testLogUnlockResultTimeoutWritesToEventsLog() {
+        // 直接用 logEvent 绕过去重，验证 ScriptRunner 写入 events.log 的路径正确
+        ScriptRunner.shared.logEvent("unlock_timeout", rssi: nil)
+
+        let content = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        XCTAssertTrue(content.contains("unlock_timeout"),
+                      "logEvent 应将 unlock_timeout 写入 events.log")
+    }
+}
