@@ -5,18 +5,50 @@ final class ScriptRunner {
     static let shared = ScriptRunner()
     private init() {}
 
-    // MARK: - Event Logging
+    // MARK: - Dedup & Extension Fields
 
-    /// Append an event to ~/Library/Application Support/FUnlock/events.log
-    func logEvent(_ event: String, rssi: Int? = nil) {
+    private var dedupWindow: TimeInterval = 3.0
+    private var nowProvider: (() -> Date)?
+    private var lastLogTime: [String: Date] = [:]
+
+    /// 便利初始化器，用于测试或自定义去重窗口
+    init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date) {
+        self.dedupWindow = dedupWindow
+        self.nowProvider = nowProvider
+    }
+
+    private var now: Date { nowProvider?() ?? Date() }
+
+    /// 记录事件（带去重），返回 true 表示实际写入，false 表示在窗口内被跳过
+    func logEventIfNeeded(_ event: String, rssi: Int? = nil, extraFields: [String: String] = [:] ) -> Bool {
+        let currentTime = now
+        if let last = lastLogTime[event], currentTime.timeIntervalSince(last) < dedupWindow {
+            return false
+        }
+        lastLogTime[event] = currentTime
+        let line = buildEventLine(event, rssi: rssi, extraFields: extraFields)
+        writeLine(line)
+        return true
+    }
+
+    /// 构建日志行（纯函数，方便测试格式）
+    func buildEventLine(_ event: String, rssi: Int?, extraFields: [String: String]) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let rssiStr = rssi.map { String($0) } ?? "N/A"
+        var line = "\(formatter.string(from: now)) | \(event) | RSSI: \(rssiStr)"
+        let sorted = extraFields.sorted { $0.key < $1.key }
+        for (key, value) in sorted {
+            line += " | \(key)=\(value)"
+        }
+        return line + "\n"
+    }
+
+    private func writeLine(_ line: String) {
         guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
         let logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logFile = logDir.appendingPathComponent("events.log")
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let rssiStr = rssi.map { String($0) } ?? "N/A"
-        let line = "\(formatter.string(from: Date())) | \(event) | RSSI: \(rssiStr)\n"
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logFile.path) {
                 if let handle = try? FileHandle(forWritingTo: logFile) {
@@ -28,6 +60,14 @@ final class ScriptRunner {
                 try? data.write(to: logFile)
             }
         }
+    }
+
+    // MARK: - Event Logging (Legacy)
+
+    /// Append an event to ~/Library/Application Support/FUnlock/events.log
+    func logEvent(_ event: String, rssi: Int? = nil) {
+        let line = buildEventLine(event, rssi: rssi, extraFields: [:])
+        writeLine(line)
     }
 
     // MARK: - User Script Execution
