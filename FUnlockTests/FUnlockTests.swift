@@ -1412,3 +1412,223 @@ class FUnlockResultVerifierIntegrationTests: XCTestCase {
                       "logEvent 应将 unlock_timeout 写入 events.log")
     }
 }
+
+// MARK: - TelemetryLogger 格式测试
+
+/// 测试 TelemetryLogger CSV 输出的新列（Result / Duration_ms）及字段值
+class TelemetryLoggerFormatTests: XCTestCase {
+
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TelemetryLoggerTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        TelemetryLogger.shared.testLogDirectory = tempDir
+        try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
+    }
+
+    override func tearDown() {
+        TelemetryLogger.shared.testLogDirectory = nil
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func csvContent() -> String {
+        (try? String(contentsOf: TelemetryLogger.shared.testLogFile, encoding: .utf8)) ?? ""
+    }
+
+    // MARK: - 表头列名
+
+    func testCSVHeaderContainsResultColumn() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -60, kalmanRSSI: -60, effectiveRSSI: -60,
+            slope: 0, isAnomalous: false)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        XCTAssertTrue(header.contains("Result"),
+                      "CSV 表头应包含 Result 列")
+    }
+
+    func testCSVHeaderContainsDurationMsColumn() {
+        TelemetryLogger.shared.logSync(
+            event: .autoLock, deviceModel: "test",
+            rawRSSI: -70, kalmanRSSI: -70, effectiveRSSI: -70,
+            slope: 0, isAnomalous: false)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        XCTAssertTrue(header.contains("Duration_ms"),
+                      "CSV 表头应包含 Duration_ms 列")
+    }
+
+    func testCSVHeaderOrderAppendsNewColumns() {
+        TelemetryLogger.shared.logSync(
+            event: .abnormalAlert, deviceModel: "test",
+            rawRSSI: -80, kalmanRSSI: -80, effectiveRSSI: -80,
+            slope: 0, isAnomalous: true)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        let isAnomalousPos = header.range(of: "Is_Anomalous")?.lowerBound
+        let resultPos = header.range(of: "Result")?.lowerBound
+        let durationPos = header.range(of: "Duration_ms")?.lowerBound
+        XCTAssertNotNil(isAnomalousPos)
+        XCTAssertNotNil(resultPos)
+        XCTAssertNotNil(durationPos)
+        if let aPos = isAnomalousPos, let rPos = resultPos, let dPos = durationPos {
+            XCTAssertTrue(aPos < rPos, "Result 应在 Is_Anomalous 之后")
+            XCTAssertTrue(rPos < dPos, "Duration_ms 应在 Result 之后")
+        }
+    }
+
+    // MARK: - Result 字段值
+
+    func testResultDefaultValueIsNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10, "应有 10 列（8 原列 + Result + Duration_ms）")
+        XCTAssertEqual(String(columns[8]), "N/A", "未传 result 时默认应为 N/A")
+    }
+
+    func testResultSuccessValue() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false,
+            result: "success")
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[8]), "success")
+    }
+
+    func testResultFailValue() {
+        TelemetryLogger.shared.logSync(
+            event: .autoLock, deviceModel: "test",
+            rawRSSI: -70, kalmanRSSI: -70, effectiveRSSI: -70,
+            slope: 0, isAnomalous: false,
+            result: "fail")
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[8]), "fail")
+    }
+
+    func testResultTimeoutValue() {
+        TelemetryLogger.shared.logSync(
+            event: .abnormalAlert, deviceModel: "test",
+            rawRSSI: -80, kalmanRSSI: -80, effectiveRSSI: -80,
+            slope: 0, isAnomalous: true,
+            result: "timeout")
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("abnormal_alert") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[8]), "timeout")
+    }
+
+    // MARK: - Duration_ms 字段值
+
+    func testDurationMsDefaultValueIsNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[9]), "N/A", "未传 durationMs 时默认应为 N/A")
+    }
+
+    func testDurationMsWithValidValue() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false,
+            durationMs: 1234.5)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[9]), "1234.50")
+    }
+
+    func testDurationMsWithZero() {
+        TelemetryLogger.shared.logSync(
+            event: .autoLock, deviceModel: "test",
+            rawRSSI: -70, kalmanRSSI: -70, effectiveRSSI: -70,
+            slope: 0, isAnomalous: false,
+            durationMs: 0)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[9]), "0.00")
+    }
+
+    func testDurationMsDecimalFormat() {
+        TelemetryLogger.shared.logSync(
+            event: .abnormalAlert, deviceModel: "test",
+            rawRSSI: -80, kalmanRSSI: -80, effectiveRSSI: -80,
+            slope: 0, isAnomalous: true,
+            durationMs: 99.1)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("abnormal_alert") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(String(columns[9]), "99.10")
+    }
+
+    // MARK: - 兼容性：未传 result/durationMs 时原字段不受影响
+
+    func testExistingFieldsUnchangedWithoutNewParams() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "iPhone",
+            rawRSSI: -62, kalmanRSSI: -63.50, effectiveRSSI: -64.20,
+            slope: 0.1234, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        // 原字段位置（前8列）不变
+        XCTAssertTrue(line.contains("auto_unlock"), "应包含原始 Event_Type")
+        XCTAssertTrue(line.contains("iPhone"), "应包含原始 Device_Model")
+        XCTAssertTrue(line.contains("-62"), "应包含原始 Raw_RSSI")
+        XCTAssertTrue(line.contains("-63.50"), "应包含原始 Kalman_RSSI")
+        XCTAssertTrue(line.contains("-64.20"), "应包含原始 Effective_RSSI")
+        XCTAssertTrue(line.contains("0.1234"), "应包含原始 Slope")
+        XCTAssertTrue(line.contains("false"), "应包含原始 Is_Anomalous")
+    }
+
+    // MARK: - 纯值模式：result + durationMs 都传
+
+    func testBothResultAndDurationMsPresent() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "Watch",
+            rawRSSI: -50, kalmanRSSI: -51.00, effectiveRSSI: -52.00,
+            slope: 0.5000, isAnomalous: false,
+            result: "success", durationMs: 2500.75)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        XCTAssertTrue(line.contains("success"), "应包含 result=success")
+        XCTAssertTrue(line.contains("2500.75"), "应包含 durationMs=2500.75")
+    }
+
+    // MARK: - 多条记录行数
+
+    func testMultipleRecordsProduceMultipleRows() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "A",
+            rawRSSI: -50, kalmanRSSI: -50, effectiveRSSI: -50,
+            slope: 0, isAnomalous: false, result: "success")
+        TelemetryLogger.shared.logSync(
+            event: .autoLock, deviceModel: "B",
+            rawRSSI: -70, kalmanRSSI: -70, effectiveRSSI: -70,
+            slope: 0, isAnomalous: false, result: "N/A", durationMs: 0)
+        let lines = csvContent().components(separatedBy: "\n").filter { !$0.isEmpty }
+        XCTAssertEqual(lines.count, 3, "应有 1 行表头 + 2 行数据")
+    }
+
+    func testNAValueContainsLiteralNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        XCTAssertTrue(line.hasSuffix(",N/A"), "默认 durationMs 应以 ,N/A 结尾")
+    }
+}
