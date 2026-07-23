@@ -20,6 +20,8 @@ struct TelemetryRecord {
     let effectiveRSSI: Double
     let slope: Double
     let isAnomalous: Bool
+    let result: String
+    let durationMs: Double?
 }
 
 /// 形子模式遥测日志单例
@@ -30,6 +32,44 @@ final class TelemetryLogger {
         ensureDirectory()
     }
 
+    // MARK: - 测试支持（仅 @testable import 可见）
+
+    /// 测试用日志目录（nil = 使用真实路径）
+    var testLogDirectory: URL?
+    /// 测试用日志文件（自动从 testLogDirectory 推导，未设置时回退到真实路径）
+    var testLogFile: URL {
+        if let testDir = testLogDirectory {
+            return testDir.appendingPathComponent("shadow_telemetry.csv")
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent("Library/Logs/FUnlock/shadow_telemetry.csv")
+    }
+
+    /// 同步写入（测试专用，绕过异步队列）
+    func logSync(event: TelemetryEvent,
+                 deviceModel: String?,
+                 rawRSSI: Int,
+                 kalmanRSSI: Double,
+                 effectiveRSSI: Double,
+                 slope: Double,
+                 isAnomalous: Bool,
+                 result: String = "N/A",
+                 durationMs: Double? = nil) {
+        let record = TelemetryRecord(
+            timestamp: Date(),
+            eventType: event,
+            deviceModel: deviceModel,
+            rawRSSI: rawRSSI,
+            kalmanRSSI: kalmanRSSI,
+            effectiveRSSI: effectiveRSSI,
+            slope: slope,
+            isAnomalous: isAnomalous,
+            result: result,
+            durationMs: durationMs
+        )
+        writeRecord(record)
+    }
+
     // MARK: - 配置
 
     private let maxFileSize: UInt64 = 5 * 1024 * 1024  // 5MB 熔断
@@ -38,12 +78,13 @@ final class TelemetryLogger {
     // MARK: - 文件路径
 
     private var logDirectory: URL {
+        if let testDir = testLogDirectory { return testDir }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock")
     }
 
     private var logFile: URL {
-        logDirectory.appendingPathComponent("shadow_telemetry.csv")
+        testLogFile
     }
 
     // MARK: - 公开接口
@@ -55,7 +96,9 @@ final class TelemetryLogger {
              kalmanRSSI: Double,
              effectiveRSSI: Double,
              slope: Double,
-             isAnomalous: Bool) {
+             isAnomalous: Bool,
+             result: String = "N/A",
+             durationMs: Double? = nil) {
         let record = TelemetryRecord(
             timestamp: Date(),
             eventType: event,
@@ -64,7 +107,9 @@ final class TelemetryLogger {
             kalmanRSSI: kalmanRSSI,
             effectiveRSSI: effectiveRSSI,
             slope: slope,
-            isAnomalous: isAnomalous
+            isAnomalous: isAnomalous,
+            result: result,
+            durationMs: durationMs
         )
         queue.async { [weak self] in
             self?.writeRecord(record)
@@ -99,7 +144,13 @@ final class TelemetryLogger {
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         let ts = formatter.string(from: record.timestamp)
         let model = record.deviceModel ?? "unknown"
-        let line = "\(ts),\(record.eventType.rawValue),\(model),\(record.rawRSSI),\(String(format: "%.2f", record.kalmanRSSI)),\(String(format: "%.2f", record.effectiveRSSI)),\(String(format: "%.4f", record.slope)),\(record.isAnomalous)\n"
+        let durationStr: String
+        if let d = record.durationMs {
+            durationStr = String(format: "%.2f", d)
+        } else {
+            durationStr = "N/A"
+        }
+        let line = "\(ts),\(record.eventType.rawValue),\(model),\(record.rawRSSI),\(String(format: "%.2f", record.kalmanRSSI)),\(String(format: "%.2f", record.effectiveRSSI)),\(String(format: "%.4f", record.slope)),\(record.isAnomalous),\(record.result),\(durationStr)\n"
 
         guard let data = line.data(using: .utf8) else { return }
 
@@ -117,7 +168,7 @@ final class TelemetryLogger {
     /// 写入 CSV 表头（仅当文件不存在时）
     private func writeHeaderIfNeeded() {
         guard !FileManager.default.fileExists(atPath: logFile.path) else { return }
-        let header = "Timestamp,Event_Type,Device_Model,Raw_RSSI,Kalman_RSSI,Effective_RSSI,Slope,Is_Anomalous\n"
+        let header = "Timestamp,Event_Type,Device_Model,Raw_RSSI,Kalman_RSSI,Effective_RSSI,Slope,Is_Anomalous,Result,Duration_ms\n"
         try? header.data(using: .utf8)?.write(to: logFile)
     }
 }
