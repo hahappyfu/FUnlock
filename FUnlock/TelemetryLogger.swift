@@ -22,6 +22,8 @@ struct TelemetryRecord {
     let isAnomalous: Bool
     let result: String
     let durationMs: Double?
+    let injectTime: Date?
+    let confirmTime: Date?
 }
 
 /// 形子模式遥测日志单例
@@ -54,7 +56,9 @@ final class TelemetryLogger {
                  slope: Double,
                  isAnomalous: Bool,
                  result: String = "N/A",
-                 durationMs: Double? = nil) {
+                 durationMs: Double? = nil,
+                 injectTime: Date? = nil,
+                 confirmTime: Date? = nil) {
         let record = TelemetryRecord(
             timestamp: Date(),
             eventType: event,
@@ -65,7 +69,9 @@ final class TelemetryLogger {
             slope: slope,
             isAnomalous: isAnomalous,
             result: result,
-            durationMs: durationMs
+            durationMs: durationMs,
+            injectTime: injectTime,
+            confirmTime: confirmTime
         )
         writeRecord(record)
     }
@@ -98,7 +104,9 @@ final class TelemetryLogger {
              slope: Double,
              isAnomalous: Bool,
              result: String = "N/A",
-             durationMs: Double? = nil) {
+             durationMs: Double? = nil,
+             injectTime: Date? = nil,
+             confirmTime: Date? = nil) {
         let record = TelemetryRecord(
             timestamp: Date(),
             eventType: event,
@@ -109,7 +117,9 @@ final class TelemetryLogger {
             slope: slope,
             isAnomalous: isAnomalous,
             result: result,
-            durationMs: durationMs
+            durationMs: durationMs,
+            injectTime: injectTime,
+            confirmTime: confirmTime
         )
         queue.async { [weak self] in
             self?.writeRecord(record)
@@ -150,7 +160,9 @@ final class TelemetryLogger {
         } else {
             durationStr = "N/A"
         }
-        let line = "\(ts),\(record.eventType.rawValue),\(model),\(record.rawRSSI),\(String(format: "%.2f", record.kalmanRSSI)),\(String(format: "%.2f", record.effectiveRSSI)),\(String(format: "%.4f", record.slope)),\(record.isAnomalous),\(record.result),\(durationStr)\n"
+        let injectStr = record.injectTime.map { formatter.string(from: $0) } ?? "N/A"
+        let confirmStr = record.confirmTime.map { formatter.string(from: $0) } ?? "N/A"
+        let line = "\(ts),\(record.eventType.rawValue),\(model),\(record.rawRSSI),\(String(format: "%.2f", record.kalmanRSSI)),\(String(format: "%.2f", record.effectiveRSSI)),\(String(format: "%.4f", record.slope)),\(record.isAnomalous),\(record.result),\(durationStr),\(injectStr),\(confirmStr)\n"
 
         guard let data = line.data(using: .utf8) else { return }
 
@@ -168,7 +180,7 @@ final class TelemetryLogger {
     /// 写入 CSV 表头（仅当文件不存在时）
     private func writeHeaderIfNeeded() {
         guard !FileManager.default.fileExists(atPath: logFile.path) else { return }
-        let header = "Timestamp,Event_Type,Device_Model,Raw_RSSI,Kalman_RSSI,Effective_RSSI,Slope,Is_Anomalous,Result,Duration_ms\n"
+        let header = "Timestamp,Event_Type,Device_Model,Raw_RSSI,Kalman_RSSI,Effective_RSSI,Slope,Is_Anomalous,Result,Duration_ms,InjectTime,ConfirmTime\n"
         try? header.data(using: .utf8)?.write(to: logFile)
     }
 }
