@@ -158,6 +158,7 @@ final class FUnManager: ObservableObject {
     deinit {
         wakeTask?.cancel()
         unlockTask?.cancel()
+        unlockConfirmTask?.cancel()
         intrudeCheckTask?.cancel()
     }
 
@@ -660,6 +661,7 @@ final class FUnManager: ObservableObject {
         }
         wakeTask?.cancel()
         unlockTask?.cancel()
+        unlockConfirmTask?.cancel()
         intrudeCheckTask?.cancel()
     }
 
