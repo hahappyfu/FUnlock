@@ -883,3 +883,126 @@ class ScriptRunnerDedupTests: XCTestCase {
         XCTAssertEqual(count, 2, "logEvent 不应去重，两次调用都应写入")
     }
 }
+
+// MARK: - FUnManager 冷却与缓冲策略测试
+
+/// 测试 FUnManager 的解锁冷却和锁屏缓冲机制
+@MainActor
+class FUnManagerCooldownTests: XCTestCase {
+
+    private var currentTime: Date!
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let fun = FUn()
+        manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    }
+
+    // MARK: - 解锁冷却（isUnlockCooldownActive）
+
+    func testUnlockCooldownActiveWhenRecentUnlock() {
+        // 模拟 2 秒前成功解锁
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-2)
+        XCTAssertTrue(manager.isUnlockCooldownActive(), "2 秒内应处于冷却期")
+    }
+
+    func testUnlockCooldownInactiveWhenExpired() {
+        // 模拟 4 秒前成功解锁（超过默认 3 秒冷却）
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-4)
+        XCTAssertFalse(manager.isUnlockCooldownActive(), "超过 3 秒后冷却应结束")
+    }
+
+    func testUnlockCooldownDefaultIsDistantPast() {
+        // 初始状态：从未解锁
+        XCTAssertFalse(manager.isUnlockCooldownActive(), "初始状态不应处于冷却期")
+    }
+
+    func testUnlockCooldownCustomDuration() {
+        manager.unlockCooldownDuration = 5.0
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-4)
+        XCTAssertTrue(manager.isUnlockCooldownActive(), "4 秒 < 5 秒冷却期，应处于冷却")
+
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-6)
+        XCTAssertFalse(manager.isUnlockCooldownActive(), "6 秒 > 5 秒冷却期，冷却应结束")
+    }
+
+    // MARK: - 锁屏缓冲（lockBufferDuration）
+
+    func testLockBufferActiveWhenRecentLock() {
+        manager.state.screen = .locked(reason: .away)
+        manager.lastLockTime = currentTime.addingTimeInterval(-1)
+        XCTAssertTrue(manager.isLockBufferActive(), "1 秒内应处于缓冲期")
+    }
+
+    func testLockBufferInactiveWhenExpired() {
+        manager.state.screen = .locked(reason: .away)
+        manager.lastLockTime = currentTime.addingTimeInterval(-3)
+        XCTAssertFalse(manager.isLockBufferActive(), "超过默认 2 秒缓冲后应结束")
+    }
+
+    func testLockBufferDefaultIsDistantPast() {
+        // 初始状态：从未锁屏
+        XCTAssertFalse(manager.isLockBufferActive(), "初始状态不应处于缓冲期")
+    }
+
+    func testLockBufferCustomDuration() {
+        manager.lockBufferDuration = 5.0
+        manager.state.screen = .locked(reason: .away)
+        manager.lastLockTime = currentTime.addingTimeInterval(-3)
+        XCTAssertTrue(manager.isLockBufferActive(), "3 秒 < 5 秒缓冲，应处于缓冲期")
+
+        manager.lastLockTime = currentTime.addingTimeInterval(-6)
+        XCTAssertFalse(manager.isLockBufferActive(), "6 秒 > 5 秒缓冲，缓冲应结束")
+    }
+
+    // MARK: - 默认值兼容
+
+    func testDefaultCooldownDurationIs3Seconds() {
+        XCTAssertEqual(manager.unlockCooldownDuration, 3.0, "默认冷却时间应为 3 秒")
+    }
+
+    func testDefaultBufferDurationIs2Seconds() {
+        XCTAssertEqual(manager.lockBufferDuration, 2.0, "默认缓冲时间应为 2 秒")
+    }
+
+    func testDefaultLastLockTimeIsDistantPast() {
+        XCTAssertEqual(manager.lastLockTime, Date.distantPast, "初始 lastLockTime 应为 distantPast")
+    }
+
+    func testDefaultLastUnlockTimeIsDistantPast() {
+        XCTAssertEqual(manager.lastUnlockTime, Date.distantPast, "初始 lastUnlockTime 应为 distantPast")
+    }
+
+    // MARK: - lastUnlockTime 更新时机
+
+    func testOnUnlockUpdatesLastUnlockTime() {
+        manager.onUnlock()
+        XCTAssertEqual(manager.lastUnlockTime, currentTime, "onUnlock 后 lastUnlockTime 应更新为当前时间")
+    }
+
+    func testOnUnlockTwiceUpdatesLastUnlockTime() {
+        manager.onUnlock()
+        currentTime = currentTime.addingTimeInterval(10)
+        manager.onUnlock()
+        XCTAssertEqual(manager.lastUnlockTime, currentTime, "第二次 onUnlock 应更新 lastUnlockTime")
+    }
+
+    // MARK: - 冷却与缓冲共存
+
+    func testCooldownBlocksEvenWhenBufferExpired() {
+        // 锁屏缓冲已过期，但解锁冷却仍活跃
+        manager.lastLockTime = currentTime.addingTimeInterval(-10)
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-1)
+        XCTAssertFalse(manager.isLockBufferActive(), "锁屏缓冲应已过期")
+        XCTAssertTrue(manager.isUnlockCooldownActive(), "解锁冷却应仍然活跃")
+    }
+
+    func testBothCooldownExpiredAllowsUnlock() {
+        manager.lastLockTime = currentTime.addingTimeInterval(-10)
+        manager.lastUnlockTime = currentTime.addingTimeInterval(-10)
+        XCTAssertFalse(manager.isLockBufferActive(), "锁屏缓冲应已过期")
+        XCTAssertFalse(manager.isUnlockCooldownActive(), "解锁冷却应已过期")
+    }
+}

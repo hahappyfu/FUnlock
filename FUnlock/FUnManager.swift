@@ -89,7 +89,7 @@ final class FUnManager: ObservableObject {
 
     // MARK: Published state
 
-    @Published private(set) var state = LockScreenState()
+    @Published var state = LockScreenState()
     @Published var rssi: Int? = nil
     @Published var connected: Bool = false
     @Published var discoveredDevices: [Device] = []
@@ -116,6 +116,18 @@ final class FUnManager: ObservableObject {
     private var lastAXRevokedAlertTime: Date = .distantPast
     private var mediaWasPlaying = false
 
+    // MARK: - 冷却与缓冲策略（可测试时间源）
+    private var nowProvider: () -> Date = { Date() }
+    private var now: Date { nowProvider() }
+    /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁
+    var unlockCooldownDuration: TimeInterval = 3.0
+    /// 自动锁屏后的缓冲时间（秒），缓冲期内不尝试自动解锁
+    var lockBufferDuration: TimeInterval = 2.0
+    /// 上次自动锁屏的时间（通过 onDeviceLeft 触发）
+    var lastLockTime: Date = .distantPast
+    /// 上次成功解锁的时间（自动或手动解锁时更新）
+    var lastUnlockTime: Date = .distantPast
+
     // MARK: - 异常解锁频率检测（滑动窗口）
     private var unlockAttemptTimestamps: [Date] = []
     private let maxAttemptsInWindow = 10          // 窗口内最多允许10次
@@ -124,8 +136,9 @@ final class FUnManager: ObservableObject {
 
     // MARK: Init
 
-    init(fun: FUn) {
+    init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }) {
         self.fun = fun
+        self.nowProvider = nowProvider
         self.lockRSSI = fun.lockRSSI
         self.unlockRSSI = fun.unlockRSSI
 
@@ -218,6 +231,7 @@ final class FUnManager: ObservableObject {
         state.unlockedAt = Date()
         state.intent = .autoLock
         consecutiveUnlockAttempts = 0
+        lastUnlockTime = now
         recordUnlockSuccess()
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
@@ -296,6 +310,7 @@ final class FUnManager: ObservableObject {
 
         displayWakeRequested = false
         state.screen = .displaySleeping
+        lastLockTime = now
         checkAndPauseMedia()
         isSelfLocking = true
         let sys = SystemInteractionService.shared
@@ -419,6 +434,13 @@ final class FUnManager: ObservableObject {
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); return }
 
+        // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
+        let sinceLock = now.timeIntervalSince(lastLockTime)
+        guard sinceLock >= lockBufferDuration else {
+            Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
+            return
+        }
+
         // Wi-Fi SSID 暂停：连接指定 Wi-Fi 时跳过自动解锁
         if prefs.bool(forKey: "pauseOnWiFi") {
             let targetSSID = prefs.string(forKey: "pauseOnWiFiSSID") ?? ""
@@ -472,7 +494,7 @@ final class FUnManager: ObservableObject {
         let locked = sys.isScreenLocked(screenState: state.screen)
         Log.sm.debug("screen locked check: \(locked)")
         guard locked else { Log.sm.debug("SKIP: screen not locked"); return }
-        let sinceUnlock = Date().timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
+        let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
         guard sinceUnlock > 3 else {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
             return
@@ -483,7 +505,8 @@ final class FUnManager: ObservableObject {
         guard sys.isSecureToInject(screenState: state.screen) else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
 
         Log.sm.debug("typing password (\(password.count) chars)")
-        self.state.unlockedAt = Date()
+        self.state.unlockedAt = now
+        self.lastUnlockTime = now
         let posted = sys.fakeKeyStrokes(password) {
             self.state.screen != .unlocked
             && sys.isSecureToInject(screenState: self.state.screen)
@@ -645,6 +668,18 @@ final class FUnManager: ObservableObject {
     /// 成功解锁后清除失败记录
     private func recordUnlockSuccess() {
         unlockAttemptTimestamps.removeAll()
+    }
+
+    // MARK: - 冷却与缓冲检查
+
+    /// 解锁冷却期内（成功解锁后 unlockCooldownDuration 秒内）返回 true
+    func isUnlockCooldownActive() -> Bool {
+        now.timeIntervalSince(lastUnlockTime) < unlockCooldownDuration
+    }
+
+    /// 锁屏缓冲期内（自动锁屏后 lockBufferDuration 秒内）返回 true
+    func isLockBufferActive() -> Bool {
+        now.timeIntervalSince(lastLockTime) < lockBufferDuration
     }
 
     // MARK: - 便利属性
