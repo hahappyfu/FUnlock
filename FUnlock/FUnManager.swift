@@ -89,7 +89,7 @@ final class FUnManager: ObservableObject {
 
     // MARK: Published state
 
-    @Published var state = LockScreenState()
+    @Published private(set) var state = LockScreenState()
     @Published var rssi: Int? = nil
     @Published var connected: Bool = false
     @Published var discoveredDevices: [Device] = []
@@ -120,9 +120,9 @@ final class FUnManager: ObservableObject {
     private var nowProvider: () -> Date = { Date() }
     private var now: Date { nowProvider() }
     /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁
-    var unlockCooldownDuration: TimeInterval = 3.0
+    var unlockCooldownDuration: TimeInterval = 5.0
     /// 自动锁屏后的缓冲时间（秒），缓冲期内不尝试自动解锁
-    var lockBufferDuration: TimeInterval = 2.0
+    var lockBufferDuration: TimeInterval = 0.8
     /// 上次自动锁屏的时间（通过 onDeviceLeft 触发）
     var lastLockTime: Date = .distantPast
     /// 上次成功解锁的时间（自动或手动解锁时更新）
@@ -281,6 +281,7 @@ final class FUnManager: ObservableObject {
         }
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
+        lastLockTime = now
     }
 
     // MARK: - FUn 设备事件
@@ -418,6 +419,7 @@ final class FUnManager: ObservableObject {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
         state.intent = .manualLock(deadline: Date().addingTimeInterval(10))
         state.screen = .locked(reason: .manual)
+        lastLockTime = now
         checkAndPauseMedia()
         SystemInteractionService.shared.lockOrSaveScreen(
             useScreensaver: prefs.bool(forKey: "screensaver"),
@@ -438,6 +440,12 @@ final class FUnManager: ObservableObject {
         let sinceLock = now.timeIntervalSince(lastLockTime)
         guard sinceLock >= lockBufferDuration else {
             Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
+            return
+        }
+
+        // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
+        if isUnlockCooldownActive() {
+            Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock)")
             return
         }
 
