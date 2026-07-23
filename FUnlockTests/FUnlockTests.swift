@@ -1037,93 +1037,183 @@ class FUnManagerCooldownTests: XCTestCase {
 
 // MARK: - FUnlockResultVerifier 与解锁结果事件日志测试
 
-/// 测试解锁结果确认结构体和扩展事件日志写入
+/// 测试解锁结果确认结构体：事件名拆分、字段口径、延迟计算
 class FUnlockResultLoggingTests: XCTestCase {
 
-    // MARK: - FUnlockResultVerifier 基本判定
+    private let fixedStart = Date(timeIntervalSince1970: 1_700_000_000)
 
-    func testVerifierSuccess() {
-        let verifier = FUnlockResultVerifier { false }  // isStillLocked=false → 成功
-        XCTAssertEqual(verifier.status, "success")
+    // MARK: - result 字符串值
+
+    func testResultSuccessWhenNotLocked() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
+        XCTAssertEqual(verifier.result, "success")
     }
 
-    func testVerifierFailure() {
-        let verifier = FUnlockResultVerifier { true }   // isStillLocked=true → 失败
-        XCTAssertEqual(verifier.status, "failure")
+    func testResultFailWhenStillLocked() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { true })
+        XCTAssertEqual(verifier.result, "fail")
     }
 
-    func testVerifierSucceededTrue() {
-        let verifier = FUnlockResultVerifier { false }
+    func testSucceededTrueWhenNotLocked() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
         XCTAssertTrue(verifier.succeeded)
     }
 
-    func testVerifierSucceededFalse() {
-        let verifier = FUnlockResultVerifier { true }
+    func testSucceededFalseWhenStillLocked() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { true })
         XCTAssertFalse(verifier.succeeded)
     }
 
-    // MARK: - logUnlockResult 返回值与 extraFields
+    // MARK: - 事件名语义：成功 → unlock_confirmed，失败 → unlock_failed
 
-    func testLogUnlockResultReturnsFormattedLine() {
-        let verifier = FUnlockResultVerifier { false }
-        let line = verifier.logUnlockResult(deviceName: "iPhone")
-        XCTAssertFalse(line.isEmpty, "应返回非空日志行")
+    func testEventNameConfirmedOnSuccess() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
+        XCTAssertEqual(verifier.eventName, "unlock_confirmed")
     }
 
-    func testLogUnlockResultContainsSuccessStatus() {
-        let verifier = FUnlockResultVerifier { false }
-        let line = verifier.logUnlockResult(deviceName: nil)
-        XCTAssertTrue(line.contains("status=success"), "成功时应包含 status=success")
-        XCTAssertFalse(line.contains("status=failure"), "成功时不应包含 status=failure")
+    func testEventNameFailedOnFailure() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { true })
+        XCTAssertEqual(verifier.eventName, "unlock_failed")
     }
 
-    func testLogUnlockResultContainsFailureStatus() {
-        let verifier = FUnlockResultVerifier { true }
-        let line = verifier.logUnlockResult(deviceName: nil)
-        XCTAssertTrue(line.contains("status=failure"), "失败时应包含 status=failure")
-        XCTAssertFalse(line.contains("status=success"), "失败时不应包含 status=success")
+    // MARK: - latencyMs 延迟计算
+
+    func testLatencyMsReflectsElapsedSinceStart() {
+        // latencyMs 依赖 Date()，这里验证：startTime 越早，latencyMs 越大
+        let verifierOld = FUnlockResultVerifier(isStillLocked: { false }, startTime: fixedStart.addingTimeInterval(-2))
+        let verifierNew = FUnlockResultVerifier(isStillLocked: { false }, startTime: fixedStart)
+        // 旧的 startTime 比新的早 2 秒，latencyMs 应更大
+        XCTAssertGreaterThan(verifierOld.latencyMs, verifierNew.latencyMs + 1500,
+                             "startTime 越早，latencyMs 应越大（差值约 2000ms）")
     }
 
-    func testLogUnlockResultContainsDeviceName() {
-        let verifier = FUnlockResultVerifier { false }
-        let line = verifier.logUnlockResult(deviceName: "AirPods Pro")
-        XCTAssertTrue(line.contains("device=AirPods Pro"), "应包含 device 字段")
+    func testLatencyMsIsNonNegative() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
+        let ms = verifier.latencyMs
+        XCTAssertGreaterThanOrEqual(ms, 0, "latencyMs 不应为负数")
     }
 
-    func testLogUnlockResultOmitsDeviceNameWhenNil() {
-        let verifier = FUnlockResultVerifier { false }
-        let line = verifier.logUnlockResult(deviceName: nil)
-        XCTAssertFalse(line.contains("device="), "deviceName 为 nil 时不应包含 device 字段")
+    // MARK: - logUnlockResult 事件名与字段
+
+    func testLogUnlockResultConfirmedContainsUnlockConfirmed() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("unlock_confirmed"),
+                      "成功时日志行应包含 unlock_confirmed 事件名")
+        XCTAssertFalse(line.contains("unlock_failed"),
+                       "成功时不应包含 unlock_failed")
     }
 
-    // MARK: - extraFields 在日志行中的位置
+    func testLogUnlockResultFailedContainsUnlockFailed() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { true })
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("unlock_failed"),
+                      "失败时日志行应包含 unlock_failed 事件名")
+        XCTAssertFalse(line.contains("unlock_confirmed"),
+                       "失败时不应包含 unlock_confirmed")
+    }
 
-    func testExtraFieldsAppearAfterMainFields() {
-        let verifier = FUnlockResultVerifier { false }
-        let line = verifier.logUnlockResult(deviceName: "iPhone")
-        // 格式：timestamp | event | RSSI: N/A | extraFields...
-        // status 字段应在 RSSI 之后
-        if let rssiRange = line.range(of: "RSSI:"),
-           let statusRange = line.range(of: "status=") {
-            XCTAssertTrue(rssiRange.lowerBound < statusRange.lowerBound,
-                          "status 字段应在 RSSI 之后")
-        } else {
-            XCTFail("日志行应包含 RSSI: 和 status= 字段")
+    func testLogUnlockResultContainsResultField() {
+        let verifierSuccess = FUnlockResultVerifier(isStillLocked: { false })
+        let lineSuccess = verifierSuccess.logUnlockResult()
+        XCTAssertTrue(lineSuccess.contains("result=success"),
+                      "成功时应包含 result=success")
+
+        let verifierFail = FUnlockResultVerifier(isStillLocked: { true })
+        let lineFail = verifierFail.logUnlockResult()
+        XCTAssertTrue(lineFail.contains("result=fail"),
+                      "失败时应包含 result=fail")
+    }
+
+    func testLogUnlockResultContainsLatencyMs() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false })
+        let line = verifier.logUnlockResult()
+        let hasLatency = line.contains("latencyMs=")
+        XCTAssertTrue(hasLatency, "日志行应包含 latencyMs 字段")
+        // 验证 latencyMs 是数字
+        if let range = line.range(of: "latencyMs=") {
+            let afterEqual = line[range.upperBound...].prefix { $0.isNumber }
+            XCTAssertFalse(afterEqual.isEmpty, "latencyMs 值应为数字")
         }
     }
 
-    // MARK: - 多字段日志行完整性
+    func testLogUnlockResultContainsSource() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false }, source: "proximity")
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("source=proximity"),
+                      "应包含 source 字段")
+    }
 
-    func testLogUnlockResultWithDeviceNameHasBothFields() {
-        let verifier = FUnlockResultVerifier { true }
-        let line = verifier.logUnlockResult(deviceName: "Watch")
-        XCTAssertTrue(line.contains("status=failure"), "应包含 status")
-        XCTAssertTrue(line.contains("device=Watch"), "应包含 device")
-        // 验证两个字段都在
-        if let statusRange = line.range(of: "status="),
-           let deviceRange = line.range(of: "device=") {
-            XCTAssertTrue(deviceRange.lowerBound < statusRange.lowerBound,
-                          "device 应在 status 之前（字典序排列）")
-        }
+    func testLogUnlockResultContainsDevice() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false }, device: "AirPods Pro")
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("device=AirPods Pro"),
+                      "应包含 device 字段")
+    }
+
+    func testLogUnlockResultOmitsDeviceWhenNil() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false }, device: nil)
+        let line = verifier.logUnlockResult()
+        XCTAssertFalse(line.contains("device="),
+                       "device 为 nil 时不应包含 device 字段")
+    }
+
+    func testLogUnlockResultContainsEffectiveRSSI() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false }, effectiveRSSI: -55.3)
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("effectiveRSSI=-55.3"),
+                      "应包含 effectiveRSSI 字段")
+    }
+
+    func testLogUnlockResultOmitsEffectiveRSSIWhenNil() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false }, effectiveRSSI: nil)
+        let line = verifier.logUnlockResult()
+        XCTAssertFalse(line.contains("effectiveRSSI="),
+                       "effectiveRSSI 为 nil 时不应包含该字段")
+    }
+
+    // MARK: - 多字段完整性
+
+    func testLogUnlockResultAllFieldsPresent() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false },
+                                             effectiveRSSI: -60.0,
+                                             device: "iPhone")
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("unlock_confirmed"))
+        XCTAssertTrue(line.contains("result=success"))
+        XCTAssertTrue(line.contains("latencyMs="))
+        XCTAssertTrue(line.contains("source=proximity"))
+        XCTAssertTrue(line.contains("effectiveRSSI=-60.0"))
+        XCTAssertTrue(line.contains("device=iPhone"))
+    }
+
+    func testLogUnlockResultFailureHasAllFields() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { true },
+                                             effectiveRSSI: -78.5,
+                                             device: "Watch")
+        let line = verifier.logUnlockResult()
+        XCTAssertTrue(line.contains("unlock_failed"))
+        XCTAssertTrue(line.contains("result=fail"))
+        XCTAssertTrue(line.contains("latencyMs="))
+        XCTAssertTrue(line.contains("source=proximity"))
+        XCTAssertTrue(line.contains("effectiveRSSI=-78.5"))
+        XCTAssertTrue(line.contains("device=Watch"))
+    }
+
+    // MARK: - extraFields 位置顺序（key 字母序）
+
+    func testExtraFieldsSortedByKey() {
+        let verifier = FUnlockResultVerifier(isStillLocked: { false },
+                                             effectiveRSSI: -60.0,
+                                             device: "iPhone")
+        let line = verifier.logUnlockResult()
+        // 按字典序：device < effectiveRSSI < latencyMs < result < source
+        let deviceRange = line.range(of: "device=")!
+        let resultRange = line.range(of: "result=")!
+        let sourceRange = line.range(of: "source=")!
+        XCTAssertTrue(deviceRange.lowerBound < resultRange.lowerBound,
+                      "device 应出现在 result 之前（字典序）")
+        XCTAssertTrue(resultRange.lowerBound < sourceRange.lowerBound,
+                      "result 应出现在 source 之前（字典序）")
     }
 }
