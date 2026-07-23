@@ -1470,12 +1470,19 @@ class TelemetryLoggerFormatTests: XCTestCase {
         let isAnomalousPos = header.range(of: "Is_Anomalous")?.lowerBound
         let resultPos = header.range(of: "Result")?.lowerBound
         let durationPos = header.range(of: "Duration_ms")?.lowerBound
+        let injectPos = header.range(of: "InjectTime")?.lowerBound
+        let confirmPos = header.range(of: "ConfirmTime")?.lowerBound
         XCTAssertNotNil(isAnomalousPos)
         XCTAssertNotNil(resultPos)
         XCTAssertNotNil(durationPos)
-        if let aPos = isAnomalousPos, let rPos = resultPos, let dPos = durationPos {
+        XCTAssertNotNil(injectPos)
+        XCTAssertNotNil(confirmPos)
+        if let aPos = isAnomalousPos, let rPos = resultPos, let dPos = durationPos,
+           let iPos = injectPos, let cPos = confirmPos {
             XCTAssertTrue(aPos < rPos, "Result 应在 Is_Anomalous 之后")
             XCTAssertTrue(rPos < dPos, "Duration_ms 应在 Result 之后")
+            XCTAssertTrue(dPos < iPos, "InjectTime 应在 Duration_ms 之后")
+            XCTAssertTrue(iPos < cPos, "ConfirmTime 应在 InjectTime 之后")
         }
     }
 
@@ -1488,7 +1495,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             slope: 0.1, isAnomalous: false)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10, "应有 10 列（8 原列 + Result + Duration_ms）")
+        XCTAssertEqual(columns.count, 12, "应有 12 列（8 原列 + Result + Duration_ms + InjectTime + ConfirmTime）")
         XCTAssertEqual(String(columns[8]), "N/A", "未传 result 时默认应为 N/A")
     }
 
@@ -1500,7 +1507,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             result: "success")
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[8]), "success")
     }
 
@@ -1512,7 +1519,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             result: "fail")
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[8]), "fail")
     }
 
@@ -1524,7 +1531,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             result: "timeout")
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("abnormal_alert") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[8]), "timeout")
     }
 
@@ -1537,7 +1544,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             slope: 0.1, isAnomalous: false)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[9]), "N/A", "未传 durationMs 时默认应为 N/A")
     }
 
@@ -1549,7 +1556,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             durationMs: 1234.5)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[9]), "1234.50")
     }
 
@@ -1561,7 +1568,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             durationMs: 0)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[9]), "0.00")
     }
 
@@ -1573,7 +1580,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             durationMs: 99.1)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("abnormal_alert") }) ?? ""
         let columns = line.split(separator: ",")
-        XCTAssertEqual(columns.count, 10)
+        XCTAssertEqual(columns.count, 12)
         XCTAssertEqual(String(columns[9]), "99.10")
     }
 
@@ -1629,6 +1636,157 @@ class TelemetryLoggerFormatTests: XCTestCase {
             rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
             slope: 0, isAnomalous: false)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
-        XCTAssertTrue(line.hasSuffix(",N/A"), "默认 durationMs 应以 ,N/A 结尾")
+        XCTAssertTrue(line.hasSuffix(",N/A,N/A"), "默认 durationMs/injectTime/confirmTime 末尾应为 ,N/A,N/A")
+    }
+
+    // MARK: - InjectTime / ConfirmTime 表头
+
+    func testCSVHeaderContainsInjectTimeColumn() {
+        // 确保文件以新表头创建
+        try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0, isAnomalous: false)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        XCTAssertTrue(header.contains("InjectTime"), "CSV 表头应包含 InjectTime 列，实际表头: \(header)")
+    }
+
+    func testCSVHeaderContainsConfirmTimeColumn() {
+        try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0, isAnomalous: false)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        XCTAssertTrue(header.contains("ConfirmTime"), "CSV 表头应包含 ConfirmTime 列，实际表头: \(header)")
+    }
+
+    func testCSVHeaderOrderInjectTimeAfterDurationMs() {
+        try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0, isAnomalous: false)
+        let header = csvContent().components(separatedBy: "\n").first ?? ""
+        let durationPos = header.range(of: "Duration_ms")?.lowerBound
+        let injectPos = header.range(of: "InjectTime")?.lowerBound
+        let confirmPos = header.range(of: "ConfirmTime")?.lowerBound
+        XCTAssertNotNil(durationPos, "表头应包含 Duration_ms，实际: \(header)")
+        XCTAssertNotNil(injectPos, "表头应包含 InjectTime，实际: \(header)")
+        XCTAssertNotNil(confirmPos, "表头应包含 ConfirmTime，实际: \(header)")
+        if let dPos = durationPos, let iPos = injectPos, let cPos = confirmPos {
+            XCTAssertTrue(dPos < iPos, "InjectTime 应在 Duration_ms 之后")
+            XCTAssertTrue(iPos < cPos, "ConfirmTime 应在 InjectTime 之后")
+        }
+    }
+
+    // MARK: - InjectTime / ConfirmTime 默认值
+
+    func testInjectTimeDefaultValueIsNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 12, "应有 12 列（10 原列 + InjectTime + ConfirmTime）")
+        XCTAssertEqual(String(columns[10]), "N/A", "未传 injectTime 时默认应为 N/A")
+    }
+
+    func testConfirmTimeDefaultValueIsNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoLock, deviceModel: "test",
+            rawRSSI: -70, kalmanRSSI: -70, effectiveRSSI: -70,
+            slope: 0, isAnomalous: false)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 12)
+        XCTAssertEqual(String(columns[11]), "N/A", "未传 confirmTime 时默认应为 N/A")
+    }
+
+    // MARK: - InjectTime / ConfirmTime 传入时间戳
+
+    func testInjectTimeFormattedCorrectly() {
+        let inject = Date(timeIntervalSince1970: 1_000_000)  // 1970-01-12 13:46:40 UTC
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false,
+            injectTime: inject)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 12)
+        let injectValue = String(columns[10])
+        XCTAssertTrue(injectValue.hasPrefix("1970-01-12"), "injectTime 应格式化为日期字符串，实际: \(injectValue)")
+        // 使用 Formatter 验证：本地时区下 1_000_000 的时分秒
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        formatter.timeZone = TimeZone.current
+        let expectedTime = formatter.string(from: inject)
+        XCTAssertTrue(injectValue.contains(expectedTime),
+                      "injectTime 应包含本地时区时分秒 \(expectedTime)，实际: \(injectValue)")
+    }
+
+    func testConfirmTimeFormattedCorrectly() {
+        let confirm = Date(timeIntervalSince1970: 1_000_001)  // 1970-01-12 13:46:41 UTC
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "test",
+            rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
+            slope: 0.1, isAnomalous: false,
+            confirmTime: confirm)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 12)
+        let confirmValue = String(columns[11])
+        XCTAssertTrue(confirmValue.hasPrefix("1970-01-12"), "confirmTime 应格式化为日期字符串，实际: \(confirmValue)")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        formatter.timeZone = TimeZone.current
+        let expectedTime = formatter.string(from: confirm)
+        XCTAssertTrue(confirmValue.contains(expectedTime),
+                      "confirmTime 应包含本地时区时分秒 \(expectedTime)，实际: \(confirmValue)")
+    }
+
+    func testBothInjectAndConfirmTimePresent() {
+        let inject = Date(timeIntervalSince1970: 1_000_000)
+        let confirm = Date(timeIntervalSince1970: 1_000_001)
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "Watch",
+            rawRSSI: -50, kalmanRSSI: -51, effectiveRSSI: -52,
+            slope: 0.5, isAnomalous: false,
+            result: "success", durationMs: 1000,
+            injectTime: inject, confirmTime: confirm)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        formatter.timeZone = TimeZone.current
+        XCTAssertTrue(line.contains(formatter.string(from: inject)),
+                      "应包含 injectTime 格式化值")
+        XCTAssertTrue(line.contains(formatter.string(from: confirm)),
+                      "应包含 confirmTime 格式化值")
+        XCTAssertTrue(line.contains("success"), "result 字段不受影响")
+        XCTAssertTrue(line.contains("1000.00"), "durationMs 字段不受影响")
+    }
+
+    // MARK: - 向后兼容：旧字段位置不变
+
+    func testExistingColumnsUnchangedWithNewTimeParams() {
+        let inject = Date(timeIntervalSince1970: 1_000_000)
+        let confirm = Date(timeIntervalSince1970: 1_000_001)
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock, deviceModel: "iPhone",
+            rawRSSI: -62, kalmanRSSI: -63.50, effectiveRSSI: -64.20,
+            slope: 0.1234, isAnomalous: false,
+            injectTime: inject, confirmTime: confirm)
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        // 原字段位置（前8列）不变
+        XCTAssertTrue(line.contains("auto_unlock"), "应包含原始 Event_Type")
+        XCTAssertTrue(line.contains("iPhone"), "应包含原始 Device_Model")
+        XCTAssertTrue(line.contains("-62"), "应包含原始 Raw_RSSI")
+        XCTAssertTrue(line.contains("-63.50"), "应包含原始 Kalman_RSSI")
+        XCTAssertTrue(line.contains("-64.20"), "应包含原始 Effective_RSSI")
+        XCTAssertTrue(line.contains("0.1234"), "应包含原始 Slope")
+        XCTAssertTrue(line.contains("false"), "应包含原始 Is_Anomalous")
     }
 }
