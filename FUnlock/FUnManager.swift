@@ -110,6 +110,7 @@ final class FUnManager: ObservableObject {
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
     private var intrudeCheckTask: Task<Void, Never>?
+    private var unlockConfirmTask: Task<Void, Never>?
     private var displayWakeRequested = false
     private var consecutiveUnlockAttempts = 0
     private let maxUnlockAttempts = 3
@@ -527,9 +528,28 @@ final class FUnManager: ObservableObject {
             recordUnlockAttempt()
             Log.sm.debug("unlock attempt posted, waiting 2s to verify screen state...")
             // 等 2 秒检查屏幕是否真的解锁了，只有屏幕还锁着才判定为密码错误
-            Task { [weak self] in
+            let verifyStartTime = self.now
+            let verifier = FUnlockResultVerifier(
+                isStillLocked: { [weak self] in sys.isScreenLocked(screenState: self?.state.screen ?? .unlocked) },
+                startTime: verifyStartTime,
+                source: "proximity",
+                effectiveRSSI: fun.effectiveRSSI,
+                device: monitoredDeviceName
+            )
+            unlockConfirmTask?.cancel()
+            unlockConfirmTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled else {
+                    // 验证 Task 被取消（如 app 即将退出或新一轮解锁启动）
+                    // 记录 timeout 事件，保持结果口径完整
+                    FUnlockResultVerifier.logUnlockResultTimeout(
+                        startTime: verifyStartTime,
+                        source: "proximity",
+                        effectiveRSSI: self?.fun.effectiveRSSI,
+                        device: self?.monitoredDeviceName
+                    )
+                    return
+                }
                 let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
                 if stillLocked {
                     self.consecutiveUnlockAttempts += 1
@@ -543,6 +563,7 @@ final class FUnManager: ObservableObject {
                     Log.sm.debug("screen unlocked → password correct, resetting counter")
                     self.consecutiveUnlockAttempts = 0
                 }
+                verifier.logUnlockResult()
             }
         }
         resumeMediaIfNeeded()
@@ -759,6 +780,39 @@ struct FUnlockResultVerifier {
         }
         let line = ScriptRunner.shared.buildEventLine(eventName, rssi: nil, extraFields: extras)
         ScriptRunner.shared.logEventIfNeeded(eventName, rssi: nil, extraFields: extras)
+        return line
+    }
+
+    // MARK: - 静态超时日志
+
+    /// 事件名：验证超时（Task 被取消或未在合理时间内完成）
+    static let timeoutEventName = "unlock_timeout"
+
+    /// 记录超时事件（无需创建 verifier 实例）
+    /// - Parameters:
+    ///   - startTime: 解锁流程开始时间，用于计算延迟
+    ///   - source: 解锁触发来源
+    ///   - effectiveRSSI: 解锁时的有效 RSSI 值
+    ///   - device: 监控设备名称
+    @discardableResult
+    static func logUnlockResultTimeout(
+        startTime: Date,
+        source: String = "proximity",
+        effectiveRSSI: Double? = nil,
+        device: String? = nil
+    ) -> String {
+        let latencyMs = Int(Date().timeIntervalSince(startTime) * 1000)
+        var extras: [String: String] = ["result": "timeout"]
+        extras["latencyMs"] = String(latencyMs)
+        extras["source"] = source
+        if let rssi = effectiveRSSI {
+            extras["effectiveRSSI"] = String(format: "%.1f", rssi)
+        }
+        if let name = device {
+            extras["device"] = name
+        }
+        let line = ScriptRunner.shared.buildEventLine(timeoutEventName, rssi: nil, extraFields: extras)
+        ScriptRunner.shared.logEventIfNeeded(timeoutEventName, rssi: nil, extraFields: extras)
         return line
     }
 }
