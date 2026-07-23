@@ -749,3 +749,114 @@ class StateTransitionSequenceTests: XCTestCase {
         XCTAssertTrue(state.canAutoUnlock, "设备再次靠近后应允许解锁")
     }
 }
+
+// MARK: - ScriptRunner 去重与扩展字段测试
+
+/// 测试 ScriptRunner 的事件去重和扩展字段能力
+class ScriptRunnerDedupTests: XCTestCase {
+
+    private var runner: ScriptRunner!
+    private var currentTime: Date!
+    private var logFile: URL!
+
+    override func setUp() {
+        super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        runner = ScriptRunner(dedupWindow: 3.0) { [unowned self] in self.currentTime }
+        // 定位日志文件
+        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        logFile = dir.appendingPathComponent("FUnlock/events.log")
+        // 清空日志，确保测试干净
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+    }
+
+    override func tearDown() {
+        // 清理日志
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        runner = nil
+        super.tearDown()
+    }
+
+    // MARK: - logEventIfNeeded 去重
+
+    func testFirstEventIsLogged() {
+        let logged = runner.logEventIfNeeded("test_first")
+        XCTAssertTrue(logged, "首次调用应返回 true（已记录）")
+    }
+
+    func testDuplicateWithinWindowIsSkipped() {
+        XCTAssertTrue(runner.logEventIfNeeded("test_dup_within"))
+        let skipped = runner.logEventIfNeeded("test_dup_within")
+        XCTAssertFalse(skipped, "窗口内重复事件应返回 false（被跳过）")
+    }
+
+    func testDuplicateAfterWindowIsAllowed() {
+        XCTAssertTrue(runner.logEventIfNeeded("test_dup_after"))
+        currentTime = currentTime.addingTimeInterval(4.0) // 超过 3 秒窗口
+        XCTAssertTrue(runner.logEventIfNeeded("test_dup_after"), "窗口过期后应允许记录")
+    }
+
+    func testDifferentEventsAreIndependent() {
+        XCTAssertTrue(runner.logEventIfNeeded("test_indep_a"))
+        XCTAssertTrue(runner.logEventIfNeeded("test_indep_b"), "不同事件名应独立去重")
+    }
+
+    func testDefaultDedupWindowIs3Seconds() {
+        // 用默认窗口构造
+        let defaultRunner = ScriptRunner(dedupWindow: 3.0) { [unowned self] in self.currentTime }
+        XCTAssertTrue(defaultRunner.logEventIfNeeded("test_default_window"))
+        currentTime = currentTime.addingTimeInterval(2.9)
+        XCTAssertFalse(defaultRunner.logEventIfNeeded("test_default_window"), "2.9 秒时仍在窗口内")
+        currentTime = currentTime.addingTimeInterval(0.2) // 共 3.1 秒
+        XCTAssertTrue(defaultRunner.logEventIfNeeded("test_default_window"), "3.1 秒后应超出窗口")
+    }
+
+    // MARK: - buildEventLine 扩展字段
+
+    func testBuildEventLineBasicFormat() {
+        let line = runner.buildEventLine("myEvent", rssi: nil, extraFields: [:])
+        XCTAssertTrue(line.contains("myEvent"), "应包含事件名")
+        XCTAssertTrue(line.contains("RSSI: N/A"), "无 RSSI 时应为 N/A")
+        XCTAssertTrue(line.hasSuffix("\n"), "应以换行结尾")
+    }
+
+    func testBuildEventLineWithRSSI() {
+        let line = runner.buildEventLine("rssiTest", rssi: -65, extraFields: [:])
+        XCTAssertTrue(line.contains("RSSI: -65"), "应包含 RSSI 值")
+    }
+
+    func testBuildEventLineWithExtraFields() {
+        let extras = ["battery": "85", "state": "awake"]
+        let line = runner.buildEventLine("extraTest", rssi: nil, extraFields: extras)
+        XCTAssertTrue(line.contains("battery=85"), "应包含 battery 扩展字段")
+        XCTAssertTrue(line.contains("state=awake"), "应包含 state 扩展字段")
+    }
+
+    func testBuildEventLineExtraFieldsAppendedAfterRSSI() {
+        let extras = ["key": "val"]
+        let line = runner.buildEventLine("orderTest", rssi: -70, extraFields: extras)
+        // 格式：timestamp | event | RSSI: -70 | key=val
+        let rssiRange = line.range(of: "RSSI: -70")!
+        let extraRange = line.range(of: "key=val")!
+        XCTAssertTrue(rssiRange.lowerBound < extraRange.lowerBound, "扩展字段应在 RSSI 之后")
+    }
+
+    // MARK: - logEvent 兼容性
+
+    func testLogEventStillWorks() {
+        // 原始 logEvent 不应崩溃，仍能写入文件
+        runner.logEvent("compatTest", rssi: -50)
+        let content = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        XCTAssertTrue(content.contains("compatTest"), "logEvent 应正常写入")
+        XCTAssertTrue(content.contains("RSSI: -50"), "logEvent 应包含 RSSI")
+    }
+
+    func testLogEventIgnoresDedup() {
+        // logEvent 不受去重限制，连续调用应都能写入
+        runner.logEvent("noDedup", rssi: -50)
+        runner.logEvent("noDedup", rssi: -50)
+        let content = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        let count = content.components(separatedBy: "noDedup").count - 1
+        XCTAssertEqual(count, 2, "logEvent 不应去重，两次调用都应写入")
+    }
+}
