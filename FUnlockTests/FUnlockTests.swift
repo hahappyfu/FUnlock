@@ -1034,3 +1034,96 @@ class FUnManagerCooldownTests: XCTestCase {
                       "onDeviceApproached 后冷却仍应生效（attemptAutoUnlock 被冷却阻止）")
     }
 }
+
+// MARK: - FUnlockResultVerifier 与解锁结果事件日志测试
+
+/// 测试解锁结果确认结构体和扩展事件日志写入
+class FUnlockResultLoggingTests: XCTestCase {
+
+    // MARK: - FUnlockResultVerifier 基本判定
+
+    func testVerifierSuccess() {
+        let verifier = FUnlockResultVerifier { false }  // isStillLocked=false → 成功
+        XCTAssertEqual(verifier.status, "success")
+    }
+
+    func testVerifierFailure() {
+        let verifier = FUnlockResultVerifier { true }   // isStillLocked=true → 失败
+        XCTAssertEqual(verifier.status, "failure")
+    }
+
+    func testVerifierSucceededTrue() {
+        let verifier = FUnlockResultVerifier { false }
+        XCTAssertTrue(verifier.succeeded)
+    }
+
+    func testVerifierSucceededFalse() {
+        let verifier = FUnlockResultVerifier { true }
+        XCTAssertFalse(verifier.succeeded)
+    }
+
+    // MARK: - logUnlockResult 返回值与 extraFields
+
+    func testLogUnlockResultReturnsFormattedLine() {
+        let verifier = FUnlockResultVerifier { false }
+        let line = verifier.logUnlockResult(deviceName: "iPhone")
+        XCTAssertFalse(line.isEmpty, "应返回非空日志行")
+    }
+
+    func testLogUnlockResultContainsSuccessStatus() {
+        let verifier = FUnlockResultVerifier { false }
+        let line = verifier.logUnlockResult(deviceName: nil)
+        XCTAssertTrue(line.contains("status=success"), "成功时应包含 status=success")
+        XCTAssertFalse(line.contains("status=failure"), "成功时不应包含 status=failure")
+    }
+
+    func testLogUnlockResultContainsFailureStatus() {
+        let verifier = FUnlockResultVerifier { true }
+        let line = verifier.logUnlockResult(deviceName: nil)
+        XCTAssertTrue(line.contains("status=failure"), "失败时应包含 status=failure")
+        XCTAssertFalse(line.contains("status=success"), "失败时不应包含 status=success")
+    }
+
+    func testLogUnlockResultContainsDeviceName() {
+        let verifier = FUnlockResultVerifier { false }
+        let line = verifier.logUnlockResult(deviceName: "AirPods Pro")
+        XCTAssertTrue(line.contains("device=AirPods Pro"), "应包含 device 字段")
+    }
+
+    func testLogUnlockResultOmitsDeviceNameWhenNil() {
+        let verifier = FUnlockResultVerifier { false }
+        let line = verifier.logUnlockResult(deviceName: nil)
+        XCTAssertFalse(line.contains("device="), "deviceName 为 nil 时不应包含 device 字段")
+    }
+
+    // MARK: - extraFields 在日志行中的位置
+
+    func testExtraFieldsAppearAfterMainFields() {
+        let verifier = FUnlockResultVerifier { false }
+        let line = verifier.logUnlockResult(deviceName: "iPhone")
+        // 格式：timestamp | event | RSSI: N/A | extraFields...
+        // status 字段应在 RSSI 之后
+        if let rssiRange = line.range(of: "RSSI:"),
+           let statusRange = line.range(of: "status=") {
+            XCTAssertTrue(rssiRange.lowerBound < statusRange.lowerBound,
+                          "status 字段应在 RSSI 之后")
+        } else {
+            XCTFail("日志行应包含 RSSI: 和 status= 字段")
+        }
+    }
+
+    // MARK: - 多字段日志行完整性
+
+    func testLogUnlockResultWithDeviceNameHasBothFields() {
+        let verifier = FUnlockResultVerifier { true }
+        let line = verifier.logUnlockResult(deviceName: "Watch")
+        XCTAssertTrue(line.contains("status=failure"), "应包含 status")
+        XCTAssertTrue(line.contains("device=Watch"), "应包含 device")
+        // 验证两个字段都在
+        if let statusRange = line.range(of: "status="),
+           let deviceRange = line.range(of: "device=") {
+            XCTAssertTrue(deviceRange.lowerBound < statusRange.lowerBound,
+                          "device 应在 status 之前（字典序排列）")
+        }
+    }
+}
