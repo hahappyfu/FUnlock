@@ -1636,7 +1636,7 @@ class TelemetryLoggerFormatTests: XCTestCase {
             rawRSSI: -55, kalmanRSSI: -55, effectiveRSSI: -55,
             slope: 0, isAnomalous: false)
         let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
-        XCTAssertTrue(line.hasSuffix(",N/A,N/A"), "默认 durationMs/injectTime/confirmTime 末尾应为 ,N/A,N/A")
+        XCTAssertTrue(line.hasSuffix(",N/A,N/A,N/A"), "默认 result/durationMs/injectTime/confirmTime 末尾应为 ,N/A,N/A,N/A")
     }
 
     // MARK: - InjectTime / ConfirmTime 表头
