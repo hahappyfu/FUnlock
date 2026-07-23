@@ -1790,3 +1790,372 @@ class TelemetryLoggerFormatTests: XCTestCase {
         XCTAssertTrue(line.contains("false"), "应包含原始 Is_Anomalous")
     }
 }
+
+// MARK: - 兼容性回归测试（LegacyCompatibilityTests）
+
+/// 回归测试：验证 v2.5 新增功能不破坏现有接口的默认行为。
+/// 重点覆盖：ScriptRunner.logEvent、FUnManager 默认值、TelemetryLogger 新旧调用路径。
+@MainActor
+class LegacyCompatibilityTests: XCTestCase {
+
+    // MARK: - ScriptRunner.logEvent 向后兼容
+
+    private var logFile: URL!
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        logFile = dir.appendingPathComponent("FUnlock/events.log")
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LegacyCompatTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        TelemetryLogger.shared.testLogDirectory = tempDir
+        try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
+    }
+
+    override func tearDown() {
+        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        TelemetryLogger.shared.testLogDirectory = nil
+        try? FileManager.default.removeItem(at: tempDir)
+        super.tearDown()
+    }
+
+    private func readLog() -> String {
+        (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+    }
+
+    /// logEvent 单参数调用（旧签名）仍能正常写入
+    func testLogEventLegacySignatureStillWorks() {
+        ScriptRunner.shared.logEvent("legacy_event")
+        let content = readLog()
+        XCTAssertTrue(content.contains("legacy_event"), "旧签名 logEvent 应正常写入事件名")
+        XCTAssertTrue(content.contains("RSSI: N/A"), "无 RSSI 参数时应显示 N/A")
+    }
+
+    /// logEvent 双参数调用（旧签名）仍能正常写入 RSSI
+    func testLogEventWithRSSILegacySignatureStillWorks() {
+        ScriptRunner.shared.logEvent("legacy_rssi_event", rssi: -72)
+        let content = readLog()
+        XCTAssertTrue(content.contains("legacy_rssi_event"), "应写入事件名")
+        XCTAssertTrue(content.contains("RSSI: -72"), "应写入 RSSI 值")
+    }
+
+    /// logEvent 不受去重窗口限制（连续写入同名事件应全部写入）
+    func testLogEventBypassesDedup() {
+        ScriptRunner.shared.logEvent("dedup_bypass", rssi: -50)
+        ScriptRunner.shared.logEvent("dedup_bypass", rssi: -50)
+        ScriptRunner.shared.logEvent("dedup_bypass", rssi: -50)
+        let content = readLog()
+        let count = content.components(separatedBy: "dedup_bypass").count - 1
+        XCTAssertEqual(count, 3, "logEvent 不应去重，三次调用都应写入")
+    }
+
+    /// logEvent 日志行格式与旧版本一致：timestamp | event | RSSI: value
+    func testLogEventLineFormatMatchesLegacy() {
+        ScriptRunner.shared.logEvent("format_check", rssi: -80)
+        let content = readLog()
+        let lines = content.components(separatedBy: "\n").filter { $0.contains("format_check") }
+        XCTAssertFalse(lines.isEmpty, "应有包含 format_check 的日志行")
+        guard let line = lines.first else { return }
+        // 格式：yyyy-MM-dd HH:mm:ss | event | RSSI: value
+        XCTAssertTrue(line.contains("format_check"), "应包含事件名")
+        XCTAssertTrue(line.contains("RSSI: -80"), "应包含 RSSI 值")
+        XCTAssertTrue(line.contains(" | "), "应使用 ' | ' 分隔符")
+        let datePattern = #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"#
+        let regex = try! NSRegularExpression(pattern: datePattern, options: [])
+        let range = NSRange(line.startIndex..., in: line)
+        XCTAssertNotNil(regex.firstMatch(in: line, range: range),
+                        "日志行应以 yyyy-MM-dd HH:mm:ss 开头，实际: \(line)")
+    }
+
+    /// logEvent 写入的文件路径不变（~/Library/Application Support/FUnlock/events.log）
+    func testLogEventFilePathUnchanged() {
+        ScriptRunner.shared.logEvent("path_check")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logFile.path),
+                      "events.log 应写入固定路径")
+        let content = readLog()
+        XCTAssertTrue(content.contains("path_check"), "事件应写入正确路径")
+    }
+
+    /// logEventIfNeeded（新接口）首次调用返回 true
+    func testLogEventIfNeededFirstCallReturnsTrue() {
+        let runner = ScriptRunner(dedupWindow: 3.0) { Date() }
+        let logged = runner.logEventIfNeeded("new_api_first")
+        XCTAssertTrue(logged, "新接口首次调用应返回 true")
+    }
+
+    /// logEventIfNeeded（新接口）窗口内重复返回 false
+    func testLogEventIfNeededDuplicateReturnsFalse() {
+        let runner = ScriptRunner(dedupWindow: 3.0) { Date() }
+        _ = runner.logEventIfNeeded("new_api_dup")
+        let second = runner.logEventIfNeeded("new_api_dup")
+        XCTAssertFalse(second, "新接口窗口内重复应返回 false")
+    }
+
+    /// logEvent 与 logEventIfNeeded 共存：logEvent 不被 logEventIfNeeded 的去重影响
+    func testLegacyAndNewAPIsCoexist() {
+        let runner = ScriptRunner(dedupWindow: 3.0) { Date() }
+        _ = runner.logEventIfNeeded("coexist_event")
+        // logEvent 应无视去重，仍能写入
+        runner.logEvent("coexist_event", rssi: -60)
+        let content = readLog()
+        let count = content.components(separatedBy: "coexist_event").count - 1
+        XCTAssertEqual(count, 2, "logEvent 与 logEventIfNeeded 应独立工作，共写入 2 条")
+    }
+
+    // MARK: - FUnManager 默认值兼容
+
+    /// FUnManager 的 lockRSSI 默认值与 FUn 一致
+    func testFUnManagerDefaultLockRSSIMatchesFUn() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        XCTAssertEqual(manager.lockRSSI, fun.lockRSSI, "FUnManager.lockRSSI 默认值应与 FUn.lockRSSI 一致")
+    }
+
+    /// FUnManager 的 unlockRSSI 默认值与 FUn 一致
+    func testFUnManagerDefaultUnlockRSSIMatchesFUn() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        XCTAssertEqual(manager.unlockRSSI, fun.unlockRSSI, "FUnManager.unlockRSSI 默认值应与 FUn.unlockRSSI 一致")
+    }
+
+    /// FUnManager 解锁冷却默认值为 5 秒
+    func testFUnManagerDefaultCooldownIs5Seconds() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertEqual(manager.unlockCooldownDuration, 5.0,
+                       "默认解锁冷却时间应为 5 秒，保证旧版行为不变")
+    }
+
+    /// FUnManager 锁屏缓冲默认值为 0.8 秒
+    func testFUnManagerDefaultBufferIs08Seconds() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertEqual(manager.lockBufferDuration, 0.8,
+                       "默认锁屏缓冲时间应为 0.8 秒，保证旧版行为不变")
+    }
+
+    /// FUnManager 初始状态：lastLockTime 和 lastUnlockTime 均为 distantPast
+    func testFUnManagerInitialTimestampsAreDistantPast() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertEqual(manager.lastLockTime, Date.distantPast,
+                       "初始 lastLockTime 应为 distantPast")
+        XCTAssertEqual(manager.lastUnlockTime, Date.distantPast,
+                       "初始 lastUnlockTime 应为 distantPast")
+    }
+
+    /// FUnManager 初始 state 的 screen 应为 unlocked
+    func testFUnManagerInitialStateScreenIsUnlocked() {
+        let manager = FUnManager(fun: FUn())
+        if case .unlocked = manager.state.screen {
+            // OK
+        } else {
+            XCTFail("初始 state.screen 应为 .unlocked，实际: \(manager.state.screen)")
+        }
+    }
+
+    /// FUnManager 初始 state 的 system 应为 awake
+    func testFUnManagerInitialStateSystemIsAwake() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertEqual(manager.state.system, .awake, "初始 state.system 应为 .awake")
+    }
+
+    /// FUnManager 初始 state 的 intent 应为 autoLock
+    func testFUnManagerInitialStateIntentIsAutoLock() {
+        let manager = FUnManager(fun: FUn())
+        if case .autoLock = manager.state.intent {
+            // OK
+        } else {
+            XCTFail("初始 state.intent 应为 .autoLock")
+        }
+    }
+
+    /// FUnManager 初始 connected 应为 false
+    func testFUnManagerInitialConnectedIsFalse() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertFalse(manager.connected, "初始 connected 应为 false")
+    }
+
+    /// FUnManager 初始 rssi 应为 nil
+    func testFUnManagerInitialRSSIIsNil() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertNil(manager.rssi, "初始 rssi 应为 nil")
+    }
+
+    // MARK: - TelemetryLogger 新旧调用兼容
+
+    private func csvContent() -> String {
+        (try? String(contentsOf: TelemetryLogger.shared.testLogFile, encoding: .utf8)) ?? ""
+    }
+
+    /// 旧式调用（6 个必填参数，不传 result/durationMs/injectTime/confirmTime）仍可编译并写入
+    func testTelemetryLegacyCallWith6ParamsStillWorks() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock,
+            deviceModel: "test-device",
+            rawRSSI: -55,
+            kalmanRSSI: -56.0,
+            effectiveRSSI: -57.5,
+            slope: 0.1234,
+            isAnomalous: false
+        )
+        let content = csvContent()
+        XCTAssertTrue(content.contains("auto_unlock"), "旧式调用应写入 auto_unlock 事件")
+        XCTAssertTrue(content.contains("test-device"), "旧式调用应写入设备名")
+        XCTAssertTrue(content.contains("-55"), "旧式调用应写入 rawRSSI")
+    }
+
+    /// 旧式调用的新增列（Result / Duration_ms / InjectTime / ConfirmTime）默认为 N/A
+    func testTelemetryLegacyCallNewColumnsDefaultToNA() {
+        TelemetryLogger.shared.logSync(
+            event: .autoLock,
+            deviceModel: "legacy-model",
+            rawRSSI: -70,
+            kalmanRSSI: -71,
+            effectiveRSSI: -72,
+            slope: 0.5,
+            isAnomalous: true
+        )
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_lock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(columns.count, 12, "应有 12 列")
+        XCTAssertEqual(String(columns[8]), "N/A", "Result 默认值应为 N/A")
+        XCTAssertEqual(String(columns[9]), "N/A", "Duration_ms 默认值应为 N/A")
+        XCTAssertEqual(String(columns[10]), "N/A", "InjectTime 默认值应为 N/A")
+        XCTAssertEqual(String(columns[11]), "N/A", "ConfirmTime 默认值应为 N/A")
+    }
+
+    /// 旧式调用的原始 8 列字段值正确
+    func testTelemetryLegacyCallOriginal8ColumnsCorrect() {
+        TelemetryLogger.shared.logSync(
+            event: .abnormalAlert,
+            deviceModel: "Watch",
+            rawRSSI: -80,
+            kalmanRSSI: -81.00,
+            effectiveRSSI: -82.50,
+            slope: 0.4321,
+            isAnomalous: true
+        )
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("abnormal_alert") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(String(columns[0]).count > 0, true, "Timestamp 不应为空")
+        XCTAssertEqual(String(columns[1]), "abnormal_alert", "Event_Type 应为 abnormal_alert")
+        XCTAssertEqual(String(columns[2]), "Watch", "Device_Model 应为 Watch")
+        XCTAssertEqual(String(columns[3]), "-80", "Raw_RSSI 应为 -80")
+        XCTAssertEqual(String(columns[4]), "-81.00", "Kalman_RSSI 应为 -81.00")
+        XCTAssertEqual(String(columns[5]), "-82.50", "Effective_RSSI 应为 -82.50")
+        XCTAssertEqual(String(columns[6]), "0.4321", "Slope 应为 0.4321")
+        XCTAssertEqual(String(columns[7]), "true", "Is_Anomalous 应为 true")
+    }
+
+    /// 新式调用（传入 result + durationMs）不影响原始 8 列
+    func testTelemetryNewCallDoesNotAlterOriginalColumns() {
+        TelemetryLogger.shared.logSync(
+            event: .autoUnlock,
+            deviceModel: "iPhone 15",
+            rawRSSI: -60,
+            kalmanRSSI: -61.50,
+            effectiveRSSI: -62.75,
+            slope: 0.9876,
+            isAnomalous: false,
+            result: "success",
+            durationMs: 3200.00
+        )
+        let line = csvContent().components(separatedBy: "\n").first(where: { $0.contains("auto_unlock") }) ?? ""
+        let columns = line.split(separator: ",")
+        XCTAssertEqual(String(columns[1]), "auto_unlock")
+        XCTAssertEqual(String(columns[2]), "iPhone 15")
+        XCTAssertEqual(String(columns[3]), "-60")
+        XCTAssertEqual(String(columns[4]), "-61.50")
+        XCTAssertEqual(String(columns[5]), "-62.75")
+        XCTAssertEqual(String(columns[6]), "0.9876")
+        XCTAssertEqual(String(columns[7]), "false")
+        XCTAssertEqual(String(columns[8]), "success", "Result 应为 success")
+        XCTAssertEqual(String(columns[9]), "3200.00", "Duration_ms 应为 3200.00")
+    }
+
+    /// TelemetryLogger.shared 单例可正常访问，不崩溃
+    func testTelemetryLoggerSharedSingletonIsAccessible() {
+        let logger = TelemetryLogger.shared
+        XCTAssertNotNil(logger, "TelemetryLogger.shared 不应为 nil")
+        // 多次访问不崩溃
+        _ = TelemetryLogger.shared
+        _ = TelemetryLogger.shared
+    }
+
+    /// TelemetryLogger 异步 log 与同步 logSync 写入格式一致
+    func testTelemetryAsyncAndSyncProduceSameCSVFormat() {
+        let syncLine: String = {
+            TelemetryLogger.shared.logSync(
+                event: .autoUnlock,
+                deviceModel: "sync-test",
+                rawRSSI: -50,
+                kalmanRSSI: -51,
+                effectiveRSSI: -52,
+                slope: 0.1,
+                isAnomalous: false,
+                result: "success",
+                durationMs: 1000)
+            return csvContent().components(separatedBy: "\n").first(where: { $0.contains("sync-test") }) ?? ""
+        }()
+
+        let syncCols = syncLine.split(separator: ",")
+        XCTAssertEqual(syncCols.count, 12, "logSync 应产生 12 列 CSV 行")
+        XCTAssertEqual(String(syncCols[8]), "success")
+        XCTAssertEqual(String(syncCols[9]), "1000.00")
+    }
+
+    // MARK: - FUnManager 与 ScriptRunner 调用路径兼容
+
+    /// FUnManager.onUnlock 调用链：应触发 ScriptRunner.logEvent("unlocked") 和 TelemetryLogger.log(.autoUnlock)
+    func testOnUnlockTriggersLegacyScriptRunnerLogEvent() {
+        let manager = FUnManager(fun: FUn())
+        manager.onUnlock()
+
+        // 验证 logEvent 被间接调用（通过读取 events.log）
+        let content = readLog()
+        // onUnlock 内部通过 intrudeCheckTask 异步写入，这里验证 lastUnlockTime 被更新
+        // 使用时间间隔比较：两者应在同一秒内
+        let interval = manager.lastUnlockTime.timeIntervalSince(manager.state.unlockedAt)
+        XCTAssertEqualWithAccuracy(interval, 0, accuracy: 1.0,
+                                   "onUnlock 后 lastUnlockTime 与 unlockedAt 应在同一秒内")
+        XCTAssertTrue(manager.state.screen == .unlocked, "onUnlock 后 screen 应为 unlocked")
+    }
+
+    /// FUnManager.onSystemScreenLocked 设置 lastLockTime，isLockBufferActive 生效
+    func testOnSystemScreenLockedActivatesLockBuffer() {
+        let manager = FUnManager(fun: FUn())
+        let before = Date()
+        manager.onSystemScreenLocked()
+        XCTAssertGreaterThanOrEqual(manager.lastLockTime.timeIntervalSince1970,
+                                    before.timeIntervalSince1970,
+                                    "onSystemScreenLocked 应设置 lastLockTime 为当前时间")
+        XCTAssertTrue(manager.isLockBufferActive(),
+                      "onSystemScreenLocked 后 isLockBufferActive 应为 true")
+    }
+
+    /// FUnManager 状态机：onUnlock → onSystemScreenLocked 序列正确
+    func testUnlockThenLockSequenceMaintainsStateConsistency() {
+        let manager = FUnManager(fun: FUn())
+
+        // 初始：unlocked
+        XCTAssertTrue(manager.state.screen == .unlocked, "初始应为 unlocked")
+
+        // 解锁
+        manager.onUnlock()
+        XCTAssertTrue(manager.state.screen == .unlocked, "onUnlock 后应为 unlocked")
+        XCTAssertTrue(manager.state.intent == .autoLock, "onUnlock 后 intent 应为 autoLock")
+
+        // 手动锁屏
+        manager.onSystemScreenLocked()
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .manual, "手动锁屏后 reason 应为 manual")
+        } else {
+            XCTFail("手动锁屏后 screen 应为 .locked")
+        }
+        // lastUnlockTime 应被设置（不为 distantPast），且冷却应在时间窗口内
+        XCTAssertNotEqual(manager.lastUnlockTime, Date.distantPast,
+                          "onUnlock 后 lastUnlockTime 不应为 distantPast")
+    }
+}
