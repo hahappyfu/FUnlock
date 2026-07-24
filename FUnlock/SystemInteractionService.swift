@@ -54,17 +54,55 @@ final class SystemInteractionService {
 
     /// Inject password keystrokes via CGEvent. Returns true if at least one event posted.
     /// isSecureCheck is called before each batch to verify screen is still locked.
+    /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
+        Log.sm.debug("PASSWORD: attempting keystroke injection for \(string.count) chars")
+
+        // 尝试第1级：cgSessionEventTap + virtualKey 0
+        Log.sm.debug("PASSWORD: trying Level 1 - cgSessionEventTap + virtualKey 0")
+        if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
+            Log.sm.debug("PASSWORD: Level 1 injection succeeded")
+            return true
+        }
+        Log.sm.debug("PASSWORD: Level 1 failed, trying Level 2")
+
+        // 尝试第2级：cghidEventTap + virtualKey 0
+        Log.sm.debug("PASSWORD: trying Level 2 - cghidEventTap + virtualKey 0")
+        if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
+            Log.sm.debug("PASSWORD: Level 2 injection succeeded")
+            return true
+        }
+        Log.sm.debug("PASSWORD: Level 2 failed, trying Level 3")
+
+        // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
+        guard string.canBeConverted(to: .ascii) else {
+            Log.sm.debug("PASSWORD: Level 3 skipped - password contains non-ASCII characters")
+            return false
+        }
+        Log.sm.debug("PASSWORD: trying Level 3 - AppleScript System Events")
+        let result = injectWithAppleScript(string)
+        if result {
+            Log.sm.debug("PASSWORD: Level 3 injection succeeded")
+        } else {
+            Log.sm.debug("PASSWORD: Level 3 failed - all levels exhausted")
+        }
+        return result
+    }
+
+    /// Inject password using CGEvent with specified tap type and virtual key.
+    /// Returns true if at least one event posted.
+    private func injectWithCGEvent(_ string: String, tap: CGEventTapLocation, virtualKey: CGKeyCode, isSecureCheck: () -> Bool) -> Bool {
         let src = CGEventSource(stateID: .hidSystemState)
         var anyEventPosted = false
         let uniCharCount = string.utf16.count
         var strIndex = string.utf16.startIndex
+
         for offset in stride(from: 0, to: uniCharCount, by: 20) {
             guard isSecureCheck() else {
-                Log.sm.debug("ABORT: screen no longer secure during keystroke injection")
+                Log.sm.debug("PASSWORD: ABORT - screen no longer secure during keystroke injection")
                 return anyEventPosted
             }
-            let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: true)
+            let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: virtualKey, keyDown: true)
             let len = offset + 20 < uniCharCount ? 20 : uniCharCount - offset
             let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
             defer { buffer.deallocate() }
@@ -73,20 +111,65 @@ final class SystemInteractionService {
                 strIndex = string.utf16.index(after: strIndex)
             }
             pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: buffer)
-            pressEvent?.post(tap: .cgSessionEventTap)
-            CGEvent(keyboardEventSource: src, virtualKey: 49, keyDown: false)?.post(tap: .cgSessionEventTap)
+            pressEvent?.post(tap: tap)
+            CGEvent(keyboardEventSource: src, virtualKey: virtualKey, keyDown: false)?.post(tap: tap)
             if pressEvent != nil { anyEventPosted = true }
         }
+
         guard isSecureCheck() else {
-            Log.sm.debug("ABORT: screen no longer secure before Return key")
+            Log.sm.debug("PASSWORD: ABORT - screen no longer secure before Return key")
             return anyEventPosted
         }
         let returnDown = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
         let returnUp = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
-        returnDown?.post(tap: .cgSessionEventTap)
-        returnUp?.post(tap: .cgSessionEventTap)
+        returnDown?.post(tap: tap)
+        returnUp?.post(tap: tap)
         if returnDown != nil { anyEventPosted = true }
         return anyEventPosted
+    }
+
+    /// Inject password using AppleScript System Events (only for ASCII passwords).
+    /// Returns true if injection was initiated successfully.
+    private func injectWithAppleScript(_ string: String) -> Bool {
+        guard string.canBeConverted(to: .ascii) else {
+            Log.sm.debug("PASSWORD: AppleScript rejected - non-ASCII characters")
+            return false
+        }
+
+        // Escape special characters for AppleScript string
+        let escaped = string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "'", with: "\\'")
+
+        let script = """
+        tell application "System Events"
+            keystroke "\(escaped)"
+            delay 0.05
+            keystroke return
+        end tell
+        """
+
+        Log.sm.debug("PASSWORD: executing AppleScript keystroke injection")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let status = task.terminationStatus
+            if status == 0 {
+                Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
+                return true
+            } else {
+                Log.sm.debug("PASSWORD: AppleScript failed with status \(status)")
+                return false
+            }
+        } catch {
+            Log.sm.debug("PASSWORD: AppleScript error - \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Media Control
