@@ -2,6 +2,23 @@ import Foundation
 import Cocoa
 import UserNotifications
 
+/// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
+private func _log(component: String, _ message: String) {
+    let ts = _df.string(from: Date())
+    let line = "[\(ts)] [\(component)] \(message)\n"
+    if let data = line.data(using: .utf8) {
+        let fh = FileHandle(forWritingAtPath: "/tmp/funlock_debug.log")
+        fh?.seekToEndOfFile()
+        fh?.write(data)
+        fh?.closeFile()
+    }
+}
+private let _df: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return f
+}()
+
 /// Encapsulates all OS-level side effects: screen control, keyboard injection, media, notifications
 final class SystemInteractionService {
     static let shared = SystemInteractionService()
@@ -23,12 +40,18 @@ final class SystemInteractionService {
 
     /// Double safety check: screen locked + frontmost app is loginwindow
     func isSecureToInject(screenState: ScreenState?) -> Bool {
-        guard isScreenLocked(screenState: screenState) else { return false }
+        let locked = isScreenLocked(screenState: screenState)
+        guard locked else {
+            _log(component: "SystemInteraction", "isSecureToInject: NOT locked")
+            return false
+        }
         if let frontApp = NSWorkspace.shared.frontmostApplication,
            frontApp.bundleIdentifier != "com.apple.loginwindow" {
+            _log(component: "SystemInteraction", "isSecureToInject: ABORT frontmost=\(frontApp.bundleIdentifier ?? "nil")")
             Log.sm.debug("ABORT: frontmost=\(frontApp.bundleIdentifier ?? "nil"), not loginwindow")
             return false
         }
+        _log(component: "SystemInteraction", "isSecureToInject: OK")
         return true
     }
 
@@ -56,36 +79,48 @@ final class SystemInteractionService {
     /// isSecureCheck is called before each batch to verify screen is still locked.
     /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
+        _log(component: "SystemInteraction", "fakeKeyStrokes() START - \(string.count) chars")
         Log.sm.debug("PASSWORD: attempting keystroke injection for \(string.count) chars")
 
         // 尝试第1级：cgSessionEventTap + virtualKey 0
+        _log(component: "SystemInteraction", "Level 1: cgSessionEventTap + vk0")
         Log.sm.debug("PASSWORD: trying Level 1 - cgSessionEventTap + virtualKey 0")
         if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
+            _log(component: "SystemInteraction", "Level 1: SUCCESS")
             Log.sm.debug("PASSWORD: Level 1 injection succeeded")
             return true
         }
+        _log(component: "SystemInteraction", "Level 1: FAILED, trying Level 2")
         Log.sm.debug("PASSWORD: Level 1 failed, trying Level 2")
 
         // 尝试第2级：cghidEventTap + virtualKey 0
+        _log(component: "SystemInteraction", "Level 2: cghidEventTap + vk0")
         Log.sm.debug("PASSWORD: trying Level 2 - cghidEventTap + virtualKey 0")
         if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
+            _log(component: "SystemInteraction", "Level 2: SUCCESS")
             Log.sm.debug("PASSWORD: Level 2 injection succeeded")
             return true
         }
+        _log(component: "SystemInteraction", "Level 2: FAILED, trying Level 3")
         Log.sm.debug("PASSWORD: Level 2 failed, trying Level 3")
 
         // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
         guard string.canBeConverted(to: .ascii) else {
+            _log(component: "SystemInteraction", "Level 3: SKIPPED - non-ASCII password")
             Log.sm.debug("PASSWORD: Level 3 skipped - password contains non-ASCII characters")
             return false
         }
+        _log(component: "SystemInteraction", "Level 3: AppleScript System Events")
         Log.sm.debug("PASSWORD: trying Level 3 - AppleScript System Events")
         let result = injectWithAppleScript(string)
         if result {
+            _log(component: "SystemInteraction", "Level 3: SUCCESS")
             Log.sm.debug("PASSWORD: Level 3 injection succeeded")
         } else {
+            _log(component: "SystemInteraction", "Level 3: FAILED - all levels exhausted")
             Log.sm.debug("PASSWORD: Level 3 failed - all levels exhausted")
         }
+        _log(component: "SystemInteraction", "fakeKeyStrokes() END - result=\(result)")
         return result
     }
 
