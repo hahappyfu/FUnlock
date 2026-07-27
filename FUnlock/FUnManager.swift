@@ -6,6 +6,23 @@ import Foundation
 import Combine
 import Cocoa
 
+/// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
+private func _log(component: String, _ message: String) {
+    let ts = _df.string(from: Date())
+    let line = "[\(ts)] [\(component)] \(message)\n"
+    if let data = line.data(using: .utf8) {
+        let fh = FileHandle(forWritingAtPath: "/tmp/funlock_debug.log")
+        fh?.seekToEndOfFile()
+        fh?.write(data)
+        fh?.closeFile()
+    }
+}
+private let _df: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return f
+}()
+
 // MARK: - 状态枚举
 
 enum ScreenState: Equatable, CustomStringConvertible {
@@ -502,6 +519,7 @@ final class FUnManager: ObservableObject {
         let sys = SystemInteractionService.shared
         let sec = SecurityService.shared
         let locked = sys.isScreenLocked(screenState: state.screen)
+        _log(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
         Log.sm.debug("screen locked check: \(locked)")
         guard locked else { Log.sm.debug("SKIP: screen not locked"); return }
         let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
@@ -510,23 +528,29 @@ final class FUnManager: ObservableObject {
             return
         }
         guard let password = sec.fetchPassword(warn: true) else { Log.sm.debug("SKIP: no password"); return }
+        _log(component: "FUnManager", "tryUnlock() password fetched - length=\(password.count)")
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
-        guard sys.isSecureToInject(screenState: state.screen) else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
+        let secure = sys.isSecureToInject(screenState: state.screen)
+        _log(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
+        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
 
         Log.sm.debug("typing password (\(password.count) chars)")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
+        _log(component: "FUnManager", "tryUnlock() calling fakeKeyStrokes(\(password.count) chars)")
         let posted = sys.fakeKeyStrokes(password) {
             self.state.screen != .unlocked
             && sys.isSecureToInject(screenState: self.state.screen)
         }
+        _log(component: "FUnManager", "tryUnlock() fakeKeyStrokes returned posted=\(posted)")
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             recordUnlockAttempt()
+            _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, waiting 2s for verification")
             Log.sm.debug("unlock attempt posted, waiting 2s to verify screen state...")
             // 等 2 秒检查屏幕是否真的解锁了，只有屏幕还锁着才判定为密码错误
             let verifyStartTime = self.now
@@ -564,6 +588,7 @@ final class FUnManager: ObservableObject {
                     Log.sm.debug("screen unlocked → password correct, resetting counter")
                     self.consecutiveUnlockAttempts = 0
                 }
+                _log(component: "FUnManager", "tryUnlock() verify result: stillLocked=\(stillLocked), attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                 verifier.logUnlockResult()
             }
         }
