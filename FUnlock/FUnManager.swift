@@ -550,9 +550,9 @@ final class FUnManager: ObservableObject {
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             recordUnlockAttempt()
-            _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, waiting 2s for verification")
-            Log.sm.debug("unlock attempt posted, waiting 2s to verify screen state...")
-            // 等 2 秒检查屏幕是否真的解锁了，只有屏幕还锁着才判定为密码错误
+            _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
+            Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
+            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
             let verifyStartTime = self.now
             let verifier = FUnlockResultVerifier(
                 isStillLocked: { [weak self] in sys.isScreenLocked(screenState: self?.state.screen ?? .unlocked) },
@@ -561,24 +561,32 @@ final class FUnManager: ObservableObject {
                 effectiveRSSI: fun.effectiveRSSI,
                 device: monitoredDeviceName
             )
+            // 立即记录乐观解锁成功
+            verifier.logUnlockResult()
+            _log(component: "FUnManager", "tryUnlock() - optimistic unlock_confirmed recorded")
+            // 可选：后台 0.5 秒后检查一次，如果失败则记录 unlock_failed
             unlockConfirmTask?.cancel()
             unlockConfirmTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒后验证
                 guard let self, !Task.isCancelled else {
                     // 验证 Task 被取消（如 app 即将退出或新一轮解锁启动）
-                    // 记录 timeout 事件，保持结果口径完整
-                    FUnlockResultVerifier.logUnlockResultTimeout(
-                        startTime: verifyStartTime,
-                        source: "proximity",
-                        effectiveRSSI: self?.fun.effectiveRSSI,
-                        device: self?.monitoredDeviceName
-                    )
                     return
                 }
                 let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
                 if stillLocked {
+                    // 屏幕仍锁定 → 密码可能错误，记录 unlock_failed
                     self.consecutiveUnlockAttempts += 1
-                    Log.sm.debug("screen still locked after attempt → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    Log.sm.debug("screen still locked after 0.5s verification → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    // 记录 unlock_failed（覆盖之前的乐观 unlock_confirmed）
+                    let failVerifier = FUnlockResultVerifier(
+                        isStillLocked: { true },
+                        startTime: verifyStartTime,
+                        source: "proximity",
+                        effectiveRSSI: self.fun.effectiveRSSI,
+                        device: self.monitoredDeviceName
+                    )
+                    failVerifier.logUnlockResult()
+                    _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                     if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
                         sys.showPasswordMismatchAlert()
                         self.consecutiveUnlockAttempts = 0
@@ -587,9 +595,8 @@ final class FUnManager: ObservableObject {
                     // 屏幕已解锁 → 密码正确，清零计数器
                     Log.sm.debug("screen unlocked → password correct, resetting counter")
                     self.consecutiveUnlockAttempts = 0
+                    _log(component: "FUnManager", "tryUnlock() - verification passed, counter reset")
                 }
-                _log(component: "FUnManager", "tryUnlock() verify result: stillLocked=\(stillLocked), attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                verifier.logUnlockResult()
             }
         }
         resumeMediaIfNeeded()
