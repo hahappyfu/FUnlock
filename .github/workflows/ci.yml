@@ -42,12 +42,28 @@ jobs:
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
-    - name: Package
+    - name: Package DMG
       run: |
-        cd build/FUnlock.xcarchive/Products/Applications
-        zip -r ../../../FUnlock.zip FUnlock.app
+        # 创建临时目录
+        mkdir -p dmg-staging
+        cp -R build/FUnlock.xcarchive/Products/Applications/FUnlock.app dmg-staging/
+
+        # 创建 Applications 软链接
+        ln -s /Applications dmg-staging/Applications
+
+        # 创建 DMG
+        hdiutil create -volname "FUnlock" \
+          -srcfolder dmg-staging \
+          -ov -format UDZO \
+          build/FUnlock.dmg
+
+        # 清理临时目录
+        rm -rf dmg-staging
+
+        echo "DMG created: build/FUnlock.dmg"
+        ls -lh build/FUnlock.dmg
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: build/FUnlock.zip
+        files: build/FUnlock.dmg
         generate_release_notes: true
