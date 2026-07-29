@@ -18,7 +18,10 @@ jobs:
           -project FUnlock.xcodeproj \
           -scheme FUnlock \
           -destination 'platform=macOS' \
-          -enableCodeCoverage YES
+          -enableCodeCoverage YES \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
 
   release:
     needs: test
@@ -32,7 +35,10 @@ jobs:
           -project FUnlock.xcodeproj \
           -scheme FUnlock \
           -archivePath build/FUnlock.xcarchive \
-          -configuration Release
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
     - name: Package
       run: |
         cd build/FUnlock.xcarchive/Products/Applications
