@@ -41,7 +41,7 @@ brew install funlock
 
 ### 手动安装
 
-1. 从 [Releases](https://gitee.com/fuhahah/funlock/releases) 下载最新版本
+1. 从 [Releases](https://github.com/hahappyfu/FUnlock/releases) 下载最新版本
 2. 解压后将 `FUnlock.app` 移到 `/Applications` 文件夹
 3. 首次启动时按提示授予蓝牙和辅助功能权限
 

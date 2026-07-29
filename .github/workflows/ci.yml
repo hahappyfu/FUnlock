@@ -1,0 +1,45 @@
+name: CI + Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  push:
+    tags: ['v*']
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      run: |
+        xcodebuild clean test \
+          -project FUnlock.xcodeproj \
+          -scheme FUnlock \
+          -destination 'platform=macOS' \
+          -enableCodeCoverage YES
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build release
+      run: |
+        xcodebuild archive \
+          -project FUnlock.xcodeproj \
+          -scheme FUnlock \
+          -archivePath build/FUnlock.xcarchive \
+          -configuration Release
+    - name: Package
+      run: |
+        cd build/FUnlock.xcarchive/Products/Applications
+        zip -r ../../../FUnlock.zip FUnlock.app
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: build/FUnlock.zip
+        generate_release_notes: true

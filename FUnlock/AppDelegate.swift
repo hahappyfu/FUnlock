@@ -251,7 +251,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 self?.checkForUpdates()
             }
         } else {
-            NSWorkspace.shared.open(URL(string: "https://gitee.com/fuhahah/funlock/releases")!)
+            NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
         }
     }
 
