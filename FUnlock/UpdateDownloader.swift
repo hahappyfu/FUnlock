@@ -32,7 +32,7 @@ class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
     func download(version: String) {
         cancel()
         targetVersion = version
-        let url = URL(string: "https://gitee.com/fuhahah/funlock/releases/download/v\(version)/FUnlock.zip")!
+        let url = URL(string: "https://github.com/hahappyfu/FUnlock/releases/download/v\(version)/FUnlock.zip")!
 
         // 准备临时目录
         try? FileManager.default.removeItem(at: tempDir)
