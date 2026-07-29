@@ -552,18 +552,17 @@ final class FUnManager: ObservableObject {
             recordUnlockAttempt()
             _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
-            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
+            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed（方案 A：直接构造事件）
             let verifyStartTime = self.now
-            let verifier = FUnlockResultVerifier(
-                isStillLocked: { [weak self] in sys.isScreenLocked(screenState: self?.state.screen ?? .unlocked) },
-                startTime: verifyStartTime,
-                source: "proximity",
-                effectiveRSSI: fun.effectiveRSSI,
-                device: monitoredDeviceName
-            )
-            // 立即记录乐观解锁成功
-            verifier.logUnlockResult()
-            _log(component: "FUnManager", "tryUnlock() - optimistic unlock_confirmed recorded")
+            let optimisticExtras: [String: String] = [
+                "result": "success",
+                "latencyMs": "0",
+                "source": "proximity",
+                "effectiveRSSI": String(format: "%.1f", fun.effectiveRSSI),
+                "device": monitoredDeviceName ?? "unknown"
+            ]
+            ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: optimisticExtras)
+            _log(component: "FUnManager", "tryUnlock() - optimistic unlock_confirmed recorded (direct)")
             // 可选：后台 0.5 秒后检查一次，如果失败则记录 unlock_failed
             unlockConfirmTask?.cancel()
             unlockConfirmTask = Task { [weak self] in
@@ -577,15 +576,15 @@ final class FUnManager: ObservableObject {
                     // 屏幕仍锁定 → 密码可能错误，记录 unlock_failed
                     self.consecutiveUnlockAttempts += 1
                     Log.sm.debug("screen still locked after 0.5s verification → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                    // 记录 unlock_failed（覆盖之前的乐观 unlock_confirmed）
-                    let failVerifier = FUnlockResultVerifier(
-                        isStillLocked: { true },
-                        startTime: verifyStartTime,
-                        source: "proximity",
-                        effectiveRSSI: self.fun.effectiveRSSI,
-                        device: self.monitoredDeviceName
-                    )
-                    failVerifier.logUnlockResult()
+                    // 记录 unlock_failed
+                    let failExtras: [String: String] = [
+                        "result": "fail",
+                        "latencyMs": "500",
+                        "source": "proximity",
+                        "effectiveRSSI": String(format: "%.1f", self.fun.effectiveRSSI),
+                        "device": self.monitoredDeviceName ?? "unknown"
+                    ]
+                    ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
                     _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                     if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
                         sys.showPasswordMismatchAlert()
