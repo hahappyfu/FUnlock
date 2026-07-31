@@ -1,7 +1,8 @@
 // FUnlock/FUnlockStateMachine.swift
 import Foundation
 
-actor FUnlockStateMachine {
+@MainActor
+final class FUnlockStateMachine {
 
     // MARK: - 状态定义
 
@@ -19,9 +20,19 @@ actor FUnlockStateMachine {
 
     private(set) var currentState: State = .active
     private var lastUnlockAttempt: Date = .distantPast
-    private var consecutiveFailures: Int = 0
+    private(set) var consecutiveFailures: Int = 0
     private var failureCooldownDeadline: Date = .distantPast
     private var activeTask: Task<Void, Never>?
+
+    /// 可测试时间源（默认使用系统时间）
+    private let nowProvider: () -> Date
+    private var now: Date { nowProvider() }
+
+    // MARK: - Init
+
+    init(nowProvider: @escaping () -> Date = { Date() }) {
+        self.nowProvider = nowProvider
+    }
 
     // MARK: - 防抖配置
 
@@ -31,7 +42,12 @@ actor FUnlockStateMachine {
 
     /// 调用方可通过此属性查询当前是否处于失败冷却期
     var isInCooldown: Bool {
-        Date() < failureCooldownDeadline
+        now < failureCooldownDeadline
+    }
+
+    /// 是否处于可接受解锁尝试的状态（非 degraded、非冷却中）
+    var canAttemptUnlock: Bool {
+        currentState != .degraded && !isInCooldown
     }
 
     // MARK: - 状态转换
@@ -49,11 +65,15 @@ actor FUnlockStateMachine {
              (.displayAsleep, .preWaking),
              (.preWaking, .readyToUnlock),
              (.readyToUnlock, .unlocking),
+             (.active, .unlocking),
              (.unlocking, .active),
              (.unlocking, .cooldown),
              (.cooldown, .active),
+             (.active, .preWaking),
+             (.preWaking, .active),
              (_, .degraded),
-             (_, .active):  // 任意状态可以切回 active（用户干预）
+             (_, .active),    // 任意状态可以切回 active（用户干预）
+             (_, .cooldown):  // 任意状态可以进入 cooldown（失败处理）
             return true
         default:
             return false
@@ -63,7 +83,7 @@ actor FUnlockStateMachine {
     // MARK: - 解锁尝试
 
     func attemptUnlock() -> Bool {
-        let now = Date()
+        let currentNow = now
 
         // 降级短路：已进入降级状态，拒绝任何解锁尝试
         guard currentState != .degraded else {
@@ -71,7 +91,7 @@ actor FUnlockStateMachine {
         }
 
         // 防抖检查
-        guard now.timeIntervalSince(lastUnlockAttempt) > unlockCooldown else {
+        guard currentNow.timeIntervalSince(lastUnlockAttempt) > unlockCooldown else {
             return false
         }
 
@@ -81,7 +101,7 @@ actor FUnlockStateMachine {
             return false
         }
 
-        lastUnlockAttempt = now
+        lastUnlockAttempt = currentNow
         transition(to: .unlocking)
         return true
     }
@@ -90,7 +110,7 @@ actor FUnlockStateMachine {
 
     func handleUnlockFailure() {
         consecutiveFailures += 1
-        failureCooldownDeadline = Date().addingTimeInterval(failureCooldown)
+        failureCooldownDeadline = now.addingTimeInterval(failureCooldown)
 
         if consecutiveFailures >= maxConsecutiveFailures {
             transition(to: .degraded)
@@ -103,7 +123,8 @@ actor FUnlockStateMachine {
 
     func handleUnlockSuccess() {
         consecutiveFailures = 0
-        lastUnlockAttempt = Date()
+        lastUnlockAttempt = now
+        failureCooldownDeadline = .distantPast  // 清除失败冷却
         transition(to: .active)
     }
 
@@ -112,6 +133,7 @@ actor FUnlockStateMachine {
     func resetToActive() {
         currentState = .active
         consecutiveFailures = 0
+        failureCooldownDeadline = .distantPast  // 清除失败冷却
         activeTask?.cancel()
         activeTask = nil
     }
