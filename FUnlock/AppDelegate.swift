@@ -402,6 +402,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    // MARK: - 用户主动干预监听
+
+    /// 监听屏幕唤醒通知，用户主动干预时强制状态机回到 active
+    func setupUserInterventionObserver() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.manager.onUserIntervention()
+        }
+    }
+
     @objc private func handleGlobalHotKey() {
         DispatchQueue.main.async { [weak self] in
             self?.lockNow()
@@ -566,6 +579,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // 注册全局快捷键 ⌘⇧L（lock screen）
         setupGlobalHotKey()
+
+        // 监听用户主动干预（手动唤醒屏幕）→ 强制状态机恢复 active
+        setupUserInterventionObserver()
     }
 
     func setupSettingsWindow() {

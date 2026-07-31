@@ -244,6 +244,16 @@ final class FUnManager: ObservableObject {
         }
     }
 
+    /// 用户主动干预（如手动唤醒屏幕）时调用，强制状态机回到 active
+    func onUserIntervention() {
+        Log.sm.debug("[SM] userIntervention — force reset to active")
+        stateMachine.resetToActive()
+        wakeTask?.cancel()
+        wakeTask = nil
+        unlockTask?.cancel()
+        unlockTask = nil
+    }
+
     func onUnlock() {
         Log.sm.debug("[SM] userUnlocked")
         state.screen = .unlocked
