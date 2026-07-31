@@ -346,6 +346,145 @@ final class SystemInteractionService {
         }
     }
 
+    // MARK: - 双保险验证
+
+    /// 解锁通知结果
+    struct UnlockNotification {
+        let unlock: Bool
+    }
+
+    /// 等待系统解锁（快速路径）
+    /// 监听 NSWorkspace.didWakeNotification（系统唤醒信号）+ 轮询 CGSession
+    /// 系统唤醒时立即开始高频轮询，比纯 CGSession 轮询更快响应
+    func waitForUnlockNotification(timeout: TimeInterval = 1.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        // 唤醒信号：收到后立即开始高频轮询（比固定间隔更快）
+        let wakeSignal = NSLock()
+        var wakeDetected = false
+
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            wakeSignal.lock()
+            wakeDetected = true
+            wakeSignal.unlock()
+        }
+
+        defer {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+
+        while Date() < deadline {
+            // 检查 CGSession
+            if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
+                if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
+                    _log(component: "SystemInteraction", "waitForUnlockNotification: unlocked via CGSession")
+                    return true
+                }
+            } else {
+                _log(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → unlocked")
+                return true
+            }
+            // 唤醒信号检测到后用更短间隔轮询（50ms），否则200ms
+            wakeSignal.lock()
+            let detected = wakeDetected
+            wakeSignal.unlock()
+            let interval: UInt64 = detected ? 50_000_000 : 200_000_000
+            try? await Task.sleep(nanoseconds: interval)
+        }
+        _log(component: "SystemInteraction", "waitForUnlockNotification: timeout (\(timeout)s)")
+        return false
+    }
+
+    /// 通过 CGSession 轮询检测屏幕是否解锁（兜底路径，最多2秒）
+    /// 每100ms 检查一次 CGSessionCopyCurrentDictionary，超时返回 false
+    func checkScreenUnlocked(timeout: TimeInterval = 2.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
+                if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
+                    _log(component: "SystemInteraction", "checkScreenUnlocked: screen unlocked via CGSession")
+                    return true
+                }
+            } else {
+                // CGSessionCopyCurrentDictionary 在非锁定状态可能返回 nil，视为已解锁
+                _log(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → unlocked")
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        }
+        _log(component: "SystemInteraction", "checkScreenUnlocked: timeout (\(timeout)s)")
+        return false
+    }
+
+    /// 双保险验证：通知 + CGSession 竞速，withTaskGroup 实现
+    /// 任一路径先返回 true 即为解锁成功；全部超时返回 .timeout
+    @MainActor
+    func verifyUnlock(
+        timeout: TimeInterval = 2.0,
+        notificationTimeout: TimeInterval = 1.0
+    ) async -> UnlockNotification {
+        let result = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+            // 路径1：系统解锁通知（快速，约100ms）
+            group.addTask { [self] in
+                await self.waitForUnlockNotification(timeout: notificationTimeout)
+            }
+            // 路径2：CGSession 轮询（兜底，最多2秒）
+            group.addTask { [self] in
+                await self.checkScreenUnlocked(timeout: timeout)
+            }
+
+            // 超时兜底：整体 deadline
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+
+            // 任一路径返回 true 立即获胜
+            for await success in group {
+                if success {
+                    group.cancelAll()
+                    return true
+                }
+            }
+            return false
+        }
+        return UnlockNotification(unlock: result)
+    }
+
+    /// 双保险验证（可测试版本）：接受注入的通知监听和屏幕检查闭包
+    /// 用于单元测试时替换系统 API 调用
+    @MainActor
+    static func verifyUnlock(
+        timeout: TimeInterval = 2.0,
+        notificationTimeout: TimeInterval = 1.0,
+        waitForNotification: @escaping (TimeInterval) async -> Bool,
+        checkUnlocked: @escaping (TimeInterval) async -> Bool
+    ) async -> UnlockNotification {
+        let result = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+            group.addTask {
+                await waitForNotification(notificationTimeout)
+            }
+            group.addTask {
+                await checkUnlocked(timeout)
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+            for await success in group {
+                if success {
+                    group.cancelAll()
+                    return true
+                }
+            }
+            return false
+        }
+        return UnlockNotification(unlock: result)
+    }
+
     // MARK: - Alert Dialogs
 
     /// Show AX permission revoked alert (throttled to once per hour)
