@@ -2915,3 +2915,128 @@ class KeychainSecurityTests: XCTestCase {
         service.handlePasswordChanged()
     }
 }
+
+// MARK: - 用户主动干预处理测试
+
+/// 测试 FUnManager.onUserIntervention() 的各种状态转换场景
+/// 覆盖：从降级/冷却状态恢复 active，以及幂等性验证
+@MainActor
+class UserInterventionTests: XCTestCase {
+
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        manager = FUnManager(fun: FUn())
+    }
+
+    // MARK: - 从降级状态恢复
+
+    func testUserInterventionResetsFromDegraded() {
+        // 触发 3 次失败 → 降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded, "3 次失败后应为 degraded")
+
+        // 用户干预 → 恢复 active
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "用户干预后状态机应重置为 active")
+    }
+
+    // MARK: - 从冷却状态恢复
+
+    func testUserInterventionResetsFromCooldown() {
+        // 触发 2 次失败 → 进入冷却（未达到降级阈值）
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown, "2 次失败后应为 cooldown")
+
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "用户干预后应从 cooldown 恢复到 active")
+    }
+
+    // MARK: - 重置失败计数
+
+    func testUserInterventionClearsConsecutiveFailures() {
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2,
+                       "两次失败后 consecutiveFailures 应为 2")
+
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "用户干预后 consecutiveFailures 应清零")
+    }
+
+    // MARK: - 幂等性：对 active 状态调用不产生副作用
+
+    func testUserInterventionIdempotentOnActive() {
+        XCTAssertEqual(manager.stateMachine.currentState, .active, "初始应为 active")
+
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "对 active 状态调用应保持 active")
+    }
+
+    // MARK: - 连续多次调用幂等
+
+    func testMultipleUserInterventionsAreIdempotent() {
+        // 触发降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded)
+
+        // 连续两次干预
+        manager.onUserIntervention()
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "连续多次用户干预后状态机应稳定在 active")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "连续多次干预后失败计数应为 0")
+    }
+
+    // MARK: - 干预后 canAttemptUnlock 恢复
+
+    func testUserInterventionRestoresCanAttemptUnlock() {
+        // 降级 → canAttemptUnlock 应为 false
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertFalse(manager.stateMachine.canAttemptUnlock, "降级后不应允许解锁尝试")
+
+        // 用户干预
+        manager.onUserIntervention()
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock,
+                      "用户干预后应恢复 canAttemptUnlock")
+    }
+
+    // MARK: - 干预后 isInCooldown 清除
+
+    func testUserInterventionClearsCooldown() {
+        // 触发失败 → isInCooldown 应为 true
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertTrue(manager.stateMachine.isInCooldown, "失败后应处于冷却期")
+
+        manager.onUserIntervention()
+        XCTAssertFalse(manager.stateMachine.isInCooldown,
+                       "用户干预后冷却应被清除")
+    }
+
+    // MARK: - 与 onUnlock 的行为一致性
+
+    func testUserInterventionSameAsOnUnlockForStateMachine() {
+        // 降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+
+        // 用户干预应与 onUnlock 达到相同的状态机结果
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active)
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0)
+    }
+}
