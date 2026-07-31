@@ -561,7 +561,15 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
             return
         }
-        guard let password = sec.fetchPassword(warn: true) else { Log.sm.debug("SKIP: no password"); return }
+        let fetchResult = sec.fetchPassword(warn: true)
+        guard case .success(let password) = fetchResult, let password = password else {
+            if case .failure(let error) = fetchResult {
+                Log.sm.debug("SKIP: Keychain error - \(error)")
+            } else {
+                Log.sm.debug("SKIP: no password")
+            }
+            return
+        }
         _log(component: "FUnManager", "tryUnlock() password fetched - length=\(password.count)")
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁

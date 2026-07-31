@@ -1,6 +1,23 @@
 import Foundation
 import Cocoa
 
+/// Keychain 操作错误类型，用于区分冷启动等安全限制场景
+enum KeychainError: Error, CustomStringConvertible {
+    /// 冷启动：系统重启后用户尚未手动解锁一次
+    case coldBoot
+    /// 其他 Keychain 错误
+    case other(OSStatus, String?)
+
+    var description: String {
+        switch self {
+        case .coldBoot:
+            return "Keychain 冷启动：设备重启后需手动解锁一次"
+        case .other(let status, let msg):
+            return msg ?? "Keychain 错误 Status \(status)"
+        }
+    }
+}
+
 final class SecurityService {
     static let shared = SecurityService()
     private init() {}
@@ -16,7 +33,7 @@ final class SecurityService {
             String(kSecAttrAccount): NSUserName(),
             String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
             String(kSecAttrLabel): "FUnlock",
-            String(kSecAttrAccessible): kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            String(kSecAttrAccessible): kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             String(kSecValueData): pw,
         ]
         SecItemDelete(query as CFDictionary)
@@ -28,8 +45,9 @@ final class SecurityService {
         return nil
     }
 
-    /// Fetch password from Keychain. If warn=true and not found, shows error modal.
-    func fetchPassword(warn: Bool = false) -> String? {
+    /// Fetch password from Keychain.
+    /// - Returns: password string on success, nil on not-found (shows modal if warn=true), KeychainError on security error.
+    func fetchPassword(warn: Bool = false) -> Result<String?, KeychainError> {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
@@ -41,18 +59,35 @@ final class SecurityService {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound {
             if warn { UIHelper.errorModal(t("password_not_set")) }
-            return nil
+            return .success(nil)
+        }
+        if status == errSecInteractionNotAllowed {
+            return .failure(.coldBoot)
         }
         guard status == errSecSuccess else {
             let info = SecCopyErrorMessageString(status, nil)
-            UIHelper.errorModal(t("failed_retrieve_password"), info: info as String? ?? "Status \(status)")
-            return nil
+            return .failure(.other(status, info as String?))
         }
         guard let data = item as? Data else {
             UIHelper.errorModal(t("failed_convert_password"))
+            return .success(nil)
+        }
+        return .success(String(data: data, encoding: .utf8))
+    }
+
+    /// 便捷方法：从 Result 中提取密码，冷启动时显示提示并返回 nil
+    func fetchPasswordOrShowError(warn: Bool = false) -> String? {
+        switch fetchPassword(warn: warn) {
+        case .success(let pw):
+            return pw
+        case .failure(let error):
+            if error.isColdBoot {
+                UIHelper.errorModal(t("cold_boot_keychain"), info: error.description)
+            } else {
+                UIHelper.errorModal(t("failed_retrieve_password"), info: error.description)
+            }
             return nil
         }
-        return String(data: data, encoding: .utf8)
     }
 
     /// Delete stored password from Keychain
@@ -69,7 +104,8 @@ final class SecurityService {
 
     /// Handle system password change notification: clear old password and prompt user
     func handlePasswordChanged() {
-        guard fetchPassword() != nil else { return }
+        if case .failure = fetchPassword() { return }
+        if case .success(nil) = fetchPassword() { return }
         Log.sm.debug("system password changed, clearing stored password")
         deletePassword()
 
@@ -119,5 +155,21 @@ enum UIHelper {
         alert.window.title = "FUnlock"
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+}
+
+// MARK: - KeychainError 便捷扩展
+
+extension KeychainError {
+    /// 是否为冷启动错误（errSecInteractionNotAllowed）
+    var isColdBoot: Bool {
+        if case .coldBoot = self { return true }
+        return false
+    }
+
+    /// 底层 OSStatus（仅 .other 有值）
+    var osStatus: OSStatus? {
+        if case .other(let status, _) = self { return status }
+        return nil
     }
 }
