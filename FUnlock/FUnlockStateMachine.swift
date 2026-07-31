@@ -1,5 +1,6 @@
 // FUnlock/FUnlockStateMachine.swift
 import Foundation
+import UserNotifications
 
 @MainActor
 final class FUnlockStateMachine {
@@ -39,6 +40,9 @@ final class FUnlockStateMachine {
     private let unlockCooldown: TimeInterval = 5.0
     private let failureCooldown: TimeInterval = 10.0
     private let maxConsecutiveFailures: Int = 3
+
+    /// 降级通知标识符（供 AppDelegate 响应处理使用）
+    static let degradedNotificationID = "funlock-degraded"
 
     /// 调用方可通过此属性查询当前是否处于失败冷却期
     var isInCooldown: Bool {
@@ -114,6 +118,7 @@ final class FUnlockStateMachine {
 
         if consecutiveFailures >= maxConsecutiveFailures {
             transition(to: .degraded)
+            sendLocalNotification()
         } else {
             transition(to: .cooldown)
         }
@@ -136,6 +141,23 @@ final class FUnlockStateMachine {
         failureCooldownDeadline = .distantPast  // 清除失败冷却
         activeTask?.cancel()
         activeTask = nil
+    }
+
+    // MARK: - 降级通知
+
+    /// 发送本地通知，提醒用户连续解锁失败已达上限
+    func sendLocalNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "FUnlock"
+        content.body = "连续自动解锁失败已达上限，已暂停自动解锁。点击此通知恢复。"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: FUnlockStateMachine.degradedNotificationID,
+            content: content,
+            trigger: nil  // 立即投递
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     // MARK: - 任务管理
