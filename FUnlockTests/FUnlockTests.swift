@@ -3040,3 +3040,532 @@ class UserInterventionTests: XCTestCase {
         XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0)
     }
 }
+
+// MARK: - 集成测试：完整解锁流程
+
+/// 完整解锁流程集成测试：BLE 信号 → 预备唤醒 → 密码注入
+/// 模拟从 BLE 扫描到最终解锁的完整链路
+@MainActor
+class FullUnlockFlowIntegrationTests: XCTestCase {
+
+    private var currentTime: Date!
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let fun = FUn()
+        manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    }
+
+    // MARK: - 完整解锁流程：BLE 信号 → 预备唤醒 → 密码注入
+
+    /// 场景：设备从 BLE 扫描信号逐步增强，经历预备唤醒到最终解锁
+    func testFullUnlockFlowScanToUnlock() {
+        // onDeviceApproached 需要 enabled 和 wakeOnProximity 为 true
+        UserDefaults.standard.set(true, forKey: "enabled")
+        UserDefaults.standard.set(true, forKey: "wakeOnProximity")
+        defer {
+            UserDefaults.standard.removeObject(forKey: "enabled")
+            UserDefaults.standard.removeObject(forKey: "wakeOnProximity")
+        }
+
+        // 步骤 1：初始状态 — 系统未锁定
+        XCTAssertEqual(manager.state.screen, .unlocked, "初始 screen 应为 unlocked")
+        XCTAssertEqual(manager.state.system, .awake, "初始 system 应为 awake")
+
+        // 步骤 2：屏幕息屏（显示器进入睡眠）
+        manager.onDisplaySleep()
+        XCTAssertEqual(manager.state.screen, .displaySleeping,
+                       "onDisplaySleep 后 screen 应为 displaySleeping")
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "displaySleeping 时 canAutoUnlock 应为 false")
+
+        // 步骤 3：BLE 信号达到预备唤醒阈值（平滑 RSSI >= -60dBm）
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.onRSSIUpdated(rssi: -50, active: false)
+        for _ in 0..<5 {
+            manager.onRSSIUpdated(rssi: -50, active: false)
+        }
+
+        // 步骤 4：设备靠近事件触发预备唤醒
+        manager.fun.effectiveRSSI = -55.0
+        manager.onDeviceApproached()
+
+        // 验证：唤醒阶段已启动
+        XCTAssertEqual(manager.state.wake, .pending,
+                       "预备唤醒触发后 wake 应为 pending")
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .away,
+                           "startWakeRetry 后 screen 应从 displaySleeping 变为 locked(away)")
+        } else {
+            XCTFail("预备唤醒后 screen 应为 locked(away)")
+        }
+
+        // 步骤 5：显示器唤醒完成
+        manager.onDisplayWake()
+        XCTAssertEqual(manager.state.wake, .succeeded,
+                       "显示器唤醒后 wake 应为 succeeded")
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .away,
+                           "显示器唤醒后 screen 应为 locked(away)（等待信号达到解锁阈值）")
+        }
+
+        // 步骤 6：信号继续增强到解锁阈值（effectiveRSSI >= -50dBm）
+        manager.fun.effectiveRSSI = -45.0
+        manager.fun.presence = true
+
+        // 模拟解锁成功路径
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked,
+                       "解锁成功后 screen 应为 unlocked")
+        XCTAssertEqual(manager.state.intent, .autoLock,
+                       "解锁后 intent 应重置为 autoLock")
+        XCTAssertFalse(manager.state.isEffectivelyLocked,
+                       "解锁后 isEffectivelyLocked 应为 false")
+    }
+
+    /// 场景：BLE 信号从弱到强，只触发预备唤醒但未达到解锁阈值
+    func testPartialFlowOnlyPreWakeNotUnlock() {
+        // 设置初始状态：屏幕息屏
+        manager.onDisplaySleep()
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+
+        // onDeviceApproached 需要 enabled 和 wakeOnProximity 为 true
+        UserDefaults.standard.set(true, forKey: "enabled")
+        UserDefaults.standard.set(true, forKey: "wakeOnProximity")
+
+        // 信号达到预备唤醒阈值但未达到解锁阈值
+        manager.fun.effectiveRSSI = -55.0  // > -60 preWake, < -50 unlock
+        manager.onDeviceApproached()
+
+        // 验证：只触发预备唤醒，未触发解锁
+        XCTAssertEqual(manager.state.wake, .pending,
+                       "应触发预备唤醒")
+        // screen 应从 displaySleeping 变为 locked(away)
+        if case .locked = manager.state.screen {
+            // OK — 已从 displaySleeping 变为 locked，但未解锁
+        } else {
+            XCTFail("信号在两阶段阈值之间时应进入 locked(away)")
+        }
+        // 验证未解锁
+        XCTAssertTrue(manager.state.isEffectivelyLocked,
+                      "信号未达解锁阈值时应保持锁定")
+
+        UserDefaults.standard.removeObject(forKey: "enabled")
+        UserDefaults.standard.removeObject(forKey: "wakeOnProximity")
+    }
+
+    /// 场景：系统休眠状态下不触发密码注入
+    func testSystemSleepingBlocksUnlockInjection() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.presence = true
+        manager.onSystemScreenLocked()
+
+        // 系统进入休眠
+        manager.onSystemSleep()
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "onSystemSleep 后 system 应为 sleeping")
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "系统休眠时 canAutoUnlock 应为 false")
+
+        // 尝试解锁路径 — 应被阻止
+        manager.fun.effectiveRSSI = -45.0
+        manager.onDeviceApproached()
+
+        // canAutoUnlock 在 sleeping 状态下应为 false
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "系统休眠时即使信号强也不应允许自动解锁")
+    }
+
+    /// 场景：完整解锁 → 离场锁屏 → 再次靠近解锁循环
+    func testUnlockLockRelockCycle() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.presence = true
+        manager.onSystemScreenLocked()
+
+        // 1. 首次解锁
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+        XCTAssertTrue(manager.state.canAutoUnlock)
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "解锁成功后状态机应为 active")
+
+        // 2. 等待冷却过期
+        currentTime = currentTime.addingTimeInterval(6)
+
+        // 3. 设备远离 → 锁屏
+        manager.isSelfLocking = true
+        manager.onSystemScreenLocked()
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .manual, "锁屏后应为 locked(manual)")
+        } else {
+            XCTFail("锁屏后 screen 应为 .locked")
+        }
+
+        // 4. 再次解锁
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked,
+                       "第二次解锁后应为 unlocked")
+
+        // 验证状态机在完整循环中保持一致
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "完整循环后状态机应为 active")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "完整循环后失败计数应为 0")
+    }
+}
+
+// MARK: - 集成测试：电源状态变化与扫描控制
+
+/// 电源状态变化 → 扫描控制集成测试
+/// 模拟系统休眠/唤醒循环对 BLE 扫描和解锁能力的影响
+@MainActor
+class PowerStateScanControlIntegrationTests: XCTestCase {
+
+    private var currentTime: Date!
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let fun = FUn()
+        manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    }
+
+    // MARK: - 电源状态变化 → 扫描控制
+
+    /// 场景：系统休眠 → 唤醒 → 扫描恢复 → 解锁
+    func testSystemSleepWakeScanResume() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+
+        // 1. 系统休眠
+        manager.onSystemSleep()
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "系统休眠后 system 应为 sleeping")
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "休眠中不能自动解锁")
+
+        // 2. 系统唤醒 — 验证 system 恢复为 awake（通过 Task 异步）
+        manager.onSystemWake()
+        // onSystemWake 有 1 秒延迟，用 dispatch 等待
+        let expectation = XCTestExpectation(description: "system wake completes")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            XCTAssertEqual(self.manager.state.system, .awake,
+                           "系统唤醒后 system 应为 awake")
+            XCTAssertTrue(self.manager.state.canAutoUnlock,
+                          "唤醒后 canAutoUnlock 应恢复为 true")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 2.0)
+    }
+
+    /// 场景：显示器休眠 → 唤醒 → 状态正确传递
+    func testDisplaySleepWakeCycle() {
+        // 1. 显示器息屏
+        manager.onDisplaySleep()
+        XCTAssertEqual(manager.state.screen, .displaySleeping,
+                       "显示器息屏后 screen 应为 displaySleeping")
+        XCTAssertTrue(manager.state.isEffectivelyLocked,
+                      "显示器息屏时应视为有效锁定")
+
+        // 2. 显示器唤醒
+        manager.onDisplayWake()
+        XCTAssertEqual(manager.state.wake, .succeeded,
+                       "唤醒后 wake 应为 succeeded")
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .away,
+                           "显示器唤醒后 screen 应为 locked(away)")
+        }
+    }
+
+    /// 场景：系统休眠 → 显示器息屏 → 系统唤醒 → 显示器唤醒 完整电源循环
+    func testFullPowerCycle() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+
+        // 1. 系统休眠
+        manager.onSystemSleep()
+        XCTAssertEqual(manager.state.system, .sleeping)
+
+        // 2. 系统休眠时显示器息屏
+        manager.onDisplaySleep()
+        XCTAssertEqual(manager.state.screen, .displaySleeping)
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "显示器息屏时系统仍应为 sleeping")
+
+        // 3. 系统唤醒（有延迟）
+        manager.onSystemWake()
+
+        // 立即验证：system 仍为 sleeping（唤醒有 1 秒延迟）
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "onSystemWake 立即调用后 system 仍应为 sleeping")
+
+        // 4. 等待系统唤醒完成
+        let expectation = XCTestExpectation(description: "full power cycle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            XCTAssertEqual(self.manager.state.system, .awake,
+                           "延迟后 system 应恢复为 awake")
+
+            // 5. 显示器唤醒
+            self.manager.onDisplayWake()
+            XCTAssertEqual(self.manager.state.wake, .succeeded)
+            XCTAssertTrue(self.manager.state.canAutoUnlock,
+                          "完整电源循环后应恢复解锁能力")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 2.0)
+    }
+
+    /// 场景：系统休眠时设备靠近不应触发解锁
+    func testDeviceApproachDuringSystemSleep() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.presence = true
+        manager.onSystemScreenLocked()
+
+        // 系统休眠
+        manager.onSystemSleep()
+        XCTAssertEqual(manager.state.system, .sleeping)
+
+        // 设备靠近 — 由于 enabled 取决于 UserDefaults，先设置
+        UserDefaults.standard.set(true, forKey: "enabled")
+        manager.fun.effectiveRSSI = -45.0
+        manager.onDeviceApproached()
+
+        // 验证：canAutoUnlock 应为 false（系统休眠阻止）
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "系统休眠时设备靠近不应允许自动解锁")
+
+        UserDefaults.standard.removeObject(forKey: "enabled")
+    }
+
+    /// 场景：蓝牙状态属性验证
+    /// 注意：CBCentralManager.state 为只读，无法在测试中直接模拟蓝牙开关。
+    /// 验证 FUn 蓝牙相关属性在初始化后可访问且不崩溃。
+    func testBluetoothPropertiesAccessibleAfterInit() {
+        // 验证 FUn 的蓝牙相关属性在初始化后可正常访问
+        XCTAssertNotNil(manager.fun.centralMgr, "centralMgr 不应为 nil")
+        XCTAssertFalse(manager.fun.presence, "初始 presence 应为 false")
+
+        // 验证 invalidateAllTimers 不崩溃（蓝牙关闭时也会调用）
+        manager.fun.invalidateAllTimers()
+        // 无崩溃即通过
+    }
+}
+
+// MARK: - 集成测试：密码修改 → 降级 → 恢复
+
+/// 密码修改 → 状态机降级 → 用户恢复的完整生命周期集成测试
+/// 覆盖：密码变更导致 Keychain 不可用 → 连续失败 → 降级 → 用户干预 → 恢复
+@MainActor
+class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
+
+    private var currentTime: Date!
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let fun = FUn()
+        manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    }
+
+    // MARK: - 密码修改 → 降级 → 恢复
+
+    /// 场景：密码修改后 Keychain 不可用 → 连续 3 次失败 → 降级 → 用户干预 → 恢复
+    func testPasswordChangeCausesDegradedThenRecovery() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+
+        // 1. 初始状态正常
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock,
+                      "初始状态应允许解锁尝试")
+        XCTAssertEqual(manager.stateMachine.currentState, .active)
+
+        // 2. 模拟密码修改后状态机连续 3 次失败
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 1,
+                       "第 1 次失败后 consecutiveFailures 应为 1")
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown,
+                       "第 1 次失败后应为 cooldown")
+
+        currentTime = currentTime.addingTimeInterval(11)  // 超过失败冷却期
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2,
+                       "第 2 次失败后 consecutiveFailures 应为 2")
+
+        currentTime = currentTime.addingTimeInterval(11)
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 3,
+                       "第 3 次失败后 consecutiveFailures 应为 3")
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded,
+                       "3 次失败后应进入降级状态")
+
+        // 3. 降级状态下不能解锁
+        XCTAssertFalse(manager.stateMachine.canAttemptUnlock,
+                       "降级状态下不能解锁")
+        XCTAssertFalse(manager.stateMachine.attemptUnlock(),
+                       "降级状态下 attemptUnlock 应返回 false")
+
+        // 4. 用户干预恢复
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "用户干预后应恢复为 active")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "用户干预后失败计数应清零")
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock,
+                      "用户干预后应恢复解锁能力")
+    }
+
+    /// 场景：onUnlock 也能从降级状态恢复（用户手动输入密码解锁）
+    func testOnUnlockResetsDegradedState() {
+        // 触发降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded)
+
+        // 用户手动解锁 → onUnlock 重置状态机
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+
+        // 等待 Task 中的 resetToActive 完成
+        let expectation = XCTestExpectation(description: "async reset")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertEqual(self.manager.stateMachine.currentState, .active,
+                           "onUnlock 后状态机应重置为 active")
+            self.currentTime = self.currentTime.addingTimeInterval(6)
+            XCTAssertTrue(self.manager.stateMachine.canAttemptUnlock,
+                          "onUnlock 恢复后应允许解锁")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    /// 场景：降级后恢复 → 重新进入正常解锁循环
+    func testDegradedThenRecoveryFullCycle() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.presence = true
+
+        // 1. 降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertFalse(manager.stateMachine.canAttemptUnlock)
+
+        // 2. 恢复
+        manager.onUserIntervention()
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
+
+        // 3. 正常解锁
+        manager.onSystemScreenLocked()
+        currentTime = currentTime.addingTimeInterval(1)
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+
+        // 4. 再次锁屏
+        currentTime = currentTime.addingTimeInterval(6)
+        manager.isSelfLocking = true
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.isEffectivelyLocked)
+
+        // 5. 再次解锁 — 验证完整循环正常
+        manager.onUnlock()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "完整循环后失败计数应为 0")
+    }
+
+    /// 场景：降级通知重置（模拟用户点击通知）
+    func testDegradedNotificationReset() {
+        // 触发降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded)
+
+        // 模拟用户点击降级通知（与 AppDelegate 中处理逻辑一致）
+        manager.stateMachine.resetToActive()
+
+        // 验证完全恢复
+        XCTAssertEqual(manager.stateMachine.currentState, .active)
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0)
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
+        XCTAssertFalse(manager.stateMachine.isInCooldown)
+    }
+
+    /// 场景：降级期间的连续失败处理（部分失败未达降级阈值）
+    func testPartialFailuresNoDegradation() {
+        // 1 次失败
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 1)
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown)
+        XCTAssertFalse(manager.stateMachine.isInCooldown ? false : true,
+                       "失败后应处于冷却期")
+
+        // 等待冷却过期
+        currentTime = currentTime.addingTimeInterval(11)
+
+        // 2 次失败（但重置了冷却）
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2)
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown)
+
+        // 等待冷却过期
+        currentTime = currentTime.addingTimeInterval(11)
+
+        // 成功解锁 — 清零失败计数
+        manager.stateMachine.handleUnlockSuccess()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
+                       "成功后失败计数应清零")
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "成功后应恢复为 active")
+
+        // 重新开始 2 次失败，不应降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2)
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown)
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock || manager.stateMachine.isInCooldown,
+                      "2 次失败后不应进入降级")
+    }
+
+    /// 场景：阈值设置后信号处理 → 密码修改期间的行为一致性
+    func testThresholdChangeDuringDegradation() {
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+
+        // 设置新的阈值
+        manager.setLockRSSI(-75)
+        manager.setUnlockRSSI(-55)
+        XCTAssertEqual(manager.lockRSSI, -75, "lockRSSI 应更新为 -75")
+        XCTAssertEqual(manager.unlockRSSI, -55, "unlockRSSI 应更新为 -55")
+        XCTAssertEqual(manager.fun.lockRSSI, -75, "FUn.lockRSSI 应同步")
+        XCTAssertEqual(manager.fun.unlockRSSI, -55, "FUn.unlockRSSI 应同步")
+
+        // 降级期间修改阈值
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded)
+
+        // 阈值仍可修改
+        manager.setLockRSSI(-85)
+        manager.setUnlockRSSI(-65)
+        XCTAssertEqual(manager.lockRSSI, -85)
+        XCTAssertEqual(manager.unlockRSSI, -65)
+
+        // 恢复后阈值保持
+        manager.onUserIntervention()
+        XCTAssertEqual(manager.lockRSSI, -85)
+        XCTAssertEqual(manager.unlockRSSI, -65)
+        XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
+    }
+}
