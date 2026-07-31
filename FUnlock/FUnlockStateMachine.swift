@@ -5,7 +5,7 @@ actor FUnlockStateMachine {
 
     // MARK: - 状态定义
 
-    enum State: Equatable {
+    enum State: Equatable, Hashable {
         case active              // 正常使用中
         case displayAsleep       // 屏幕息屏，但系统未休眠
         case preWaking           // 触发预备唤醒
@@ -20,6 +20,7 @@ actor FUnlockStateMachine {
     private(set) var currentState: State = .active
     private var lastUnlockAttempt: Date = .distantPast
     private var consecutiveFailures: Int = 0
+    private var failureCooldownDeadline: Date = .distantPast
     private var activeTask: Task<Void, Never>?
 
     // MARK: - 防抖配置
@@ -27,6 +28,11 @@ actor FUnlockStateMachine {
     private let unlockCooldown: TimeInterval = 5.0
     private let failureCooldown: TimeInterval = 10.0
     private let maxConsecutiveFailures: Int = 3
+
+    /// 调用方可通过此属性查询当前是否处于失败冷却期
+    var isInCooldown: Bool {
+        Date() < failureCooldownDeadline
+    }
 
     // MARK: - 状态转换
 
@@ -59,6 +65,11 @@ actor FUnlockStateMachine {
     func attemptUnlock() -> Bool {
         let now = Date()
 
+        // 降级短路：已进入降级状态，拒绝任何解锁尝试
+        guard currentState != .degraded else {
+            return false
+        }
+
         // 防抖检查
         guard now.timeIntervalSince(lastUnlockAttempt) > unlockCooldown else {
             return false
@@ -79,12 +90,21 @@ actor FUnlockStateMachine {
 
     func handleUnlockFailure() {
         consecutiveFailures += 1
+        failureCooldownDeadline = Date().addingTimeInterval(failureCooldown)
 
         if consecutiveFailures >= maxConsecutiveFailures {
             transition(to: .degraded)
         } else {
             transition(to: .cooldown)
         }
+    }
+
+    // MARK: - 成功处理
+
+    func handleUnlockSuccess() {
+        consecutiveFailures = 0
+        lastUnlockAttempt = Date()
+        transition(to: .active)
     }
 
     // MARK: - 重置状态
