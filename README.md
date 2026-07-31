@@ -159,7 +159,7 @@ FUnlock/
 │   ├── ScriptRunner.swift             # 脚本事件执行（从 FUnManager 解耦）
 │   ├── TelemetryLogger.swift          # 结构化日志 + 关键路径埋点
 │   ├── FUnlockStateMachine.swift      # Actor 状态机（v2.6.0 安全加固）
-│   ├── InputActivityMonitor           # IOKit HID 键盘/触控板活动检测
+│   ├── InputActivityMonitor           # (AppDelegate.swift 内) IOKit HID 键盘/触控板活动检测
 │   ├── CalibrationWizardView.swift    # 阈值校准向导
 │   ├── OnboardingView.swift           # 首次启动引导页
 │   ├── StatsView.swift                # 统计数据视图
