@@ -557,15 +557,15 @@ final class FUnManager: ObservableObject {
         _log(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
         guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
 
-        Log.sm.debug("typing password (\(password.count) chars)")
+        Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
-        _log(component: "FUnManager", "tryUnlock() calling fakeKeyStrokes(\(password.count) chars)")
-        let posted = sys.fakeKeyStrokes(password) {
+        _log(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude(\(password.count) chars)")
+        let posted = sys.injectPasswordWithPrelude(password) {
             self.state.screen != .unlocked
             && sys.isSecureToInject(screenState: self.state.screen)
         }
-        _log(component: "FUnManager", "tryUnlock() fakeKeyStrokes returned posted=\(posted)")
+        _log(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")

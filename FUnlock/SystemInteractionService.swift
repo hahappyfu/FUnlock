@@ -246,6 +246,61 @@ final class SystemInteractionService {
         }
     }
 
+    // MARK: - Injection Prelude
+
+    /// Send a single Shift key press-release via CGEvent.
+    /// Used as a prelude before password injection to activate the login window text field.
+    /// isSecureCheck is called before each event batch to verify screen is still locked.
+    public func sendShiftKey(isSecureCheck: @escaping () -> Bool) -> Bool {
+        _log(component: "SystemInteraction", "sendShiftKey() START")
+        Log.sm.debug("PASSWORD: sending Shift key prelude")
+
+        let src = CGEventSource(stateID: .hidSystemState)
+
+        for tap in [CGEventTapLocation.cgSessionEventTap, CGEventTapLocation.cghidEventTap] {
+            guard isSecureCheck() else {
+                _log(component: "SystemInteraction", "sendShiftKey: ABORT - screen not secure")
+                return false
+            }
+            let shiftDown = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: true)
+            let shiftUp = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: false)
+            shiftDown?.post(tap: tap)
+            shiftUp?.post(tap: tap)
+            if shiftDown != nil {
+                _log(component: "SystemInteraction", "sendShiftKey: SUCCESS via tap=\(tap == .cgSessionEventTap ? "cgSession" : "cghid")")
+                Log.sm.debug("PASSWORD: Shift key sent successfully")
+                return true
+            }
+        }
+
+        _log(component: "SystemInteraction", "sendShiftKey: FAILED - all taps exhausted")
+        Log.sm.debug("PASSWORD: Shift key send failed")
+        return false
+    }
+
+    /// Send a Shift key prelude, wait 300ms, then inject password.
+    /// The Shift key activates the login window text field before password injection.
+    /// Returns true if at least one password event was posted.
+    public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) -> Bool {
+        _log(component: "SystemInteraction", "injectPasswordWithPrelude() START - \(string.count) chars")
+        Log.sm.debug("PASSWORD: injection with prelude - Shift + 300ms delay")
+
+        let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
+        if shiftSent {
+            _log(component: "SystemInteraction", "injectPasswordWithPrelude: Shift sent, waiting 300ms")
+            Log.sm.debug("PASSWORD: Shift prelude sent, waiting 300ms before password")
+            Thread.sleep(forTimeInterval: 0.3)
+        } else {
+            _log(component: "SystemInteraction", "injectPasswordWithPrelude: Shift failed, proceeding without delay")
+            Log.sm.debug("PASSWORD: Shift prelude failed, proceeding without delay")
+        }
+
+        _log(component: "SystemInteraction", "injectPasswordWithPrelude: injecting password")
+        let result = fakeKeyStrokes(string, isSecureCheck: isSecureCheck)
+        _log(component: "SystemInteraction", "injectPasswordWithPrelude() END - result=\(result)")
+        return result
+    }
+
     // MARK: - Media Control
 
     /// Pause Now Playing if preference enabled. Returns whether it was playing.
