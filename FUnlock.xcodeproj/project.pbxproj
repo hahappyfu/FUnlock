@@ -26,6 +26,8 @@
 		AA000003226C1DF200000001 /* MenuDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004226C1DF200000001 /* MenuDashboardView.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
 		AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000010226C1DF200000012 /* FUnlockTests.swift */; };
+		AA000020226C1DF200000001 /* FUnlockStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000021226C1DF200000001 /* FUnlockStateMachine.swift */; };
+		AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */; };
 		AB0000012026062500000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000001 /* OnboardingView.swift */; };
 		AB0000012026062500000002 /* AutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000002 /* AutomationView.swift */; };
 		AB0000012026062500000003 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000003 /* StatsView.swift */; };
@@ -103,6 +105,8 @@
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
 		AA000010226C1DF200000012 /* FUnlockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockTests.swift; sourceTree = "<group>"; };
 		AA000010226C1DF200000013 /* FUnlockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FUnlockTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000021226C1DF200000001 /* FUnlockStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachine.swift; sourceTree = "<group>"; };
+		AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachineTests.swift; sourceTree = "<group>"; };
 		AB0000022026062500000001 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		AB0000022026062500000002 /* AutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationView.swift; sourceTree = "<group>"; };
 		AB0000022026062500000003 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
@@ -215,6 +219,7 @@
 				3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */,
 				3D2FCF07226C99CB007A06E7 /* Images.xcassets */,
 				DD000001226C1DF200000001 /* Log.swift */,
+				AA000021226C1DF200000001 /* FUnlockStateMachine.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -233,6 +238,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000010226C1DF200000012 /* FUnlockTests.swift */,
+				AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -443,6 +449,7 @@
 				DD000002226C1DF200000001 /* Log.swift in Sources */,
 				3D79FD7D226C335100A373C0 /* appleDeviceNames.swift in Sources */,
 				CC00001022784D550017D8B9 /* main.m in Sources */,
+				AA000020226C1DF200000001 /* FUnlockStateMachine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,6 +458,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */,
+				AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
