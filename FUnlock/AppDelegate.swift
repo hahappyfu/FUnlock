@@ -250,6 +250,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async { [weak self] in
                 self?.checkForUpdates()
             }
+        } else if id == FUnlockStateMachine.degradedNotificationID {
+            // 点击降级通知 → 重置失败计数，恢复自动解锁
+            DispatchQueue.main.async { [weak self] in
+                self?.manager?.stateMachine.resetToActive()
+            }
         } else {
             NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
         }

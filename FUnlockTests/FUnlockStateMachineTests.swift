@@ -271,3 +271,65 @@ class FUnlockStateMachineTimeSourceTests: XCTestCase {
         XCTAssertFalse(sm.isInCooldown, "11 秒后冷却应结束")
     }
 }
+
+// MARK: - 连续失败降级通知测试
+
+/// 测试连续失败降级通知发送和状态机重置
+@MainActor
+class DegradedNotificationTests: XCTestCase {
+
+    func testDegradedNotificationIDConstant() {
+        XCTAssertEqual(FUnlockStateMachine.degradedNotificationID, "funlock-degraded",
+                       "降级通知标识符应为 funlock-degraded")
+    }
+
+    func testThreeFailuresTriggersDegradedAndNotification() {
+        let sm = FUnlockStateMachine()
+
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .cooldown, "1 次失败后应为 cooldown")
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .cooldown, "2 次失败后仍为 cooldown")
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .degraded, "3 次失败后应为 degraded")
+        XCTAssertEqual(sm.consecutiveFailures, 3, "连续失败次数应为 3")
+    }
+
+    func testResetFromDegradedRestoresCanAttemptUnlock() {
+        let sm = FUnlockStateMachine()
+
+        // 触发降级
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .degraded)
+        XCTAssertFalse(sm.canAttemptUnlock, "degraded 时 canAttemptUnlock 应为 false")
+
+        // 模拟用户点击通知后重置
+        sm.resetToActive()
+        XCTAssertEqual(sm.currentState, .active, "重置后应为 active")
+        XCTAssertEqual(sm.consecutiveFailures, 0, "重置后失败次数应为 0")
+        XCTAssertTrue(sm.canAttemptUnlock, "重置后 canAttemptUnlock 应为 true")
+    }
+
+    func testDegradedBlocksAttemptUnlock() {
+        let sm = FUnlockStateMachine()
+
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .degraded)
+
+        let allowed = sm.attemptUnlock()
+        XCTAssertFalse(allowed, "degraded 状态下 attemptUnlock 应被拒绝")
+    }
+
+    func testPartialFailuresDoNotTriggerDegraded() {
+        let sm = FUnlockStateMachine()
+
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .cooldown, "2 次失败后应为 cooldown，非 degraded")
+        XCTAssertTrue(sm.consecutiveFailures < 3, "2 次失败未达上限")
+    }
+}
