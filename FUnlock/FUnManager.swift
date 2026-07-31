@@ -623,21 +623,21 @@ final class FUnManager: ObservableObject {
                     }
                 }
             }
+            resumeMediaIfNeeded()
+            ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
+            ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
+            // P3: 形子模式遥测 — 记录自动解锁事件
+            TelemetryLogger.shared.log(
+                event: .autoUnlock,
+                deviceModel: monitoredDeviceName,
+                rawRSSI: rssi ?? -100,
+                kalmanRSSI: fun.pipeline.kalmanEstimate,
+                effectiveRSSI: fun.effectiveRSSI,
+                slope: fun.pipeline.smoothedSlope,
+                isAnomalous: fun.lastSignalAnomalous
+            )
+            Log.sm.debug("unlock complete")
         }
-        resumeMediaIfNeeded()
-        ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
-        ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
-        // P3: 形子模式遥测 — 记录自动解锁事件
-        TelemetryLogger.shared.log(
-            event: .autoUnlock,
-            deviceModel: monitoredDeviceName,
-            rawRSSI: rssi ?? -100,
-            kalmanRSSI: fun.pipeline.kalmanEstimate,
-            effectiveRSSI: fun.effectiveRSSI,
-            slope: fun.pipeline.smoothedSlope,
-            isAnomalous: fun.lastSignalAnomalous
-        )
-        Log.sm.debug("unlock complete")
     }
 
     // MARK: - 显示器唤醒重试 (async/await 替代 Timer)
