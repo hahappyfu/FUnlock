@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013.0%2B-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-2.4.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-2.6.0-green.svg)]()
 [![Swift](https://img.shields.io/badge/Swift-5.7%2B-orange.svg)]()
 
 FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。
@@ -24,10 +24,23 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 - **输入活动保护** — 检测键盘/触控板活动时暂缓锁定，打字不会误锁屏
 - **手动锁屏保护** — 可选手动锁屏后禁止自动解锁，防止旁人靠近时屏幕自动打开
 - **指纹解锁安全** — 指纹解锁时自动中断模拟密码输入，防止输入泄漏到前台应用
-- **自动更新** — 每天检测 Gitee Release，有新版本自动下载安装并重启
+- **自动更新** — 每天检测 GitHub Release，有新版本自动下载安装并重启
 - **启动权限检查** — 启动时自动检查辅助功能和蓝牙权限，缺失时弹窗引导授权
 - **安全存储** — 密码使用 Keychain 加密
 - **多语言** — 支持中文、日文、德语、瑞典语、挪威语、丹麦语、土耳其语
+
+---
+
+## 🔒 V3 安全加固（v2.6.0）
+
+- **Actor 状态机** — 基于 Swift Actor 的 `FUnlockStateMachine`，线程安全的状态管理，消除竞态条件
+- **密码注入前奏** — 注入密码前先发送 Shift 键 + 300ms 延迟，确保前台应用获得输入焦点
+- **双保险验证** — 密码注入后通过 CGSession 兜底验证，确保解锁确实成功
+- **预备唤醒** — 信号平滑 + 阶梯唤醒策略，避免在信号边缘反复唤醒/休眠
+- **连续失败降级** — 连续密码注入失败时自动降级并通知用户，防止暴力尝试
+- **Keychain 安全收紧** — 冷启动时捕获 Keychain 错误码，密码读取失败时安全降级
+- **用户主动干预处理** — 检测用户手动解锁/锁屏行为，自动调整 FUnlock 策略
+- **乐观解锁策略** — 信号达标后立即触发解锁，减少用户感知延迟
 
 ---
 
@@ -39,10 +52,10 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 brew install funlock
 ```
 
-### 手动安装
+### 手动安装（DMG）
 
-1. 从 [Releases](https://github.com/hahappyfu/FUnlock/releases) 下载最新版本
-2. 解压后将 `FUnlock.app` 移到 `/Applications` 文件夹
+1. 从 [Releases](https://github.com/hahappyfu/FUnlock/releases) 下载最新 `FUnlock.dmg`
+2. 打开 DMG 文件，将 `FUnlock.app` 拖入 `/Applications` 文件夹
 3. 首次启动时按提示授予蓝牙和辅助功能权限
 
 ---
@@ -145,6 +158,7 @@ FUnlock/
 │   ├── SecurityService.swift          # Keychain 读写 + 密码验证（从 FUnManager 解耦）
 │   ├── ScriptRunner.swift             # 脚本事件执行（从 FUnManager 解耦）
 │   ├── TelemetryLogger.swift          # 结构化日志 + 关键路径埋点
+│   ├── FUnlockStateMachine.swift      # Actor 状态机（v2.6.0 安全加固）
 │   ├── InputActivityMonitor           # IOKit HID 键盘/触控板活动检测
 │   ├── CalibrationWizardView.swift    # 阈值校准向导
 │   ├── OnboardingView.swift           # 首次启动引导页
@@ -165,9 +179,10 @@ FUnlock/
 │   ├── AboutView.swift                # 关于窗口
 │   ├── lowlevel.h / .c                # 系统级 API（锁屏/唤醒显示器）
 │   └── MediaRemote.h                  # 私有框架（Now Playing 控制）
-├── Launcher/                           # 开机自启动 Helper
-├── docs/                               # 开发文档与设计 spec
-└── BUGS.md                             # 问题登记
+├── FUnlockTests/                      # 单元测试与集成测试（v2.6.0）
+├── Launcher/                          # 开机自启动 Helper
+├── docs/                              # 开发文档与设计 spec
+└── BUGS.md                            # 问题登记
 ```
 
 ---
@@ -214,6 +229,12 @@ FUnlock/
 - 新增 TelemetryLogger 结构化日志系统，关键路径埋点
 - 消除不必要的心跳定时器，降低后台 CPU 占用
 
+**v2.6.0 安全加固**：
+- 新增 FUnlockStateMachine（Swift Actor），线程安全的状态管理，替代原有 @MainActor 枚举状态
+- 密码注入流程增加「注入前奏 + 双保险验证 + 乐观解锁」三重保障
+- Keychain 读取增加冷启动错误码捕获与安全降级
+- 用户手动干预自动识别并调整策略，避免与 FUnlock 冲突
+
 ---
 
 ## 🛠️ 开发
@@ -224,7 +245,7 @@ FUnlock/
 xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Release
 ```
 
-### 安装（覆盖安装）
+### 安装（DMG 覆盖安装）
 
 ```bash
 pkill FUnlock
@@ -242,9 +263,13 @@ open /Applications/FUnlock.app
 ### 关键技术
 
 - **状态机**：`ScreenState` + `LockIntent` 枚举管理锁定/解锁/唤醒/媒体状态
+- **Actor 状态机**：`FUnlockStateMachine`（Swift Actor），线程安全的状态管理，消除竞态条件
 - **非对称卡尔曼滤波**：靠近时快速响应（Q 自适应放大 + 钳位），离开时强阻尼（原始小 Q）
 - **时间衰减丢包惩罚**：`effectiveRSSI = kalmanEstimate - 0.5×elapsed`，丢包自动降级
 - **输入活动否决**：IOKit HID 监听键盘/触控板，有活动时否决锁定决策
+- **密码注入安全**：注入前奏（Shift + 300ms）+ 双保险验证（CGSession 兜底）+ 乐观解锁
+- **预备唤醒**：信号平滑 + 阶梯唤醒策略，避免边缘信号反复唤醒/休眠
+- **连续失败降级**：密码注入连续失败时自动降级并通知用户
 - **心跳检查**：每 2 秒主动轮询，防丢包 100% 时状态机死锁
 - **UI 解耦**：决策层用非对称 Kalman，UI 显示用独立对称 EMA（α=0.1）
 - **async/await**：唤醒重试、解锁延迟均使用 `Task` 替代 `Timer`
