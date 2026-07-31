@@ -627,20 +627,20 @@ final class FUnManager: ObservableObject {
                 if attempt > 0 {
                     print("[SM] retrying wake #\(attempt)")
                 }
-                wakeDisplay()
+                funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
                 // wakeDisplay() 不一定触发 screensDidWakeNotification，
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
                     state.wake = .succeeded
-                    releaseWakeAssertion()
+                    funlock_releaseWakeAssertion()
                     self.attemptAutoUnlock()
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
-            releaseWakeAssertion()
+            funlock_releaseWakeAssertion()
             self.attemptAutoUnlock()
         }
     }
@@ -688,7 +688,7 @@ final class FUnManager: ObservableObject {
                 device.scanTimer?.invalidate()
                 device.scanTimer = nil
             }
-            releaseWakeAssertion()
+            funlock_releaseWakeAssertion()
         }
         wakeTask?.cancel()
         unlockTask?.cancel()

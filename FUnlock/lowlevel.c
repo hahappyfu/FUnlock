@@ -4,7 +4,7 @@
 
 static IOPMAssertionID wakeAssertionID = 0;
 
-void wakeDisplay(void)
+void funlock_wakeDisplay(void)
 {
     // 释放前一个未释放的 assertion
     if (wakeAssertionID != 0) {
@@ -27,7 +27,7 @@ void wakeDisplay(void)
     }
 }
 
-void releaseWakeAssertion(void)
+void funlock_releaseWakeAssertion(void)
 {
     if (wakeAssertionID != 0) {
         IOPMAssertionRelease(wakeAssertionID);
@@ -35,7 +35,7 @@ void releaseWakeAssertion(void)
     }
 }
 
-void sleepDisplay(void)
+void funlock_sleepDisplay(void)
 {
     io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
