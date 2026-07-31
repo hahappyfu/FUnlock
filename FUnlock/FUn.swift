@@ -312,6 +312,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var pipeline = SignalPipeline()
     var effectiveRSSI: Double = -60.0
     var displayRSSI: Double = -60.0
+    /// EMA 平滑 RSSI（alpha=0.3），用于预备唤醒阈值判断
+    private var smoothedRSSIValue: Double = -100.0
+    private let smoothedRSSIAlpha: Double = 0.3
+    // MARK: 阶梯唤醒阈值
+    /// 预备唤醒阈值（dBm）：信号达到此值时唤醒显示器
+    let preWakeThreshold: Int = -60
+    /// 解锁阈值（dBm）：信号达到此值时触发自动解锁
+    let unlockStairThreshold: Int = -50
     var lastReceiveTime: Date = Date()
     var lastSignalAnomalous: Bool = false
     // Heartbeat timer (独立状态机，不在管道内)
@@ -412,6 +420,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             lastReceiveTime = Date()
             effectiveRSSI = -60.0
             displayRSSI = -60.0
+            smoothedRSSIValue = -100.0
             monitoredUUIDs = [uuid]
             return old
         }
@@ -683,6 +692,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             return d
         }
 
+        // EMA 平滑 RSSI：用于阶梯唤醒阈值判断
+        smoothedRSSI(rssi)
+
         // P1: 采集信号样本到数据仓库（低开销，仅追加到环形缓冲）
         SignalDataStore.shared.record(
             rawRSSI: Double(rssi),
@@ -698,6 +710,25 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private func updateDisplayRSSI(rssi: Int) {
         lock.withLock {
             displayRSSI = 0.1 * Double(rssi) + 0.9 * displayRSSI
+        }
+    }
+
+    /// EMA 信号平滑：返回指数移动平均 RSSI，用于阶梯唤醒阈值判断
+    /// - Parameter rssi: 原始 RSSI 采样值（dBm，负数）
+    /// - Returns: 平滑后的 RSSI（dBm）
+    @discardableResult
+    func smoothedRSSI(_ rssi: Int) -> Double {
+        lock.withLock {
+            let measurement = Double(rssi)
+            smoothedRSSIValue = smoothedRSSIAlpha * measurement + (1 - smoothedRSSIAlpha) * smoothedRSSIValue
+            return smoothedRSSIValue
+        }
+    }
+
+    /// 重置 EMA 平滑 RSSI 到初始值（解绑设备时调用）
+    func resetSmoothedRSSI() {
+        lock.withLock {
+            smoothedRSSIValue = -100.0
         }
     }
 
