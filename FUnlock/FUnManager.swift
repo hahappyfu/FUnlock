@@ -128,7 +128,6 @@ final class FUnManager: ObservableObject {
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
     private var intrudeCheckTask: Task<Void, Never>?
-    private var unlockConfirmTask: Task<Void, Never>?
     private var displayWakeRequested = false
     private var consecutiveUnlockAttempts = 0
     private let maxUnlockAttempts = 3
@@ -177,7 +176,6 @@ final class FUnManager: ObservableObject {
     deinit {
         wakeTask?.cancel()
         unlockTask?.cancel()
-        unlockConfirmTask?.cancel()
         intrudeCheckTask?.cancel()
     }
 
@@ -574,7 +572,7 @@ final class FUnManager: ObservableObject {
             recordUnlockAttempt()
             _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
-            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed（方案 A：直接构造事件）
+            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
             let verifyStartTime = self.now
             let optimisticExtras: [String: String] = [
                 "result": "success",
@@ -584,45 +582,45 @@ final class FUnManager: ObservableObject {
                 "device": monitoredDeviceName ?? "unknown"
             ]
             ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: optimisticExtras)
-            _log(component: "FUnManager", "tryUnlock() - optimistic unlock_confirmed recorded (direct)")
-            // 可选：后台 0.5 秒后检查一次，如果失败则记录 unlock_failed
-            unlockConfirmTask?.cancel()
-            unlockConfirmTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒后验证
-                guard !Task.isCancelled else {
-                    // 验证 Task 被取消 → 记录超时
-                    if let self { Task { self.stateMachine.handleUnlockFailure() } }
-                    return
-                }
+            // 双保险验证：通知 + CGSession 竞速（withTaskGroup），替代旧的0.5秒固定延时
+            Task { [weak self] in
+                let sys = SystemInteractionService.shared
+                let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
                 guard let self else { return }
-                let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
-                if stillLocked {
-                    // 屏幕仍锁定 → 密码可能错误，记录 unlock_failed
-                    self.consecutiveUnlockAttempts += 1
-                    Log.sm.debug("screen still locked after 0.5s verification → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                    // 双保险验证：通知状态机处理失败（计入连续失败次数，触发降级判断）
-                    Task { self.stateMachine.handleUnlockFailure() }
-                    // 记录 unlock_failed
-                    let failExtras: [String: String] = [
-                        "result": "fail",
-                        "latencyMs": "500",
-                        "source": "proximity",
-                        "effectiveRSSI": String(format: "%.1f", self.fun.effectiveRSSI),
-                        "device": self.monitoredDeviceName ?? "unknown"
-                    ]
-                    ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
-                    _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                    if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
-                        sys.showPasswordMismatchAlert()
-                        self.consecutiveUnlockAttempts = 0
-                    }
-                } else {
-                    // 屏幕已解锁 → 密码正确，清零计数器
-                    Log.sm.debug("screen unlocked → password correct, resetting counter")
+                if verification.unlock {
+                    // 通知或 CGSession 确认解锁成功
+                    Log.sm.debug("dual verify: unlock confirmed")
                     self.consecutiveUnlockAttempts = 0
-                    _log(component: "FUnManager", "tryUnlock() - verification passed, counter reset")
-                    // 双保险验证：通知状态机处理成功（清零连续失败次数，退出冷却）
+                    _log(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
                     Task { self.stateMachine.handleUnlockSuccess() }
+                } else {
+                    // 通知和 CGSession 都未确认解锁 → 可能密码错误
+                    let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
+                    if stillLocked {
+                        self.consecutiveUnlockAttempts += 1
+                        Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        _log(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        Task { self.stateMachine.handleUnlockFailure() }
+                        let failExtras: [String: String] = [
+                            "result": "fail",
+                            "latencyMs": "0",
+                            "source": "proximity",
+                            "effectiveRSSI": String(format: "%.1f", self.fun.effectiveRSSI),
+                            "device": self.monitoredDeviceName ?? "unknown"
+                        ]
+                        ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
+                        _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
+                            sys.showPasswordMismatchAlert()
+                            self.consecutiveUnlockAttempts = 0
+                        }
+                    } else {
+                        // CGSession 也显示已解锁（竞态下可能延迟发现）
+                        Log.sm.debug("dual verify: timeout but CGSession says unlocked")
+                        self.consecutiveUnlockAttempts = 0
+                        _log(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
+                        Task { self.stateMachine.handleUnlockSuccess() }
+                    }
                 }
             }
         }
@@ -720,7 +718,6 @@ final class FUnManager: ObservableObject {
         }
         wakeTask?.cancel()
         unlockTask?.cancel()
-        unlockConfirmTask?.cancel()
         intrudeCheckTask?.cancel()
         Task { stateMachine.cancelActiveTask() }
     }

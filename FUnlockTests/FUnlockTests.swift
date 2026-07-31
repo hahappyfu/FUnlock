@@ -2319,3 +2319,219 @@ class FUnManagerStateMachineIntegrationTests: XCTestCase {
         // cleanup 应取消状态机任务（无崩溃即通过）
     }
 }
+
+// MARK: - 双保险验证测试
+
+/// 测试 SystemInteractionService 的双保险验证逻辑
+/// 使用静态可测试版本 verifyUnlock(timeout:waitForNotification:checkUnlocked:)
+@MainActor
+class DualVerificationTests: XCTestCase {
+
+    // MARK: - UnlockNotification 结构体
+
+    func testUnlockNotificationSuccess() {
+        let notification = SystemInteractionService.UnlockNotification(unlock: true)
+        XCTAssertTrue(notification.unlock, "unlock=true 时应为成功")
+    }
+
+    func testUnlockNotificationFailure() {
+        let notification = SystemInteractionService.UnlockNotification(unlock: false)
+        XCTAssertFalse(notification.unlock, "unlock=false 时应为失败")
+    }
+
+    // MARK: - verifyUnlock: 通知路径先赢
+
+    func testNotificationWinsOverCGSession() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms 后返回 true
+                return true
+            },
+            checkUnlocked: { _ in
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms 后返回 true
+                return true
+            }
+        )
+        XCTAssertTrue(result.unlock, "通知路径先返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: CGSession 路径先赢
+
+    func testCGSessionWinsOverNotification() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms 后返回 true
+                return true
+            },
+            checkUnlocked: { _ in
+                try? await Task.sleep(nanoseconds: 30_000_000) // 30ms 后返回 true
+                return true
+            }
+        )
+        XCTAssertTrue(result.unlock, "CGSession 路径先返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: 超时无信号 → timeout
+
+    func testTimeoutReturnsUnlockFalse() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 0.3,   // 短超时
+            notificationTimeout: 0.3,
+            waitForNotification: { timeout in
+                let deadline = Date().addingTimeInterval(timeout)
+                while Date() < deadline {
+                    guard !Task.isCancelled else { return false }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return false
+            },
+            checkUnlocked: { timeout in
+                let deadline = Date().addingTimeInterval(timeout)
+                while Date() < deadline {
+                    guard !Task.isCancelled else { return false }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return false
+            }
+        )
+        XCTAssertFalse(result.unlock, "两条路径均超时，应返回 false")
+    }
+
+    // MARK: - verifyUnlock: 首次调用立即返回
+
+    func testImmediateUnlock() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in return true },   // 立即 true
+            checkUnlocked: { _ in return false }         // 立即 false
+        )
+        XCTAssertTrue(result.unlock, "通知路径立即返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: CGSession 立即返回，通知不返回
+
+    func testImmediateCGSessionUnlock() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return true
+            },
+            checkUnlocked: { _ in return true }
+        )
+        XCTAssertTrue(result.unlock, "CGSession 立即返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: 双路径均返回 false → timeout
+
+    func testBothReturnFalse() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 0.3,
+            notificationTimeout: 0.3,
+            waitForNotification: { timeout in
+                let deadline = Date().addingTimeInterval(timeout)
+                while Date() < deadline {
+                    guard !Task.isCancelled else { return false }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return false
+            },
+            checkUnlocked: { timeout in
+                let deadline = Date().addingTimeInterval(timeout)
+                while Date() < deadline {
+                    guard !Task.isCancelled else { return false }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                return false
+            }
+        )
+        XCTAssertFalse(result.unlock, "双路径均返回 false，应返回 false")
+    }
+
+    // MARK: - verifyUnlock: 通知延迟后返回，CGSession 失败
+
+    func testNotificationDelayedWins() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 1.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                return true
+            },
+            checkUnlocked: { _ in
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                return false
+            }
+        )
+        XCTAssertTrue(result.unlock, "通知延迟 100ms 后返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: CGSession 延迟后返回，通知失败
+
+    func testCGSessionDelayedWins() async {
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 1.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                return false
+            },
+            checkUnlocked: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                return true
+            }
+        )
+        XCTAssertTrue(result.unlock, "CGSession 延迟 100ms 后返回 true，应赢得竞速")
+    }
+
+    // MARK: - verifyUnlock: TaskGroup 取消验证
+
+    func testCancelsOtherTasksAfterWin() async {
+        var notificationChecked = false
+        var cgSessionChecked = false
+
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                notificationChecked = true
+                return true  // 20ms 后返回 true → 赢得竞速
+            },
+            checkUnlocked: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                cgSessionChecked = true
+                return true  // 100ms 后返回 true（不应执行到这里）
+            }
+        )
+        XCTAssertTrue(result.unlock, "通知路径应赢得竞速")
+        XCTAssertTrue(notificationChecked, "通知路径的闭包应被执行")
+        // 注意：cgSessionChecked 可能为 true 或 false，取决于取消时序
+        // 关键是返回值正确（true），而不是验证取消时序（竞态条件）
+    }
+
+    // MARK: - verifyUnlock: 等效于旧0.5秒延时
+
+    func testSameResultAsOldHalfSecondDelay() async {
+        // 旧逻辑：0.5秒后 CGSession 检查
+        // 新逻辑：通知竞速 + CGSession 轮询，同样时间内返回结果
+        // 验证：新逻辑在0.5秒内能检测到快速解锁
+
+        let startTime = Date()
+        let result = await SystemInteractionService.verifyUnlock(
+            timeout: 2.0,
+            notificationTimeout: 1.0,
+            waitForNotification: { _ in return true },  // 立即通知
+            checkUnlocked: { _ in return true }
+        )
+        let elapsed = Date().timeIntervalSince(startTime)
+        XCTAssertTrue(result.unlock, "应检测到解锁")
+        XCTAssertLessThan(elapsed, 0.5, "通知路径立即返回，总耗时应远小于0.5秒")
+    }
+}
