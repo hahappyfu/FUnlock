@@ -1,6 +1,7 @@
 import Foundation
 import Cocoa
 import UserNotifications
+import IOKit
 
 /// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
 private func _log(component: String, _ message: String) {
@@ -57,6 +58,37 @@ final class SystemInteractionService {
 
     // MARK: - Screen Control
 
+    /// Check if the display is powered on via IOKit IODisplayWrangler
+    func isDisplayPoweredOn() -> Bool {
+        let reg = IORegistryEntryFromPath(kIOMainPortDefault,
+                                          "IOService:/IOResources/IODisplayWrangler")
+        guard reg != 0 else {
+            _log(component: "SystemInteraction", "isDisplayPoweredOn: failed to get IODisplayWrangler")
+            return true  // 无法查询时默认通电，避免误唤醒
+        }
+        defer { IOObjectRelease(reg) }
+
+        if let prop = IORegistryEntryCreateCFProperty(reg, "IOEnginePower" as CFString, kCFAllocatorDefault, 0) {
+            let powerState = prop.takeRetainedValue() as! CFNumber
+            var value: UInt32 = 0
+            CFNumberGetValue(powerState, .sInt32Type, &value)
+            _log(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower=\(value)")
+            return value != 0
+        }
+        _log(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower not found")
+        return true  // 属性不存在时默认通电
+    }
+
+    /// Wake the display before password injection
+    func wakeDisplay() {
+        _log(component: "SystemInteraction", "wakeDisplay: waking display")
+        Log.sm.debug("PASSWORD: waking display before injection")
+        funlock_wakeDisplay()
+        Thread.sleep(forTimeInterval: 0.3)
+    }
+
+    // MARK: - Screen Control (Lock)
+
     /// Lock screen or start screensaver based on user preference
     func lockOrSaveScreen(useScreensaver: Bool, sleepDisplayAfter: Bool) {
         if useScreensaver {
@@ -69,7 +101,7 @@ final class SystemInteractionService {
             _ = SACLockScreenImmediate()
         }
         if sleepDisplayAfter {
-            FUnlock.sleepDisplay()
+            funlock_sleepDisplay()
         }
     }
 
@@ -81,6 +113,13 @@ final class SystemInteractionService {
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
         _log(component: "SystemInteraction", "fakeKeyStrokes() START - \(string.count) chars")
         Log.sm.debug("PASSWORD: attempting keystroke injection for \(string.count) chars")
+
+        // 检查屏幕是否可见，如果不可见则唤醒
+        if !isDisplayPoweredOn() {
+            _log(component: "SystemInteraction", "fakeKeyStrokes: display off, waking")
+            Log.sm.debug("PASSWORD: display off, waking screen")
+            wakeDisplay()
+        }
 
         // 尝试第1级：cgSessionEventTap + virtualKey 0
         _log(component: "SystemInteraction", "Level 1: cgSessionEventTap + vk0")
