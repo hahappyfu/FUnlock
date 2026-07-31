@@ -533,8 +533,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .store(in: &cancellables)
 
         // 密码检查
-        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") && SecurityService.shared.fetchPassword() == nil {
-            SecurityService.shared.askPassword()
+        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
+            let fetchResult = SecurityService.shared.fetchPassword()
+            if case .success(nil) = fetchResult {
+                SecurityService.shared.askPassword()
+            }
         }
 
         // Accessibility — 解锁功能需要，每次启动都检查
