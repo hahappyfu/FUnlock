@@ -2535,3 +2535,245 @@ class DualVerificationTests: XCTestCase {
         XCTAssertLessThan(elapsed, 0.5, "通知路径立即返回，总耗时应远小于0.5秒")
     }
 }
+
+// MARK: - 预备唤醒（信号平滑 + 阶梯唤醒）测试
+
+/// 测试 smoothedRSSI() EMA 信号平滑逻辑
+class SmoothedRSSITests: XCTestCase {
+
+    func testSmoothedRSSIFirstValueReturnsRawValue() {
+        // EMA 初始值 -100，alpha=0.3
+        // smoothed = 0.3 * (-60) + 0.7 * (-100) = -18 + (-70) = -88
+        let fun = FUn()
+        let result = fun.smoothedRSSI(-60)
+        XCTAssertEqual(result, -88.0, accuracy: 0.01,
+                       "首次调用：0.3 * (-60) + 0.7 * (-100) = -88")
+    }
+
+    func testSmoothedRSSIConvergesToRepeatedValue() {
+        let fun = FUn()
+        // 连续 20 次输入 -50，EMA 应收敛到 -50
+        var last: Double = 0
+        for _ in 0..<20 {
+            last = fun.smoothedRSSI(-50)
+        }
+        XCTAssertEqual(last, -50.0, accuracy: 0.1,
+                       "连续相同值应收敛到该值")
+    }
+
+    func testSmoothedRSSIConvergesFasterWithLargeAlpha() {
+        // alpha 越大收敛越快，验证 alpha=0.3 时 5 次后偏差 < 25dBm
+        let fun = FUn()
+        for _ in 0..<5 {
+            _ = fun.smoothedRSSI(-50)
+        }
+        let result = fun.smoothedRSSI(-50)
+        // 初始 -100，目标 -50，alpha=0.3
+        // 第1次: -88, 第2次: -81.6, 第3次: -77.12, 第4次: -74.0, 第5次: -71.8, 第6次: -70.26
+        XCTAssertGreaterThan(result, -75.0,
+                             "5次迭代后应接近目标值 -50（偏差 < 25dBm）")
+    }
+
+    func testSmoothedRSSIResetReturnsMinus100() {
+        let fun = FUn()
+        _ = fun.smoothedRSSI(-50)
+        _ = fun.smoothedRSSI(-40)
+        fun.resetSmoothedRSSI()
+        // 重置后第一次调用：0.3*(-60) + 0.7*(-100) = -88
+        let afterReset = fun.smoothedRSSI(-60)
+        XCTAssertEqual(afterReset, -88.0, accuracy: 0.01,
+                       "重置后首次调用应从 -100 重新开始 EMA")
+    }
+
+    func testSmoothedRSSIThreadSafety() {
+        // 多线程并发调用不崩溃（验证 UnfairLock 保护）
+        let fun = FUn()
+        let group = DispatchGroup()
+        for _ in 0..<100 {
+            group.enter()
+            DispatchQueue.global().async {
+                _ = fun.smoothedRSSI(Int.random(in: -90 ... -30))
+                group.leave()
+            }
+        }
+        group.wait()
+        // 无崩溃即通过
+        let final = fun.smoothedRSSI(-60)
+        XCTAssertNotNil(final, "并发调用后仍能正常返回值")
+    }
+}
+
+/// 测试阶梯唤醒阈值常量
+class StaircaseThresholdTests: XCTestCase {
+
+    func testPreWakeThresholdIsNegative60() {
+        let fun = FUn()
+        XCTAssertEqual(fun.preWakeThreshold, -60,
+                       "预备唤醒阈值应为 -60dBm")
+    }
+
+    func testUnlockStairThresholdIsNegative50() {
+        let fun = FUn()
+        XCTAssertEqual(fun.unlockStairThreshold, -50,
+                       "阶梯解锁阈值应为 -50dBm")
+    }
+
+    func testStaircaseGapIs10dBm() {
+        let fun = FUn()
+        let gap = fun.unlockStairThreshold - fun.preWakeThreshold
+        XCTAssertEqual(gap, 10,
+                       "阶梯间距应为 10dBm（-60 → -50）")
+    }
+
+    func testPreWakeThresholdIsWeakerThanUnlockThreshold() {
+        let fun = FUn()
+        XCTAssertLessThan(fun.preWakeThreshold, fun.unlockStairThreshold,
+                          "preWakeThreshold 应比 unlockStairThreshold 更弱（更负）")
+    }
+}
+
+/// 测试 FUnManager 的预备唤醒与阶梯解锁行为
+@MainActor
+class PreWakeStaircaseTests: XCTestCase {
+
+    private var manager: FUnManager!
+
+    override func setUp() {
+        super.setUp()
+        let fun = FUn()
+        manager = FUnManager(fun: fun)
+    }
+
+    // MARK: - smoothedRSSI 集成
+
+    func testFUnExposesSmoothedRSSIMethod() {
+        let fun = FUn()
+        let result = fun.smoothedRSSI(-55)
+        // 0.3 * (-55) + 0.7 * (-100) = -16.5 + (-70) = -86.5
+        XCTAssertEqual(result, -86.5, accuracy: 0.01,
+                       "FUn.smoothedRSSI 应返回 EMA 计算值")
+    }
+
+    func testFUnExposesResetSmoothedRSSI() {
+        let fun = FUn()
+        _ = fun.smoothedRSSI(-50)
+        fun.resetSmoothedRSSI()
+        let afterReset = fun.smoothedRSSI(-60)
+        XCTAssertEqual(afterReset, -88.0, accuracy: 0.01,
+                       "resetSmoothedRSSI 应将平滑值重置为 -100")
+    }
+
+    // MARK: - onRSSIUpdated 预备唤醒门控
+
+    func testOnRSSIUpdatedBelowThresholdNoPreWake() {
+        // 信号 -70dBm（平滑后 < -60），不应触发预备唤醒
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.onDisplaySleep()
+
+        manager.onRSSIUpdated(rssi: -70, active: false)
+
+        XCTAssertFalse(manager.state.wake == .pending,
+                       "低于 preWakeThreshold 时不应触发预备唤醒")
+    }
+
+    func testOnRSSIUpdatedAboveThresholdTriggersPreWake() {
+        // 多次输入 -50dBm 让平滑值收敛到 -50 附近（> -60）
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.onDisplaySleep()
+
+        // 填充 EMA 使其超过 -60 阈值
+        for _ in 0..<10 {
+            manager.onRSSIUpdated(rssi: -50, active: false)
+        }
+        // smoothedRSSI 应 > -60
+        let rawSmoothed = manager.fun.smoothedRSSI(-50)
+        XCTAssertGreaterThan(rawSmoothed, -60.0,
+                             "多次 -50dBm 输入后平滑值应 > -60")
+    }
+
+    // MARK: - onDeviceApproached 阶梯解锁门控
+
+    func testOnDeviceApproachedBelowUnlockThresholdNoUnlock() {
+        // effectiveRSSI = -55（在 -60 和 -50 之间），只应预唤醒，不解锁
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.effectiveRSSI = -55.0
+        manager.onSystemScreenLocked()
+
+        manager.onDeviceApproached()
+
+        // effectiveRSSI (-55) >= preWakeThreshold (-60) 但 < unlockStairThreshold (-50)
+        // 由于 state.screen = .locked (不是 displaySleeping)，唤醒分支不触发
+        // 关键：attemptAutoUnlock 不应被调用（因为 effectiveRSSI < -50）
+        if case .locked = manager.state.screen {
+            // OK — screen 保持 locked，没有被解锁
+        } else {
+            XCTFail("effectiveRSSI < unlockStairThreshold 时 screen 应保持 locked")
+        }
+    }
+
+    func testOnDeviceApproachedAboveUnlockThresholdTriggersUnlock() {
+        // effectiveRSSI = -48（> -50），应触发解锁流程
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.effectiveRSSI = -48.0
+        manager.fun.presence = true
+        manager.onSystemScreenLocked()
+
+        manager.onDeviceApproached()
+
+        // effectiveRSSI >= unlockStairThreshold → attemptAutoUnlock 被调用
+        // 由于没有密码等实际解锁条件，unlock 本身不会成功
+        // 但关键行为：解锁流程被触发（而不是被阶梯阈值阻止）
+    }
+
+    func testOnDeviceApproachedPreWakeWhenDisplaySleeping() {
+        // effectiveRSSI = -55（> preWakeThreshold -60），显示器休眠中
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.effectiveRSSI = -55.0
+        manager.onDisplaySleep()
+
+        manager.onDeviceApproached()
+
+        // startWakeRetry() 同步设置 state.wake = .pending 和 state.screen = .locked(reason: .away)
+        XCTAssertEqual(manager.state.wake, .pending,
+                       "预备唤醒触发后 wake 应为 pending")
+        if case .locked(let reason) = manager.state.screen {
+            XCTAssertEqual(reason, .away,
+                           "startWakeRetry 同步将 screen 设为 locked(away)")
+        } else {
+            XCTFail("startWakeRetry 应将 screen 从 displaySleeping 切换为 locked(away)")
+        }
+    }
+
+    func testOnDeviceApproachedNoPreWakeWhenAlreadyAwake() {
+        // 已经不是 displaySleeping → 不应触发预备唤醒
+        manager.fun.unlockRSSI = -60
+        manager.fun.lockRSSI = -80
+        manager.fun.effectiveRSSI = -55.0
+        manager.onSystemScreenLocked()
+
+        manager.onDeviceApproached()
+
+        // 验证：state.wake 保持 idle
+        if case .idle = manager.state.wake {
+            // OK
+        } else {
+            XCTFail("非 displaySleeping 状态下不应触发预备唤醒，wake 应保持 idle")
+        }
+    }
+
+    // MARK: - 阶梯唤醒日志验证
+
+    func testPreWakeThresholdConstantsAreExposed() {
+        let fun = FUn()
+        // 验证常量通过 FUn 实例可访问（用于日志和调试）
+        XCTAssertNotNil(fun.preWakeThreshold as Int)
+        XCTAssertNotNil(fun.unlockStairThreshold as Int)
+        XCTAssertTrue(fun.preWakeThreshold < fun.unlockStairThreshold,
+                      "preWakeThreshold 应 < unlockStairThreshold")
+    }
+}

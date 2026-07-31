@@ -314,15 +314,20 @@ final class FUnManager: ObservableObject {
         // 清除锁屏通知
         SystemInteractionService.shared.clearLockNotification()
 
-        // 显示器休眠中 → 确保已唤醒（早唤醒可能已触发，这里做兜底）
+        // 阶梯唤醒：平滑信号达到 preWakeThreshold（-60dBm）时唤醒显示器
+        let smoothed = fun.effectiveRSSI
         if state.screen == .displaySleeping
             && prefs.bool(forKey: "wakeOnProximity")
-            && !displayWakeRequested {
+            && !displayWakeRequested
+            && smoothed >= Double(fun.preWakeThreshold) {
             displayWakeRequested = true
             startWakeRetry()
         }
 
-        attemptAutoUnlock()
+        // 阶梯解锁：平滑信号达到 unlockStairThreshold（-50dBm）时才尝试解锁
+        if smoothed >= Double(fun.unlockStairThreshold) {
+            attemptAutoUnlock()
+        }
     }
 
     func onDeviceLeft(reason: String) {
@@ -357,13 +362,16 @@ final class FUnManager: ObservableObject {
     func onRSSIUpdated(rssi: Int?, active: Bool) {
         self.rssi = rssi
 
-        // 早唤醒：信号出现且显示器休眠时，立即唤醒（不等到解锁阈值）
+        // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值）
         if let rssi = rssi, !displayWakeRequested,
            state.screen == .displaySleeping,
            prefs.bool(forKey: "wakeOnProximity") {
-            displayWakeRequested = true
-            print("[SM] early wake triggered at RSSI \(rssi)")
-            startWakeRetry()
+            let smoothed = fun.smoothedRSSI(rssi)
+            if smoothed >= Double(fun.preWakeThreshold) {
+                displayWakeRequested = true
+                print("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")
+                startWakeRetry()
+            }
         }
     }
 
@@ -425,6 +433,7 @@ final class FUnManager: ObservableObject {
         fun.pipeline.reset()
         fun.effectiveRSSI = -60.0
         fun.displayRSSI = -60.0
+        fun.resetSmoothedRSSI()
 
         // 清除 Manager 层状态
         monitoredDeviceName = nil
@@ -501,14 +510,19 @@ final class FUnManager: ObservableObject {
             && isSystemReadyForUnlock() {
             Log.sm.debug("starting parallel wake + unlock")
             startWakeRetry()
-            // 并行：等 0.8s 后尝试解锁，不等唤醒完成
-            unlockTask?.cancel()
-            unlockTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
-                guard !Task.isCancelled else { return }
-                guard let self else { return }
-                guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); return }
-                self.tryUnlock()
+            // 阶梯解锁：平滑信号达到 unlockStairThreshold（-50dBm）时才并行解锁
+            if fun.effectiveRSSI >= Double(fun.unlockStairThreshold) {
+                // 并行：等 0.8s 后尝试解锁，不等唤醒完成
+                unlockTask?.cancel()
+                unlockTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
+                    guard !Task.isCancelled else { return }
+                    guard let self else { return }
+                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); return }
+                    self.tryUnlock()
+                }
+            } else {
+                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", self.fun.effectiveRSSI)) < unlockStairThreshold=\(self.fun.unlockStairThreshold)")
             }
             return
         }
