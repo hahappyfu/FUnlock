@@ -118,6 +118,7 @@ final class FUnManager: ObservableObject {
     // MARK: Dependencies
 
     let fun: FUn
+    let stateMachine: FUnlockStateMachine
     var inputMonitor: InputActivityMonitor?
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let updateChecker = UpdateChecker()
@@ -156,6 +157,7 @@ final class FUnManager: ObservableObject {
 
     init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }) {
         self.fun = fun
+        self.stateMachine = FUnlockStateMachine(nowProvider: nowProvider)
         self.nowProvider = nowProvider
         self.lockRSSI = fun.lockRSSI
         self.unlockRSSI = fun.unlockRSSI
@@ -252,6 +254,8 @@ final class FUnManager: ObservableObject {
         consecutiveUnlockAttempts = 0
         lastUnlockTime = now
         recordUnlockSuccess()
+        // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
+        Task { stateMachine.resetToActive() }
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         intrudeCheckTask?.cancel()
@@ -445,6 +449,13 @@ final class FUnManager: ObservableObject {
             sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
     }
 
+    // MARK: - 注入前奏：解锁前置安全检查
+
+    /// 注入前奏：检查系统是否处于适合解锁的状态（系统休眠时禁止注入）
+    private func isSystemReadyForUnlock() -> Bool {
+        return state.system == .awake
+    }
+
     // MARK: - 核心：自动解锁
 
     private func attemptAutoUnlock() {
@@ -454,6 +465,8 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); return }
+        // 状态机门控：degraded 或失败冷却期间拒绝解锁
+        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); return }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(lastLockTime)
@@ -484,8 +497,10 @@ final class FUnManager: ObservableObject {
         if !axGranted { Log.sm.debug("WARN: ax=false, trying anyway") }
 
         // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务
+        // 注入前奏：系统休眠中不注入密码
         if state.screen == .displaySleeping && state.system == .awake
-            && prefs.bool(forKey: "wakeOnProximity") {
+            && prefs.bool(forKey: "wakeOnProximity")
+            && isSystemReadyForUnlock() {
             Log.sm.debug("starting parallel wake + unlock")
             startWakeRetry()
             // 并行：等 0.8s 后尝试解锁，不等唤醒完成
@@ -494,6 +509,7 @@ final class FUnManager: ObservableObject {
                 try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
+                guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); return }
                 self.tryUnlock()
             }
             return
@@ -509,8 +525,9 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             try? await Task.sleep(nanoseconds: UInt64(delay))
             guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); return }
+            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); return }
             Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
-            tryUnlock()
+            self.tryUnlock()
         }
     }
 
@@ -522,6 +539,11 @@ final class FUnManager: ObservableObject {
         _log(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
         Log.sm.debug("screen locked check: \(locked)")
         guard locked else { Log.sm.debug("SKIP: screen not locked"); return }
+
+        // 状态机门控：通过状态机确认解锁冷却和降级状态
+        let smAllowed = stateMachine.attemptUnlock()
+        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); return }
+
         let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
         guard sinceUnlock > 3 else {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
@@ -567,15 +589,19 @@ final class FUnManager: ObservableObject {
             unlockConfirmTask?.cancel()
             unlockConfirmTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒后验证
-                guard let self, !Task.isCancelled else {
-                    // 验证 Task 被取消（如 app 即将退出或新一轮解锁启动）
+                guard !Task.isCancelled else {
+                    // 验证 Task 被取消 → 记录超时
+                    if let self { Task { self.stateMachine.handleUnlockFailure() } }
                     return
                 }
+                guard let self else { return }
                 let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
                 if stillLocked {
                     // 屏幕仍锁定 → 密码可能错误，记录 unlock_failed
                     self.consecutiveUnlockAttempts += 1
                     Log.sm.debug("screen still locked after 0.5s verification → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    // 双保险验证：通知状态机处理失败（计入连续失败次数，触发降级判断）
+                    Task { self.stateMachine.handleUnlockFailure() }
                     // 记录 unlock_failed
                     let failExtras: [String: String] = [
                         "result": "fail",
@@ -595,6 +621,8 @@ final class FUnManager: ObservableObject {
                     Log.sm.debug("screen unlocked → password correct, resetting counter")
                     self.consecutiveUnlockAttempts = 0
                     _log(component: "FUnManager", "tryUnlock() - verification passed, counter reset")
+                    // 双保险验证：通知状态机处理成功（清零连续失败次数，退出冷却）
+                    Task { self.stateMachine.handleUnlockSuccess() }
                 }
             }
         }
@@ -694,6 +722,7 @@ final class FUnManager: ObservableObject {
         unlockTask?.cancel()
         unlockConfirmTask?.cancel()
         intrudeCheckTask?.cancel()
+        Task { stateMachine.cancelActiveTask() }
     }
 
     // MARK: - UI 辅助

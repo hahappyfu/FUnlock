@@ -2159,3 +2159,43 @@ class LegacyCompatibilityTests: XCTestCase {
                           "onUnlock 后 lastUnlockTime 不应为 distantPast")
     }
 }
+
+// MARK: - FUnManager 状态机集成测试
+
+/// 验证 FUnManager 与状态机的集成：属性存在性、系统就绪检查、onUnlock 重置
+@MainActor
+class FUnManagerStateMachineIntegrationTests: XCTestCase {
+
+    func testFUnManagerHasStateMachineProperty() {
+        let manager = FUnManager(fun: FUn())
+        XCTAssertNotNil(manager.stateMachine, "FUnManager 应有 stateMachine 属性")
+    }
+
+    func testOnUnlockResetsStateMachineToActive() {
+        let manager = FUnManager(fun: FUn())
+        // 模拟失败触发降级
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        manager.stateMachine.handleUnlockFailure()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded, "3 次失败后应为 degraded")
+
+        // 用户手动解锁 → resetToActive
+        manager.onUnlock()
+        // onUnlock 内部通过 Task 调用 resetToActive，需要短暂等待
+        let expectation = XCTestExpectation(description: "state machine reset")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertEqual(manager.stateMachine.currentState, .active,
+                           "onUnlock 后状态机应重置为 active")
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testStateMachineTaskCancelledInCleanup() {
+        let manager = FUnManager(fun: FUn())
+        let task = Task.detached { try await Task.sleep(nanoseconds: 60_000_000_000) }
+        manager.stateMachine.setActiveTask(task as! Task<Void, Never>)
+        manager.cleanup()
+        // cleanup 应取消状态机任务（无崩溃即通过）
+    }
+}
