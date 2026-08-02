@@ -119,6 +119,7 @@ final class FUnManager: ObservableObject {
 
     let fun: FUn
     let stateMachine: FUnlockStateMachine
+    let decisionLogger: DecisionLogger
     var inputMonitor: InputActivityMonitor?
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let updateChecker = UpdateChecker()
@@ -146,6 +147,32 @@ final class FUnManager: ObservableObject {
     /// 上次成功解锁的时间（自动或手动解锁时更新）
     var lastUnlockTime: Date = .distantPast
 
+    // MARK: - 决策记录辅助
+
+    private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
+        decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
+                              rssi: rssi, device: monitoredDeviceName,
+                              screen: state.screen.description, detail: detail)
+    }
+
+    private func recordLock(_ reason: DecisionReason, detail: String = "") {
+        decisionLogger.record(category: .lock, outcome: .success, reason: reason,
+                              rssi: rssi, device: monitoredDeviceName,
+                              screen: state.screen.description, detail: detail)
+    }
+
+    private func recordSystem(_ reason: DecisionReason) {
+        decisionLogger.record(category: .system, outcome: .info, reason: reason,
+                              rssi: rssi, device: monitoredDeviceName,
+                              screen: state.screen.description)
+    }
+
+    private func recordUser(_ reason: DecisionReason) {
+        decisionLogger.record(category: .user, outcome: .success, reason: reason,
+                              rssi: rssi, device: monitoredDeviceName,
+                              screen: state.screen.description)
+    }
+
     // MARK: - 异常解锁频率检测（滑动窗口）
     private var unlockAttemptTimestamps: [Date] = []
     private let maxAttemptsInWindow = 10          // 窗口内最多允许10次
@@ -154,10 +181,11 @@ final class FUnManager: ObservableObject {
 
     // MARK: Init
 
-    init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }) {
+    init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }, decisionLogger: DecisionLogger = .shared) {
         self.fun = fun
         self.stateMachine = FUnlockStateMachine(nowProvider: nowProvider)
         self.nowProvider = nowProvider
+        self.decisionLogger = decisionLogger
         self.lockRSSI = fun.lockRSSI
         self.unlockRSSI = fun.unlockRSSI
 
@@ -209,12 +237,14 @@ final class FUnManager: ObservableObject {
 
     func onDisplaySleep() {
         Log.sm.debug("[SM] displaySleep")
+        recordSystem(.displaySleep)
         Log.sm.debug("EVENT: onDisplaySleep screen=\(self.state.screen) system=\(self.state.system)")
         state.screen = .displaySleeping
     }
 
     func onDisplayWake() {
         Log.sm.debug("[SM] displayWake")
+        recordSystem(.displayWake)
         Log.sm.debug("EVENT: onDisplayWake screen=\(self.state.screen) system=\(self.state.system)")
         state.wake = .succeeded
         wakeTask?.cancel()
@@ -227,12 +257,14 @@ final class FUnManager: ObservableObject {
 
     func onSystemSleep() {
         Log.sm.debug("[SM] systemSleep")
+        recordSystem(.systemSleep)
         state.system = .sleeping
         NSApp.setActivationPolicy(.regular)
     }
 
     func onSystemWake() {
         Log.sm.debug("[SM] systemWake")
+        recordSystem(.systemWake)
         // 延迟 1 秒等待蓝牙栈恢复
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -261,6 +293,7 @@ final class FUnManager: ObservableObject {
         state.intent = .autoLock
         consecutiveUnlockAttempts = 0
         lastUnlockTime = now
+        recordUser(.userUnlocked)
         recordUnlockSuccess()
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
         Task { stateMachine.resetToActive() }
@@ -309,6 +342,7 @@ final class FUnManager: ObservableObject {
                 ? Date().addingTimeInterval(86400)  // 24h: 等待手动解锁
                 : Date().addingTimeInterval(60)
             state.intent = .manualLock(deadline: deadline)
+            recordUser(.userLocked)
         }
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
@@ -356,6 +390,8 @@ final class FUnManager: ObservableObject {
         sys.notifyLock(reason: reason)
         ScriptRunner.shared.runScript(reason, rssi: rssi, deviceName: monitoredDeviceName)
         ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
+        let lockReason: DecisionReason = (reason == "lost") ? .lockedLost : .lockedAway
+        recordLock(lockReason)
         // P3: 形子模式遥测 — 记录自动锁屏事件
         TelemetryLogger.shared.log(
             event: .autoLock,
@@ -475,26 +511,28 @@ final class FUnManager: ObservableObject {
 
     // MARK: - 核心：自动解锁
 
-    private func attemptAutoUnlock() {
+    func attemptAutoUnlock() {
         let sys = SystemInteractionService.shared
         let screenLocked = sys.isScreenLocked(screenState: state.screen)
         let axGranted = AXIsProcessTrusted()
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
-        guard fun.presence else { Log.sm.debug("SKIP: no presence"); return }
-        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); return }
+        guard fun.presence else { Log.sm.debug("SKIP: no presence"); recordUnlock(reason: .noPresence); return }
+        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); recordUnlock(reason: .unlockDisabled); return }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); return }
+        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); recordUnlock(reason: .stateMachineBlocked); return }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(lastLockTime)
         guard sinceLock >= lockBufferDuration else {
             Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
+            recordUnlock(reason: .lockBufferActive, detail: "locked \(String(format: "%.1f", sinceLock))s ago")
             return
         }
 
         // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
         if isUnlockCooldownActive() {
             Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock)")
+            recordUnlock(reason: .unlockCooldownActive, detail: "\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock")
             return
         }
 
@@ -503,12 +541,14 @@ final class FUnManager: ObservableObject {
             let targetSSID = prefs.string(forKey: "pauseOnWiFiSSID") ?? ""
             if !targetSSID.isEmpty, let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
                 Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
+                recordUnlock(reason: .wifiPaused, detail: "SSID '\(targetSSID)'")
                 return
             }
         }
         // #5: 手动锁屏后不自动解锁
         if prefs.bool(forKey: "manualLockNoAutoUnlock") && state.intent.isManualLockActive {
             Log.sm.debug("SKIP: manualLock active, waiting for manual unlock")
+            recordUnlock(reason: .manualLockActive)
             return
         }
         if !axGranted { Log.sm.debug("WARN: ax=false, trying anyway") }
@@ -528,7 +568,7 @@ final class FUnManager: ObservableObject {
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); return }
+                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); recordUnlock(reason: .systemNotReady); return }
                     self.tryUnlock()
                 }
             } else {
@@ -537,8 +577,8 @@ final class FUnManager: ObservableObject {
             return
         }
 
-        guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); return }
-        guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); return }
+        guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
+        guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); recordUnlock(reason: .displaySleeping); return }
 
         // 屏幕已锁定等 0.3s
         let delay: UInt64 = 300_000_000
@@ -547,7 +587,7 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             try? await Task.sleep(nanoseconds: UInt64(delay))
             guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); return }
-            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); return }
+            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); recordUnlock(reason: .systemNotReady); return }
             Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             self.tryUnlock()
         }
@@ -560,23 +600,26 @@ final class FUnManager: ObservableObject {
         let locked = sys.isScreenLocked(screenState: state.screen)
         _log(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
         Log.sm.debug("screen locked check: \(locked)")
-        guard locked else { Log.sm.debug("SKIP: screen not locked"); return }
+        guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "already unlocked"); return }
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = stateMachine.attemptUnlock()
-        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); return }
+        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return }
 
         let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
         guard sinceUnlock > 3 else {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
+            recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock))s ago")
             return
         }
         let fetchResult = sec.fetchPassword(warn: true)
         guard case .success(let password) = fetchResult, let password = password else {
             if case .failure(let error) = fetchResult {
                 Log.sm.debug("SKIP: Keychain error - \(error)")
+                recordUnlock(reason: .keychainColdBoot, detail: "\(error)")
             } else {
                 Log.sm.debug("SKIP: no password")
+                recordUnlock(reason: .noPassword)
             }
             return
         }
@@ -585,7 +628,7 @@ final class FUnManager: ObservableObject {
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: state.screen)
         _log(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
-        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); return }
+        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); return }
 
         Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
@@ -599,9 +642,11 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
+            recordUnlock(.blocked, reason: .axRevoked, detail: "CGEvent post failed")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             recordUnlockAttempt()
+            recordUnlock(.success, reason: .unlockSuccess)
             _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
             // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
@@ -631,6 +676,7 @@ final class FUnManager: ObservableObject {
                     if stillLocked {
                         self.consecutiveUnlockAttempts += 1
                         Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        recordUnlock(.failed, reason: .unlockFailed, detail: "attempt #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         _log(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         Task { self.stateMachine.handleUnlockFailure() }
                         let failExtras: [String: String] = [
@@ -643,6 +689,7 @@ final class FUnManager: ObservableObject {
                         ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
                         _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
+                            recordUnlock(.blocked, reason: .passwordMismatch, detail: "too many failed attempts")
                             sys.showPasswordMismatchAlert()
                             self.consecutiveUnlockAttempts = 0
                         }

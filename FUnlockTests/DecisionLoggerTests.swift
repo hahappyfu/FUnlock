@@ -109,3 +109,42 @@ final class DecisionLoggerTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), allowed, "新增字段需同步更新白名单，防止误写敏感数据")
     }
 }
+
+final class UnlockDecisionInstrumentationTests: XCTestCase {
+    var logger: DecisionLogger!
+
+    override func setUp() {
+        super.setUp()
+        logger = DecisionLogger(logDirectory: .testLogDirectory)
+    }
+
+    override func tearDown() {
+        logger.clear()
+        logger = nil
+        super.tearDown()
+    }
+
+    private func runAttempt(_ mutate: (FUnManager) -> Void) throws -> DecisionLogger {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, nowProvider: { Date() }, decisionLogger: logger)
+        mutate(manager)
+        manager.attemptAutoUnlock()
+        return logger
+    }
+
+    func testNoPresenceRecordsDecision() throws {
+        let events = try runAttempt { $0.fun.presence = false }
+        let unlockEvents = events.events.filter { $0.category == .unlock }
+        XCTAssertFalse(unlockEvents.isEmpty, "presence=false 必须记录解锁决策")
+        XCTAssertEqual(unlockEvents.last?.outcome, .skipped)
+        XCTAssertEqual(unlockEvents.last?.reason, .noPresence)
+    }
+
+    func testUnlockDisabledRecordsDecision() throws {
+        let events = try runAttempt { $0.fun.unlockRSSI = FUn.UNLOCK_DISABLED }
+        let unlockEvents = events.events.filter { $0.category == .unlock }
+        XCTAssertFalse(unlockEvents.isEmpty, "unlockRSSI=UNLOCK_DISABLED 必须记录解锁决策")
+        XCTAssertEqual(unlockEvents.last?.outcome, .skipped)
+        XCTAssertEqual(unlockEvents.last?.reason, .unlockDisabled)
+    }
+}
