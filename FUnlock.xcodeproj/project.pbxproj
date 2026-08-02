@@ -47,6 +47,7 @@
 		TL0000010000000100000001 /* TelemetryLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = TL0000010000000100000002 /* TelemetryLogger.swift */; };
 		DL0000020000000100000001 /* DecisionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = DL0000010000000100000001 /* DecisionLogger.swift */; };
 		DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DT0000010000000100000001 /* DecisionLoggerTests.swift */; };
+		RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RM0000010000000100000001 /* ReasonActionMappingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +131,7 @@
 		TL0000010000000100000002 /* TelemetryLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryLogger.swift; sourceTree = "<group>"; };
 		DL0000010000000100000001 /* DecisionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLogger.swift; sourceTree = "<group>"; };
 		DT0000010000000100000001 /* DecisionLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLoggerTests.swift; sourceTree = "<group>"; };
+		RM0000010000000100000001 /* ReasonActionMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasonActionMappingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -245,6 +247,7 @@
 				AA000010226C1DF200000012 /* FUnlockTests.swift */,
 				AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */,
 				DT0000010000000100000001 /* DecisionLoggerTests.swift */,
+				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -467,6 +470,7 @@
 				AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */,
 				AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */,
 				DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */,
+				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

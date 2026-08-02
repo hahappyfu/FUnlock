@@ -259,3 +259,65 @@ final class DecisionLogger: ObservableObject {
         return result
     }
 }
+
+// MARK: - 原因 → 文案 / 操作映射
+
+extension DecisionReason {
+    /// 本地化 key（各语言见 Base.lproj / zh-Hans.lproj）
+    var titleKey: String {
+        switch self {
+        case .noPresence: return "reason_no_presence"
+        case .signalBelowThreshold: return "reason_signal_below_threshold"
+        case .unlockCooldownActive: return "reason_unlock_cooldown"
+        case .lockBufferActive: return "reason_lock_buffer"
+        case .manualLockActive: return "reason_manual_lock"
+        case .wifiPaused: return "reason_wifi_paused"
+        case .disabled: return "reason_disabled"
+        case .unlockDisabled: return "reason_unlock_disabled"
+        case .stateMachineBlocked: return "reason_state_machine"
+        case .axRevoked: return "reason_ax_revoked"
+        case .noPassword: return "reason_no_password"
+        case .keychainColdBoot: return "reason_keychain_cold_boot"
+        case .notSecureForInjection: return "reason_not_secure"
+        case .displaySleeping: return "reason_display_sleeping"
+        case .systemNotReady: return "reason_system_not_ready"
+        case .wakeWithoutUnlocking: return "reason_wake_without_unlock"
+        case .recentlyUnlocked: return "reason_recently_unlocked"
+        case .screenNotLocked: return "reason_screen_not_locked"
+        case .inputActive: return "reason_input_active"
+        case .gracePeriod: return "reason_grace_period"
+        case .signalBelowLockThreshold: return "reason_signal_below_lock_threshold"
+        case .unlockSuccess: return "reason_unlock_success"
+        case .unlockFailed: return "reason_unlock_failed"
+        case .unlockTimeout: return "reason_unlock_timeout"
+        case .passwordMismatch: return "reason_password_mismatch"
+        case .lockedAway: return "reason_locked_away"
+        case .lockedLost: return "reason_locked_lost"
+        case .displaySleep: return "reason_display_sleep"
+        case .displayWake: return "reason_display_wake"
+        case .systemSleep: return "reason_system_sleep"
+        case .systemWake: return "reason_system_wake"
+        case .userUnlocked: return "reason_user_unlocked"
+        case .userLocked: return "reason_user_locked"
+        }
+    }
+
+    /// 操作提示（无操作时为 nil）
+    var action: ActionHint? {
+        switch self {
+        case .signalBelowThreshold: return .lowerUnlockThreshold
+        case .manualLockActive: return .goToTab("lock")
+        case .wifiPaused: return .goToTab("network")
+        case .disabled: return .goToTab("basic")
+        case .unlockDisabled: return .goToTab("unlock")
+        case .stateMachineBlocked: return .resetStateMachine
+        case .axRevoked: return .openAccessibilitySettings
+        case .noPassword: return .reEnterPassword
+        case .keychainColdBoot: return .reEnterPassword
+        case .unlockFailed: return .reEnterPassword
+        case .passwordMismatch: return .reEnterPassword
+        case .signalBelowLockThreshold: return .goToTab("unlock")
+        default: return nil
+        }
+    }
+}
