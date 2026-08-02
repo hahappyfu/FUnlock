@@ -15,6 +15,7 @@ enum MenuTab: String, CaseIterable {
     case lock       = "lock"
     case network    = "network"
     case config     = "config"
+    case diagnostics = "diagnostics"
 
     var icon: String {
         switch self {
@@ -25,6 +26,7 @@ enum MenuTab: String, CaseIterable {
         case .lock:      return "lock"
         case .network:   return "wifi"
         case .config:    return "folder"
+        case .diagnostics: return "waveform.path.ecg"
         }
     }
 
@@ -259,6 +261,7 @@ struct MenuDashboardView: View {
                 case .lock:      lockContent
                 case .network:   networkContent
                 case .config:    configContent
+                case .diagnostics: DiagnosticsView(manager: manager, onNavigate: { selectedTab = $0 })
                 }
             }
             .padding(.vertical, 12)
