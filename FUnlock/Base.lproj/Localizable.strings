@@ -66,19 +66,14 @@
 "applied" = "Applied";
 "apply_thresholds" = "Apply Thresholds";
 "enable" = "Enable";
-"wake_on_proximity" = "Wake on Proximity";
 "wake_without_unlock" = "Wake without Unlock";
 "pause_on_lock" = "Pause on Lock";
 "use_screensaver" = "Use Screensaver";
 "sleep_display_on_lock" = "Sleep Display on Lock";
 "defer_lock_on_input" = "Defer Lock on Input";
 "manual_lock_no_auto_unlock" = "Manual Lock No Auto Unlock";
-"passive_mode" = "Passive Mode";
-"launch_at_login" = "Launch at Login";
 "about_funlock" = "About FUnlock";
 "export_diagnostics" = "Export Diagnostics";
-"lock_now" = "Lock Now";
-"quit" = "Quit";
 "status_unlocked" = "Device Unlocked";
 "status_locked_away" = "Locked — Device Away";
 "status_locked_lost" = "Locked — Signal Lost";
@@ -291,3 +286,5 @@
 "sidebar_group_diagnostics" = "Diagnostics";
 "distance_threshold" = "Distance Threshold";
 "change_device" = "Change Device";
+"done" = "Done";
+"cold_boot_keychain" = "Keychain access after cold boot";

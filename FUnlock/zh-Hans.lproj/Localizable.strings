@@ -66,19 +66,14 @@
 "applied" = "已应用";
 "apply_thresholds" = "应用阈值";
 "enable" = "启用";
-"wake_on_proximity" = "靠近时唤醒";
 "wake_without_unlock" = "唤醒但不解锁";
 "pause_on_lock" = "锁定时暂停播放";
 "use_screensaver" = "使用屏幕保护程序";
 "sleep_display_on_lock" = "锁定时关闭屏幕";
 "defer_lock_on_input" = "输入活动时暂缓锁定";
 "manual_lock_no_auto_unlock" = "手动锁屏不自动解锁";
-"passive_mode" = "被动模式";
-"launch_at_login" = "开机自启动";
 "about_funlock" = "关于 FUnlock";
 "export_diagnostics" = "导出诊断信息";
-"lock_now" = "立即锁定";
-"quit" = "退出";
 "status_unlocked" = "设备已解锁";
 "status_locked_away" = "已锁定 — 设备远离";
 "status_locked_lost" = "已锁定 — 信号丢失";
@@ -187,7 +182,6 @@
 "profile_add_hint" = "用当前阈值创建新配置";
 "profile_delete_confirm" = "删除配置";
 "profile_delete_hint" = "确定删除当前配置？此操作不可撤销。";
-"profile_delete_confirm" = "确定删除此配置？";
 "profile_default" = "默认";
 
 // Menu
@@ -290,3 +284,5 @@
 "sidebar_group_diagnostics" = "诊断";
 "distance_threshold" = "距离阈值";
 "change_device" = "更换设备";
+"done" = "完成";
+"cold_boot_keychain" = "冷启动后需要访问钥匙串";
