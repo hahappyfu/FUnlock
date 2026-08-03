@@ -300,3 +300,5 @@
 "stats_chart_signal" = "Signal";
 "stats_chart_slope" = "Slope";
 "sidebar_toggle" = "Show or Hide Sidebar";
+"diagnostics_today" = "Today";
+"diagnostics_yesterday" = "Yesterday";

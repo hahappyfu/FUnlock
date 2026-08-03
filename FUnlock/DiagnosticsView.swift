@@ -29,20 +29,36 @@ struct DiagnosticsView: View {
         self.onNavigate = onNavigate
     }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
     private var filteredEvents: [DecisionEvent] {
         guard let filter else { return logger.events }
         return logger.events.filter { $0.category == filter }
     }
 
+    /// 按日期分组（今天/昨天/更早），组内时间倒序
+    private var groupedEvents: [(title: String, events: [DecisionEvent])] {
+        let cal = Calendar.current
+        let events = filteredEvents.reversed()
+        return Dictionary(grouping: events) { event in
+            cal.startOfDay(for: event.timestamp)
+        }
+        .keys.sorted(by: >)
+        .map { day in
+            let title: String
+            if cal.isDateInToday(day) {
+                title = t("diagnostics_today")
+            } else if cal.isDateInYesterday(day) {
+                title = t("diagnostics_yesterday")
+            } else {
+                title = day.formatted(.dateTime.month().day())
+            }
+            let dayEvents = events.filter { cal.isDate($0.timestamp, inSameDayAs: day) }
+            return (title, dayEvents)
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 filterChips
                 if filteredEvents.isEmpty {
@@ -106,23 +122,34 @@ struct DiagnosticsView: View {
     // MARK: - 时间线
 
     private var timeline: some View {
-        LazyVStack(alignment: .leading, spacing: 6) {
-            ForEach(filteredEvents.reversed()) { event in
-                row(for: event)
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+            ForEach(groupedEvents, id: \.title) { group in
+                Text(group.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                ForEach(group.events) { event in
+                    row(for: event)
+                    if event.id != group.events.last?.id {
+                        Divider()
+                            .padding(.vertical, 2)
+                    }
+                }
             }
         }
     }
 
     private func row(for event: DecisionEvent) -> some View {
         let iconInfo = Self.icon(for: event)
-        return VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
                 Image(systemName: iconInfo.0)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundColor(iconInfo.1)
-                    .frame(width: 18)
+                    .frame(width: 16)
                 Text(t(event.reason?.titleKey ?? event.outcome.rawValue))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)
                 Spacer()
                 Text(Self.timeString(event.timestamp))
@@ -134,6 +161,7 @@ struct DiagnosticsView: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+                    .padding(.leading, 22)
             }
             HStack(spacing: 8) {
                 if let rssi = event.rssi {
@@ -149,10 +177,9 @@ struct DiagnosticsView: View {
                         .controlSize(.small)
                 }
             }
+            .padding(.leading, 22)
         }
-        .padding(8)
-        .background(Color.secondary.opacity(0.05))
-        .cornerRadius(7)
+        .padding(.vertical, 6)
     }
 
     // MARK: - 操作
@@ -218,8 +245,9 @@ struct DiagnosticsView: View {
     }
 
     static func timeString(_ date: Date) -> String {
-        if date > Date().addingTimeInterval(-24 * 3600) {
-            return Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return date.formatted(.dateTime.hour().minute())
         }
         return date.formatted(.dateTime.month().day().hour().minute())
     }

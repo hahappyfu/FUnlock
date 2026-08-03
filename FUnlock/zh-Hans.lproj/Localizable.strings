@@ -298,3 +298,5 @@
 "stats_chart_signal" = "信号曲线";
 "stats_chart_slope" = "斜率变化";
 "sidebar_toggle" = "显示或隐藏侧边栏";
+"diagnostics_today" = "今天";
+"diagnostics_yesterday" = "昨天";
