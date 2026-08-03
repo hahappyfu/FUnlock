@@ -285,3 +285,6 @@
 "action_reenter_password" = "重新输入密码";
 "action_go_to_settings" = "打开设置";
 "action_reset_state_machine" = "恢复自动解锁";
+"sidebar_group_common" = "常用";
+"sidebar_group_settings" = "设置";
+"sidebar_group_diagnostics" = "诊断";
