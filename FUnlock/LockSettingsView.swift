@@ -5,7 +5,6 @@ struct LockSettingsView: View {
     @AppStorage("pauseItunes") private var pauseItunes = false
     @AppStorage("sleepDisplay") private var sleepDisplay = false
     @AppStorage("lockOnIdle") private var lockOnIdle = true
-    @AppStorage("manualLockNoAutoUnlock") private var manualLockNoAutoUnlock = false
 
     var body: some View {
         ScrollView {
@@ -22,10 +21,6 @@ struct LockSettingsView: View {
                     Toggle(isOn: $lockOnIdle) {
                         Label(t("defer_lock_on_input"), systemImage: "keyboard")
                         Text(t("defer_lock_on_input_desc")).font(.caption).foregroundColor(.secondary)
-                    }
-                    Toggle(isOn: $manualLockNoAutoUnlock) {
-                        Label(t("manual_lock_no_auto_unlock"), systemImage: "hand.raised.fill")
-                        Text(t("manual_lock_no_auto_unlock_desc")).font(.caption).foregroundColor(.secondary)
                     }
                 }
             }
