@@ -92,64 +92,79 @@ struct StatsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // 概览卡片
+                Form {
+                    // 概览
+                    Section {
                         HStack(spacing: 12) {
                             statCard(t("stats_today_unlocks"), value: "\(todayUnlocks)", icon: "lock.open.fill", color: .green)
                             statCard(t("stats_today_locks"), value: "\(todayLocks)", icon: "lock.fill", color: .orange)
                             statCard(t("stats_week_unlocks"), value: "\(thisWeekUnlocks)", icon: "calendar", color: .accentColor)
                         }
+                        .frame(maxWidth: .infinity)
+                    }
 
-                        Divider()
-
-                        // 信号图表区域（macOS 13+）
-                        if !dataStore.samples.isEmpty {
-                            if #available(macOS 13.0, *) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Text("信号诊断")
-                                            .font(.subheadline.bold())
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        Picker("", selection: $chartMode) {
-                                            ForEach(ChartMode.allCases, id: \.self) { mode in
-                                                Text(mode.rawValue).tag(mode)
-                                            }
+                    // 信号图表区域（macOS 13+）
+                    if !dataStore.samples.isEmpty {
+                        if #available(macOS 13.0, *) {
+                            Section {
+                                HStack {
+                                    Text("信号诊断")
+                                        .font(.subheadline.bold())
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Picker("", selection: $chartMode) {
+                                        ForEach(ChartMode.allCases, id: \.self) { mode in
+                                            Text(mode.rawValue).tag(mode)
                                         }
-                                        .pickerStyle(.segmented)
-                                        .frame(width: 160)
                                     }
-
-                                    switch chartMode {
-                                    case .signal:
-                                        SignalChartView(samples: dataStore.samples,
-                                                        unlockThreshold: dataStore.unlockThreshold,
-                                                        lockThreshold: dataStore.lockThreshold)
-                                    case .slope:
-                                        SlopeChartView(samples: dataStore.samples)
-                                    }
-
-                                    chartLegend
+                                    .pickerStyle(.segmented)
+                                    .frame(width: 160)
                                 }
 
-                                Divider()
-                            } else {
-                                // macOS 12 fallback：简易 RSSI 文本列表
+                                switch chartMode {
+                                case .signal:
+                                    SignalChartView(samples: dataStore.samples,
+                                                    unlockThreshold: dataStore.unlockThreshold,
+                                                    lockThreshold: dataStore.lockThreshold)
+                                case .slope:
+                                    SlopeChartView(samples: dataStore.samples)
+                                }
+
+                                HStack {
+                                    Spacer()
+                                    chartLegend
+                                }
+                            }
+                        } else {
+                            // macOS 12 fallback：简易 RSSI 文本列表
+                            Section {
                                 fallbackSignalList
-                                Divider()
                             }
                         }
-
-                        // 最近事件
-                        recentEventsSection
                     }
-                    .padding(16)
+
+                    // 最近事件
+                    Section(t("stats_recent_events")) {
+                        ForEach(events.suffix(8).reversed().indices, id: \.self) { i in
+                            let entry = events.suffix(8).reversed()[i]
+                            HStack {
+                                Image(systemName: entry.event == "unlocked" ? "lock.open.fill" : "lock.fill")
+                                    .foregroundColor(entry.event == "unlocked" ? .green : .orange)
+                                    .frame(width: 16)
+                                Text(t("stats_event_\(entry.event == "unlocked" ? "unlocked" : "locked")"))
+                                    .font(.callout)
+                                Spacer()
+                                Text(entry.timestamp, format: .dateTime.month().day().hour().minute().second())
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                 }
+                .formStyle(.grouped)
             }
         }
         .frame(width: 440, height: 560)
-        .background(.regularMaterial)
     }
 
     // MARK: - macOS 12 fallback（无 Charts 时显示文本摘要）
@@ -208,47 +223,24 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 最近事件
-
-    private var recentEventsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(t("stats_recent_events"))
-                .font(.subheadline.bold())
-                .foregroundColor(.secondary)
-            ForEach(events.suffix(8).reversed().indices, id: \.self) { i in
-                let entry = events.suffix(8).reversed()[i]
-                HStack {
-                    Image(systemName: entry.event == "unlocked" ? "lock.open.fill" : "lock.fill")
-                        .foregroundColor(entry.event == "unlocked" ? .green : .orange)
-                        .frame(width: 16)
-                    Text(t("stats_event_\(entry.event == "unlocked" ? "unlocked" : "locked")"))
-                        .font(.callout)
-                    Spacer()
-                    Text(entry.timestamp, format: .dateTime.month().day().hour().minute().second())
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-
-    // MARK: - 统计卡片
+    // MARK: - 统计卡
 
     private func statCard(_ title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 4) {
+        HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title3)
                 .foregroundColor(color)
-            Text(value)
-                .font(.title2.bold())
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.title3.bold())
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(color.opacity(0.08))
-        .cornerRadius(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
     }
 }
 

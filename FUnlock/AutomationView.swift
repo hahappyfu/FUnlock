@@ -32,7 +32,7 @@ struct AutomationView: View {
             HStack {
                 Button(action: { isPresented = false }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
+                        .font(.title3)
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -45,40 +45,25 @@ struct AutomationView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            Divider()
-
-            // 事件列表
-            VStack(spacing: 0) {
-                ForEach(events, id: \.name) { event in
-                    if event.name != events.first?.name {
-                        Divider().padding(.leading, 44)
+            Form {
+                Section {
+                    ForEach(events, id: \.name) { event in
+                        eventRow(event)
                     }
-                    eventRow(event)
+                } footer: {
+                    Text(t("automation_hint"))
                 }
             }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-            .cornerRadius(10)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            // 说明文字
-            Text(t("automation_hint"))
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-
-            Spacer()
+            .formStyle(.grouped)
         }
         .frame(width: 300, height: 300)
-        .background(.regularMaterial)
     }
 
     private func eventRow(_ event: EventItem) -> some View {
         let configured = isScriptConfigured(event.fileName)
         return HStack(spacing: 10) {
             Image(systemName: event.icon)
-                .font(.system(size: 14))
+                .font(.body)
                 .foregroundColor(configured ? .green : .secondary)
                 .frame(width: 20)
 
@@ -99,8 +84,6 @@ struct AutomationView: View {
             .buttonStyle(.bordered)
             .controlSize(.mini)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
     }
 
     private func isScriptConfigured(_ fileName: String) -> Bool {

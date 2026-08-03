@@ -4,33 +4,39 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
-                .frame(width: 64, height: 64)
+        Form {
+            Section {
+                VStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                        .frame(width: 64, height: 64)
 
-            Text("FUnlock")
-                .font(.title2.bold())
+                    Text("FUnlock")
+                        .font(.title2.bold())
 
-            Text("version \(versionString)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            Divider()
-
-            Button(t("about_visit_homepage")) {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock")!)
-            }
-            Button(t("about_check_releases")) {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
+                    Text("version \(versionString)")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
             }
 
-            Divider()
+            Section {
+                Button(t("about_visit_homepage")) {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock")!)
+                }
+                Button(t("about_check_releases")) {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
+                }
+            }
 
-            Button(t("done")) { dismiss() }
-                .keyboardShortcut(.cancelAction)
+            Section {
+                Button(t("done")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
         }
-        .padding(24)
-        .frame(width: 280)
+        .formStyle(.grouped)
+        .frame(width: 300)
     }
 
     private var versionString: String {

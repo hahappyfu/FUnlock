@@ -14,7 +14,7 @@ struct OnboardingView: View {
             HStack(spacing: 6) {
                 ForEach(0..<3) { i in
                     Circle()
-                        .fill(i <= step ? Color.accentColor : Color.gray.opacity(0.3))
+                        .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
                         .frame(width: 6, height: 6)
                 }
             }
@@ -71,7 +71,6 @@ struct OnboardingView: View {
             .padding(.bottom, 16)
         }
         .frame(width: 300, height: 320)
-        .background(.regularMaterial)
     }
 
     private func finishOnboarding() {

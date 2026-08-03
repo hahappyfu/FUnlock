@@ -23,18 +23,20 @@ struct CalibrationWizardView: View {
             // 顶部标题
             headerBar
 
-            switch step {
-            case 0: welcomeStep
-            case 1: unlockCountdownStep
-            case 2: unlockSamplingStep
-            case 3: lockCountdownStep
-            case 4: lockSamplingStep
-            case 5: resultStep
-            default: EmptyView()
+            Form {
+                switch step {
+                case 0: welcomeSection
+                case 1: unlockCountdownSection
+                case 2: unlockSamplingSection
+                case 3: lockCountdownSection
+                case 4: lockSamplingSection
+                case 5: resultSection
+                default: EmptyView()
+                }
             }
+            .formStyle(.grouped)
         }
         .frame(width: 380, height: 420)
-        .background(.regularMaterial)
         .onDisappear {
             samplingTask?.cancel()
             countdownTask?.cancel()
@@ -49,11 +51,6 @@ struct CalibrationWizardView: View {
             Text(t("calibration_header"))
                 .font(.headline)
             Spacer()
-            if step > 0 && step < 5 {
-                Text(t("calibration_step_header"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
             Button(action: { cancelAndClose() }) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.secondary)
@@ -61,218 +58,185 @@ struct CalibrationWizardView: View {
             .buttonStyle(.plain)
         }
         .padding(16)
-        Divider()
     }
 
     // MARK: - Step 0: 欢迎
 
-    @ViewBuilder private var welcomeStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image(systemName: "location.viewfinder")
-                .font(.system(size: 48))
-                .foregroundColor(.accentColor)
-            Text(t("calibration_welcome_title"))
-                .font(.title3).fontWeight(.semibold)
-            Text(t("calibration_welcome_desc"))
-                .font(.callout)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            if !errorMessage.isEmpty {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+    @ViewBuilder private var welcomeSection: some View {
+        Section {
+            VStack(spacing: 16) {
+                Image(systemName: "location.viewfinder")
+                    .font(.system(size: 40))
+                    .foregroundColor(.accentColor)
+                    .padding(.top, 8)
+                Text(t("calibration_welcome_title"))
+                    .font(.title3).fontWeight(.semibold)
+                Text(t("calibration_welcome_desc"))
                     .font(.callout)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                if !errorMessage.isEmpty {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                }
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+
             Button(t("calibration_start")) { startUnlockCalibration() }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .frame(maxWidth: .infinity)
         }
-        .padding(20)
     }
 
     // MARK: - Step 1: 解锁倒计时
 
-    @ViewBuilder private var unlockCountdownStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Text(t("calibration_unlock_step_title"))
-                .font(.headline)
-            Text(t("calibration_unlock_step_desc"))
-                .font(.callout)
-                .foregroundColor(.secondary)
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
-                    .frame(width: 100, height: 100)
-                Circle()
-                    .trim(from: 0, to: CGFloat(countdown) / 5.0)
-                    .stroke(.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 100, height: 100)
-                    .rotationEffect(.degrees(-90))
-                Text("\(countdown)")
-                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+    @ViewBuilder private var unlockCountdownSection: some View {
+        Section(t("calibration_unlock_step_title")) {
+            VStack(spacing: 16) {
+                Text(t("calibration_unlock_step_desc"))
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                CalibrationRing(progress: Double(countdown) / 5.0,
+                                color: .accentColor, size: 100) {
+                    Text("\(countdown)")
+                        .font(.system(size: 36, weight: .bold, design: .monospaced))
+                }
+
+                Text(t("calibration_countdown_sampling"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-            Text(t("calibration_countdown_sampling"))
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .padding(20)
     }
 
     // MARK: - Step 2: 解锁采样
 
-    @ViewBuilder private var unlockSamplingStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Text(t("calibration_sampling_unlock"))
-                .font(.headline)
-            Text(t("calibration_stay_still"))
-                .font(.callout)
-                .foregroundColor(.secondary)
+    @ViewBuilder private var unlockSamplingSection: some View {
+        Section {
+            VStack(spacing: 16) {
+                Text(t("calibration_sampling_unlock"))
+                    .font(.headline)
+                Text(t("calibration_stay_still"))
+                    .font(.callout)
+                    .foregroundColor(.secondary)
 
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
-                    .frame(width: 100, height: 100)
-                Circle()
-                    .trim(from: 0, to: samplingProgress)
-                    .stroke(.green, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 100, height: 100)
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 2) {
-                    Text(currentRSSI.map { "\($0)" } ?? "—")
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    Text("dBm")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                CalibrationRing(progress: samplingProgress, color: .green, size: 100) {
+                    VStack(spacing: 2) {
+                        Text(currentRSSI.map { "\($0)" } ?? "—")
+                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        Text("dBm")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
-            }
 
-            Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
+                Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .padding(20)
     }
 
     // MARK: - Step 3: 锁定倒计时
 
-    @ViewBuilder private var lockCountdownStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Text(t("calibration_lock_step_title"))
-                .font(.headline)
-            Text(t("calibration_lock_step_desc"))
-                .font(.callout)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+    @ViewBuilder private var lockCountdownSection: some View {
+        Section(t("calibration_lock_step_title")) {
+            VStack(spacing: 16) {
+                Text(t("calibration_lock_step_desc"))
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
 
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
-                    .frame(width: 110, height: 110)
-                Circle()
-                    .trim(from: 0, to: CGFloat(countdown) / 15.0)
-                    .stroke(.orange, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 110, height: 110)
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 2) {
-                    Text("\(countdown)")
-                        .font(.system(size: 40, weight: .bold, design: .monospaced))
-                    Text(t("calibration_seconds_unit"))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                CalibrationRing(progress: Double(countdown) / 15.0,
+                                color: .orange, size: 110) {
+                    VStack(spacing: 2) {
+                        Text("\(countdown)")
+                            .font(.system(size: 40, weight: .bold, design: .monospaced))
+                        Text(t("calibration_seconds_unit"))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if countdown > 0 {
+                    Text(t("calibration_hurry_to_target"))
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             }
-
-            if countdown > 0 {
-                Text(t("calibration_hurry_to_target"))
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            }
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .padding(20)
     }
 
     // MARK: - Step 4: 锁定采样
 
-    @ViewBuilder private var lockSamplingStep: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Text(t("calibration_sampling_lock"))
-                .font(.headline)
-            Text(t("calibration_hold_target"))
-                .font(.callout)
-                .foregroundColor(.secondary)
+    @ViewBuilder private var lockSamplingSection: some View {
+        Section {
+            VStack(spacing: 16) {
+                Text(t("calibration_sampling_lock"))
+                    .font(.headline)
+                Text(t("calibration_hold_target"))
+                    .font(.callout)
+                    .foregroundColor(.secondary)
 
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
-                    .frame(width: 100, height: 100)
-                Circle()
-                    .trim(from: 0, to: samplingProgress)
-                    .stroke(.red, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 100, height: 100)
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: 2) {
-                    Text(currentRSSI.map { "\($0)" } ?? "—")
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    Text("dBm")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                CalibrationRing(progress: samplingProgress, color: .red, size: 100) {
+                    VStack(spacing: 2) {
+                        Text(currentRSSI.map { "\($0)" } ?? "—")
+                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        Text("dBm")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
-            }
 
-            Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
+                Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .padding(20)
     }
 
     // MARK: - Step 5: 结果
 
-    @ViewBuilder private var resultStep: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.green)
-            Text(t("calibration_complete"))
-                .font(.title3).fontWeight(.semibold)
-
+    @ViewBuilder private var resultSection: some View {
+        Section {
             VStack(spacing: 8) {
-                resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"), value: "\(avgUnlock) dBm", color: .green)
-                resultRow(icon: "lock.fill", label: t("calibration_avg_lock"), value: "\(avgLock) dBm", color: .orange)
-
-                Divider().padding(.horizontal, 20)
-
-                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(suggestedUnlock) dBm", color: .blue)
-                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(suggestedLock) dBm", color: .purple)
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 36))
+                    .foregroundColor(.green)
+                Text(t("calibration_complete"))
+                    .font(.headline)
             }
-            .padding(14)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-            .cornerRadius(10)
-            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+
+            resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"), value: "\(avgUnlock) dBm", color: .green)
+            resultRow(icon: "lock.fill", label: t("calibration_avg_lock"), value: "\(avgLock) dBm", color: .orange)
+            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(suggestedUnlock) dBm", color: .blue)
+            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(suggestedLock) dBm", color: .purple)
 
             HStack(spacing: 12) {
                 Button(t("cancel")) { cancelAndClose() }
                     .buttonStyle(.bordered)
                 Button(t("calibration_apply_recommended")) { applyValues() }
                     .buttonStyle(.borderedProminent)
-                    .tint(.blue)
+                    .tint(.accentColor)
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
         }
-        .padding(20)
     }
 
     private func resultRow(icon: String, label: String, value: String, color: Color) -> some View {
@@ -287,7 +251,6 @@ struct CalibrationWizardView: View {
                 .font(.system(.callout, design: .monospaced))
                 .fontWeight(.medium)
         }
-        .padding(.horizontal, 14)
     }
 
     // MARK: - 计算
@@ -401,5 +364,28 @@ struct CalibrationWizardView: View {
         samplingTask?.cancel()
         countdownTask?.cancel()
         isPresented = false
+    }
+}
+
+// MARK: - 环形进度
+
+private struct CalibrationRing<Content: View>: View {
+    let progress: Double
+    let color: Color
+    let size: CGFloat
+    @ViewBuilder var center: () -> Content
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 8)
+                .frame(width: size, height: size)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .frame(width: size, height: size)
+                .rotationEffect(.degrees(-90))
+            center()
+        }
     }
 }
