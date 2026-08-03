@@ -6,22 +6,6 @@ import Foundation
 import Combine
 import Cocoa
 
-/// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
-private func _log(component: String, _ message: String) {
-    let ts = _df.string(from: Date())
-    let line = "[\(ts)] [\(component)] \(message)\n"
-    if let data = line.data(using: .utf8) {
-        let fh = FileHandle(forWritingAtPath: "/tmp/funlock_debug.log")
-        fh?.seekToEndOfFile()
-        fh?.write(data)
-        fh?.closeFile()
-    }
-}
-private let _df: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return f
-}()
 
 // MARK: - 状态枚举
 
@@ -152,7 +136,7 @@ final class FUnManager: ObservableObject {
     // MARK: - 决策记录辅助
 
     private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
-        let effDetail = "effectiveRSSI=\(String(format: "%.1f", fun.effectiveRSSI)) threshold=\(fun.unlockRSSI) presence=\(fun.presence)"
+        let effDetail = "有效信号=\(String(format: "%.1f", fun.effectiveRSSI)) 阈值=\(fun.unlockRSSI) 在场=\(fun.presence ? "是" : "否")"
         let combinedDetail = detail.isEmpty ? effDetail : "\(detail) | \(effDetail)"
         decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
@@ -345,11 +329,8 @@ final class FUnManager: ObservableObject {
             isSelfLocking = false
             state.intent = .autoLock
         } else {
-            // 用户手动锁屏（⌘+Ctrl+Q 等）
-            let deadline = prefs.bool(forKey: "manualLockNoAutoUnlock")
-                ? Date().addingTimeInterval(86400)  // 24h: 等待手动解锁
-                : Date().addingTimeInterval(60)
-            state.intent = .manualLock(deadline: deadline)
+            // 用户手动锁屏（⌘+Ctrl+Q 等）→ 永久阻止自动解锁，直到手动解锁
+            state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
             recordUser(.userLocked)
         }
         state.screen = .locked(reason: .manual)
@@ -509,7 +490,8 @@ final class FUnManager: ObservableObject {
 
     func lockNow() {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(10))
+        // 手动锁定：永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
+        state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
         state.screen = .locked(reason: .manual)
         lastLockTime = now
         checkAndPauseMedia()
@@ -538,7 +520,7 @@ final class FUnManager: ObservableObject {
         // 与 onDeviceApproached 的阶梯门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard fun.effectiveRSSI >= Double(fun.unlockStairThreshold) else {
             Log.sm.debug("SKIP: signal below stair threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
-            recordUnlock(reason: .signalBelowThreshold, detail: "eff \(String(format: "%.1f", self.fun.effectiveRSSI)) < stair \(self.fun.unlockStairThreshold)")
+            recordUnlock(reason: .signalBelowThreshold, detail: "有效信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) < 阶梯阈值 \(self.fun.unlockStairThreshold)")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
@@ -548,14 +530,14 @@ final class FUnManager: ObservableObject {
         let sinceLock = now.timeIntervalSince(lastLockTime)
         guard sinceLock >= lockBufferDuration else {
             Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
-            recordUnlock(reason: .lockBufferActive, detail: "locked \(String(format: "%.1f", sinceLock))s ago")
+            recordUnlock(reason: .lockBufferActive, detail: "\(String(format: "%.1f", sinceLock)) 秒前已锁定")
             return
         }
 
         // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
         if isUnlockCooldownActive() {
             Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock)")
-            recordUnlock(reason: .unlockCooldownActive, detail: "\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock")
+            recordUnlock(reason: .unlockCooldownActive, detail: "距上次解锁 \(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime))) 秒")
             return
         }
 
@@ -564,7 +546,7 @@ final class FUnManager: ObservableObject {
             let targetSSID = prefs.string(forKey: "pauseOnWiFiSSID") ?? ""
             if !targetSSID.isEmpty, let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
                 Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
-                recordUnlock(reason: .wifiPaused, detail: "SSID '\(targetSSID)'")
+                recordUnlock(reason: .wifiPaused, detail: "WiFi '\(targetSSID)'")
                 return
             }
         }
@@ -618,22 +600,28 @@ final class FUnManager: ObservableObject {
 
     // 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     private func tryUnlock() {
+        guard let password = guardFetchPassword() else { return }
+        performInjectionAndVerify(password: password)
+    }
+
+    /// 前置门控 + 密码获取：任一检查失败即记录原因并返回 nil
+    private func guardFetchPassword() -> String? {
         let sys = SystemInteractionService.shared
         let sec = SecurityService.shared
         let locked = sys.isScreenLocked(screenState: state.screen)
-        _log(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
+        logDebug(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
         Log.sm.debug("screen locked check: \(locked)")
-        guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "already unlocked"); return }
+        guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = stateMachine.attemptUnlock()
-        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return }
+        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return nil }
 
         let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
         guard sinceUnlock > 3 else {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
-            recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock))s ago")
-            return
+            recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock)) 秒前解锁过")
+            return nil
         }
         let fetchResult = sec.fetchPassword(warn: true)
         guard case .success(let password) = fetchResult, let password = password else {
@@ -644,47 +632,45 @@ final class FUnManager: ObservableObject {
                 Log.sm.debug("SKIP: no password")
                 recordUnlock(reason: .noPassword)
             }
-            return
+            return nil
         }
-        _log(component: "FUnManager", "tryUnlock() password fetched - length=\(password.count)")
+        logDebug(component: "FUnManager", "tryUnlock() password fetched - length=\(password.count)")
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: state.screen)
-        _log(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
-        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); return }
+        logDebug(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
+        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); return nil }
+        return password
+    }
 
+    /// 密码注入 + 乐观确认 + 双保险验证
+    private func performInjectionAndVerify(password: String) {
+        let sys = SystemInteractionService.shared
         Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         self.isAutoUnlocking = true
-        _log(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude(\(password.count) chars)")
+        logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude(\(password.count) chars)")
         let posted = sys.injectPasswordWithPrelude(password) {
             self.state.screen != .unlocked
             && sys.isSecureToInject(screenState: self.state.screen)
         }
-        _log(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
+        logDebug(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
             // 注入失败，本次不算自动解锁，立即复位标记
             self.isAutoUnlocking = false
-            recordUnlock(.blocked, reason: .axRevoked, detail: "CGEvent post failed")
+            recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             recordUnlockAttempt()
             recordUnlock(.success, reason: .unlockSuccess)
-            _log(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
+            logDebug(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
             // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
-            let verifyStartTime = self.now
-            let optimisticExtras: [String: String] = [
-                "result": "success",
-                "latencyMs": "0",
-                "source": "proximity",
-                "effectiveRSSI": String(format: "%.1f", fun.effectiveRSSI),
-                "device": monitoredDeviceName ?? "unknown"
-            ]
+            let optimisticExtras = unlockEventExtras(result: "success")
             ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: optimisticExtras)
             // 双保险验证：通知 + CGSession 竞速（withTaskGroup），替代旧的0.5秒固定延时
             Task { [weak self] in
@@ -697,7 +683,7 @@ final class FUnManager: ObservableObject {
                     // 通知或 CGSession 确认解锁成功
                     Log.sm.debug("dual verify: unlock confirmed")
                     self.consecutiveUnlockAttempts = 0
-                    _log(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
+                    logDebug(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
                     Task { self.stateMachine.handleUnlockSuccess() }
                 } else {
                     // 通知和 CGSession 都未确认解锁 → 可能密码错误
@@ -705,20 +691,14 @@ final class FUnManager: ObservableObject {
                     if stillLocked {
                         self.consecutiveUnlockAttempts += 1
                         Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        recordUnlock(.failed, reason: .unlockFailed, detail: "attempt #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        _log(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
+                        logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         Task { self.stateMachine.handleUnlockFailure() }
-                        let failExtras: [String: String] = [
-                            "result": "fail",
-                            "latencyMs": "0",
-                            "source": "proximity",
-                            "effectiveRSSI": String(format: "%.1f", self.fun.effectiveRSSI),
-                            "device": self.monitoredDeviceName ?? "unknown"
-                        ]
+                        let failExtras = self.unlockEventExtras(result: "fail")
                         ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
-                        _log(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                        logDebug(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
-                            recordUnlock(.blocked, reason: .passwordMismatch, detail: "too many failed attempts")
+                            recordUnlock(.blocked, reason: .passwordMismatch, detail: "失败次数过多")
                             sys.showPasswordMismatchAlert()
                             self.consecutiveUnlockAttempts = 0
                         }
@@ -726,7 +706,7 @@ final class FUnManager: ObservableObject {
                         // CGSession 也显示已解锁（竞态下可能延迟发现）
                         Log.sm.debug("dual verify: timeout but CGSession says unlocked")
                         self.consecutiveUnlockAttempts = 0
-                        _log(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
+                        logDebug(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
                         Task { self.stateMachine.handleUnlockSuccess() }
                     }
                 }
@@ -746,6 +726,17 @@ final class FUnManager: ObservableObject {
             )
             Log.sm.debug("unlock complete")
         }
+    }
+
+    /// 解锁事件扩展字段（乐观确认 / 双保险验证共用）
+    private func unlockEventExtras(result: String) -> [String: String] {
+        [
+            "result": result,
+            "latencyMs": "0",
+            "source": "proximity",
+            "effectiveRSSI": String(format: "%.1f", fun.effectiveRSSI),
+            "device": monitoredDeviceName ?? "unknown"
+        ]
     }
 
     // MARK: - 显示器唤醒重试 (async/await 替代 Timer)
@@ -940,15 +931,8 @@ struct FUnlockResultVerifier {
 
     /// 写入扩展事件日志，返回实际写入的日志行（方便测试断言）
     func logUnlockResult() -> String {
-        var extras: [String: String] = ["result": result]
-        extras["latencyMs"] = String(latencyMs)
-        extras["source"] = source
-        if let rssi = effectiveRSSI {
-            extras["effectiveRSSI"] = String(format: "%.1f", rssi)
-        }
-        if let name = device {
-            extras["device"] = name
-        }
+        let extras = Self.makeExtras(result: result, latencyMs: latencyMs,
+                                     source: source, effectiveRSSI: effectiveRSSI, device: device)
         let line = ScriptRunner.shared.buildEventLine(eventName, rssi: nil, extraFields: extras)
         ScriptRunner.shared.logEventIfNeeded(eventName, rssi: nil, extraFields: extras)
         return line
@@ -973,7 +957,17 @@ struct FUnlockResultVerifier {
         device: String? = nil
     ) -> String {
         let latencyMs = Int(Date().timeIntervalSince(startTime) * 1000)
-        var extras: [String: String] = ["result": "timeout"]
+        let extras = makeExtras(result: "timeout", latencyMs: latencyMs,
+                                source: source, effectiveRSSI: effectiveRSSI, device: device)
+        let line = ScriptRunner.shared.buildEventLine(timeoutEventName, rssi: nil, extraFields: extras)
+        ScriptRunner.shared.logEventIfNeeded(timeoutEventName, rssi: nil, extraFields: extras)
+        return line
+    }
+
+    /// 构建统一格式的扩展事件字段（result/latencyMs/source/effectiveRSSI/device）
+    private static func makeExtras(result: String, latencyMs: Int, source: String,
+                                   effectiveRSSI: Double?, device: String?) -> [String: String] {
+        var extras: [String: String] = ["result": result]
         extras["latencyMs"] = String(latencyMs)
         extras["source"] = source
         if let rssi = effectiveRSSI {
@@ -982,8 +976,6 @@ struct FUnlockResultVerifier {
         if let name = device {
             extras["device"] = name
         }
-        let line = ScriptRunner.shared.buildEventLine(timeoutEventName, rssi: nil, extraFields: extras)
-        ScriptRunner.shared.logEventIfNeeded(timeoutEventName, rssi: nil, extraFields: extras)
-        return line
+        return extras
     }
 }

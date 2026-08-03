@@ -230,7 +230,9 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             // 重置所有共享状态
             monitoredUUID = uuid
             scanMode = true
-            presence = true
+            // presence 不强制置 true：绑定后须信号实际达到解锁阈值（checkProximity）才标记在场，
+            // 避免"设备从未靠近"（如忘带手表）时因 presence 残留触发锁屏
+            presence = false
             monitoredPeripheral = nil
             activeModeTimer?.invalidate()
             activeModeTimer = nil
@@ -279,6 +281,16 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 return
             }
             let shouldLose: Bool = self.lock.withLock {
+                // 输入活动且 lockOnIdle 开启时，不判定信号丢失（与 applyLockTimer 行为一致），
+                // 仅重置超时计数与衰减基准，避免打字/用鼠标时因信号超时误锁
+                let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
+                    || UserDefaults.standard.bool(forKey: "lockOnIdle")
+                if lockOnIdle && self.isUserInputActive {
+                    self.signalLostCount = 0
+                    self.lastReceiveTime = Date()
+                    self.pipeline.decayBaseline = Date()
+                    return false
+                }
                 self.signalLostCount += 1
                 return self.signalLostCount >= 3
             }
