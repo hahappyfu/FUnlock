@@ -58,3 +58,6 @@ fastlane/screenshots
 *.zip
 
 .worktrees/
+
+*.dmg
+session_log_*.txt
