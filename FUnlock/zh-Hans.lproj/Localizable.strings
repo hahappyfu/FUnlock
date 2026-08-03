@@ -286,3 +286,15 @@
 "change_device" = "更换设备";
 "done" = "完成";
 "cold_boot_keychain" = "冷启动后需要访问钥匙串";
+"stats_signal_diagnostics" = "信号诊断";
+"stats_raw" = "原始";
+"stats_kalman" = "卡尔曼";
+"about_version" = "版本";
+"success" = "成功";
+"skipped" = "已跳过";
+"failed" = "失败";
+"blocked" = "已阻止";
+"info" = "信息";
+"stats_chart_signal" = "信号曲线";
+"stats_chart_slope" = "斜率变化";
+"sidebar_toggle" = "显示或隐藏侧边栏";

@@ -13,7 +13,7 @@ struct AboutView: View {
                     Text("FUnlock")
                         .font(.title2.bold())
 
-                    Text("version \(versionString)")
+                    Text("\(t("about_version")) \(versionString)")
                         .font(.callout)
                         .foregroundColor(.secondary)
                 }

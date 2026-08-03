@@ -2,6 +2,7 @@
 // NavigationSplitView 主骨架：分组侧边栏 + 内容区 + sheet 管理
 
 import SwiftUI
+import AppKit
 
 // MARK: - Tab 枚举
 
@@ -55,6 +56,16 @@ struct MainWindowView: View {
             contentView
         }
         .frame(minWidth: 560, minHeight: 460)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    toggleSidebar()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .help(t("sidebar_toggle"))
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack {
                 Button {
@@ -154,5 +165,11 @@ struct MainWindowView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             withAnimation { toastMessage = nil }
         }
+    }
+
+    /// 切换侧边栏显示/隐藏（等价于系统 NavigationSplitView 的 toolbar 切换按钮）
+    private func toggleSidebar() {
+        NSApp.keyWindow?.firstResponder?
+            .tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 }

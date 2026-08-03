@@ -26,7 +26,7 @@ struct SidebarView: View {
             deviceStatusRow
             List(selection: $selectedTab) {
                 ForEach(SidebarGroup.allCases, id: \.self) { group in
-                    Section(group.rawValue) {
+                    Section(t(group.rawValue)) {
                         ForEach(group.tabs, id: \.self) { tab in
                             Label(tab.label, systemImage: tab.icon)
                                 .tag(tab)

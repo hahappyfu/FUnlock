@@ -41,19 +41,21 @@ struct DiagnosticsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            filterChips
-            if filteredEvents.isEmpty {
-                emptyState
-            } else {
-                timeline
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                header
+                filterChips
+                if filteredEvents.isEmpty {
+                    emptyState
+                } else {
+                    timeline
+                }
+                clearFooter
             }
-            clearFooter
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             if logger.events.isEmpty { logger.loadHistory() }
         }

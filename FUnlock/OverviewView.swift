@@ -24,29 +24,42 @@ struct OverviewView: View {
     @State private var showUnbindConfirm = false
     @State private var isDeviceListExpanded = false
 
+    /// RSSI 可视化范围（dBm）
+    enum RSSIRange {
+        static let min = -95.0
+        static let max = -30.0
+    }
+
+    /// 禁用解锁时的 UI 回退阈值：以滑块最小值显示
+    private var effectiveUnlockRSSI: Int {
+        manager.unlockRSSI == FUn().UNLOCK_DISABLED ? Int(RSSIRange.min) : manager.unlockRSSI
+    }
+
     var isThresholdApplied: Bool {
-        Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == (manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
+        Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == effectiveUnlockRSSI
     }
 
     private func xPos(_ v: Double, _ width: CGFloat) -> CGFloat {
-        let minV = -95.0, maxV = -30.0
+        let minV = RSSIRange.min, maxV = RSSIRange.max
         return CGFloat((v - minV) / (maxV - minV)) * width
     }
 
     var body: some View {
-        Form {
-            if manager.monitoredDeviceName == nil {
-                noDeviceSection
-            } else {
-                deviceStatusSection
-                thresholdSection
-                quickActionsSection
+        ScrollView {
+            Form {
+                if manager.monitoredDeviceName == nil {
+                    noDeviceSection
+                } else {
+                    deviceStatusSection
+                    thresholdSection
+                    quickActionsSection
+                }
             }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
         .onAppear {
             sliderLock = Double(manager.lockRSSI)
-            sliderUnlock = Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
+            sliderUnlock = Double(effectiveUnlockRSSI)
         }
         .onReceive(manager.$lockRSSI) { newValue in
             if Int(sliderLock) != newValue && !isSliderDragging {
@@ -54,7 +67,7 @@ struct OverviewView: View {
             }
         }
         .onReceive(manager.$unlockRSSI) { newValue in
-            let expected = (newValue == 1 ? -95 : newValue)
+            let expected = (newValue == FUn().UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
             if Int(sliderUnlock) != expected && !isSliderDragging {
                 sliderUnlock = Double(expected)
             }
@@ -172,26 +185,10 @@ struct OverviewView: View {
         Section(t("distance_threshold")) {
             thresholdBar
 
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill").foregroundColor(.orange).frame(width: 16)
-                Text(t("lock")).frame(width: 30, alignment: .leading)
-                Slider(value: $sliderLock, in: Double(-95)...Double(-30),
-                       onEditingChanged: { editing in isSliderDragging = editing })
-                Text("\(Int(sliderLock))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(width: 34, alignment: .trailing)
-                Text("dBm").font(.caption).foregroundColor(.secondary)
-            }
-            HStack(spacing: 6) {
-                Image(systemName: "lock.open.fill").foregroundColor(.green).frame(width: 16)
-                Text(t("unlock")).frame(width: 30, alignment: .leading)
-                Slider(value: $sliderUnlock, in: Double(-95)...Double(-30),
-                       onEditingChanged: { editing in isSliderDragging = editing })
-                Text("\(Int(sliderUnlock))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(width: 34, alignment: .trailing)
-                Text("dBm").font(.caption).foregroundColor(.secondary)
-            }
+            ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
+                               value: $sliderLock, isDragging: $isSliderDragging)
+            ThresholdSliderRow(icon: "lock.open.fill", color: .green, title: t("unlock"),
+                               value: $sliderUnlock, isDragging: $isSliderDragging)
 
             Button {
                 manager.setLockRSSI(Int(sliderLock))
@@ -229,7 +226,7 @@ struct OverviewView: View {
                 Circle().fill(Color.green)
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(.white, lineWidth: 2))
-                    .position(x: xPos(Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI), width), y: 0)
+                    .position(x: xPos(Double(effectiveUnlockRSSI), width), y: 0)
             }
             .frame(height: 14)
             .frame(maxWidth: .infinity)
@@ -342,6 +339,29 @@ struct OverviewView: View {
         if rssi >= manager.unlockRSSI { return .green }
         if rssi >= manager.lockRSSI { return .orange }
         return .red
+    }
+}
+
+// MARK: - 阈值滑块行
+
+private struct ThresholdSliderRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    @Binding var value: Double
+    @Binding var isDragging: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).foregroundColor(color).frame(width: 16)
+            Text(title).frame(width: 30, alignment: .leading)
+            Slider(value: $value, in: OverviewView.RSSIRange.min...OverviewView.RSSIRange.max,
+                   onEditingChanged: { editing in isDragging = editing })
+            Text("\(Int(value))")
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 34, alignment: .trailing)
+            Text("dBm").font(.caption).foregroundColor(.secondary)
+        }
     }
 }
 

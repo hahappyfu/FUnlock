@@ -10,35 +10,37 @@ struct ConfigSettingsView: View {
     @State private var newProfileName = ""
 
     var body: some View {
-        Form {
-            Section {
-                Picker(t("profile"), selection: $profileManager.activeProfileID) {
-                    ForEach(profileManager.profiles) { profile in
-                        Text(profile.name).tag(profile.id)
+        ScrollView {
+            Form {
+                Section {
+                    Picker(t("profile"), selection: $profileManager.activeProfileID) {
+                        ForEach(profileManager.profiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
                     }
-                }
-                .onChange(of: profileManager.activeProfileID) { id in
-                    profileManager.setActive(id)
-                    profileManager.applyActiveProfile(to: manager)
-                }
+                    .onChange(of: profileManager.activeProfileID) { id in
+                        profileManager.setActive(id)
+                        profileManager.applyActiveProfile(to: manager)
+                    }
 
-                HStack {
-                    Spacer()
-                    Button {
-                        newProfileName = ""
-                        showAddProfile = true
-                    } label: {
-                        Image(systemName: "plus.circle")
-                    }
-                    if profileManager.activeProfileID != "default" {
-                        Button { showDeleteProfile = true } label: {
-                            Image(systemName: "minus.circle")
+                    HStack {
+                        Spacer()
+                        Button {
+                            newProfileName = ""
+                            showAddProfile = true
+                        } label: {
+                            Image(systemName: "plus.circle")
+                        }
+                        if profileManager.activeProfileID != "default" {
+                            Button { showDeleteProfile = true } label: {
+                                Image(systemName: "minus.circle")
+                            }
                         }
                     }
                 }
             }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
         .alert(t("profile_add"), isPresented: $showAddProfile) {
             TextField(t("profile_name_placeholder"), text: $newProfileName)
             Button(t("ok")) {

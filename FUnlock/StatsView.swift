@@ -33,8 +33,8 @@ func loadRecentEvents(maxCount: Int = 200) -> [LogEntry] {
 // MARK: - 图表模式
 
 enum ChartMode: String, CaseIterable {
-    case signal = "信号曲线"
-    case slope  = "斜率变化"
+    case signal = "stats_chart_signal"
+    case slope  = "stats_chart_slope"
 }
 
 // MARK: - 统计面板
@@ -108,13 +108,13 @@ struct StatsView: View {
                         if #available(macOS 13.0, *) {
                             Section {
                                 HStack {
-                                    Text("信号诊断")
+                                    Text(t("stats_signal_diagnostics"))
                                         .font(.subheadline.bold())
                                         .foregroundColor(.secondary)
                                     Spacer()
                                     Picker("", selection: $chartMode) {
                                         ForEach(ChartMode.allCases, id: \.self) { mode in
-                                            Text(mode.rawValue).tag(mode)
+                                            Text(t(mode.rawValue)).tag(mode)
                                         }
                                     }
                                     .pickerStyle(.segmented)
@@ -171,7 +171,7 @@ struct StatsView: View {
 
     private var fallbackSignalList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("信号诊断")
+            Text(t("stats_signal_diagnostics"))
                 .font(.subheadline.bold())
                 .foregroundColor(.secondary)
             let recent = dataStore.samples.suffix(10)
@@ -180,10 +180,10 @@ struct StatsView: View {
                     Text(sample.timestamp, format: .dateTime.hour().minute().second())
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 65, alignment: .leading)
-                    Text("Raw: \(Int(sample.rawRSSI))")
+                    Text("\(t("stats_raw")): \(Int(sample.rawRSSI))")
                         .font(.caption)
                         .frame(width: 60, alignment: .leading)
-                    Text("Kalman: \(Int(sample.kalmanEstimate))")
+                    Text("\(t("stats_kalman")): \(Int(sample.kalmanEstimate))")
                         .font(.caption)
                         .frame(width: 65, alignment: .leading)
                     if let event = sample.event {

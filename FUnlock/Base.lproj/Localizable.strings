@@ -288,3 +288,15 @@
 "change_device" = "Change Device";
 "done" = "Done";
 "cold_boot_keychain" = "Keychain access after cold boot";
+"stats_signal_diagnostics" = "Signal Diagnostics";
+"stats_raw" = "Raw";
+"stats_kalman" = "Kalman";
+"about_version" = "Version";
+"success" = "Success";
+"skipped" = "Skipped";
+"failed" = "Failed";
+"blocked" = "Blocked";
+"info" = "Info";
+"stats_chart_signal" = "Signal";
+"stats_chart_slope" = "Slope";
+"sidebar_toggle" = "Show or Hide Sidebar";

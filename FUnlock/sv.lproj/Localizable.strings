@@ -269,3 +269,15 @@
 "reason_user_unlocked" = "Unlocked by user";
 "reason_wake_without_unlock" = "Wake without unlocking enabled";
 "reason_wifi_paused" = "Paused by matching Wi-Fi";
+"stats_signal_diagnostics" = "Signal Diagnostics";
+"stats_raw" = "Raw";
+"stats_kalman" = "Kalman";
+"about_version" = "Version";
+"success" = "Success";
+"skipped" = "Skipped";
+"failed" = "Failed";
+"blocked" = "Blocked";
+"info" = "Info";
+"stats_chart_signal" = "Signal";
+"stats_chart_slope" = "Slope";
+"sidebar_toggle" = "Show or Hide Sidebar";
