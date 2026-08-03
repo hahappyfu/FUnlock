@@ -27,6 +27,11 @@ struct OverviewView: View {
         Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == (manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
     }
 
+    private func xPos(_ v: Double, _ width: CGFloat) -> CGFloat {
+        let minV = -95.0, maxV = -30.0
+        return CGFloat((v - minV) / (maxV - minV)) * width
+    }
+
     var body: some View {
         Form {
             if manager.monitoredDeviceName == nil {
@@ -160,8 +165,6 @@ struct OverviewView: View {
     private var thresholdBar: some View {
         GeometryReader { geo in
             let width = geo.size.width
-            let minV = -95.0, maxV = -30.0
-            func x(_ v: Double) -> CGFloat { CGFloat((v - minV) / (maxV - minV)) * width }
 
             ZStack(alignment: .leading) {
                 // 底轨
@@ -171,17 +174,17 @@ struct OverviewView: View {
                     Circle()
                         .fill(signalColor)
                         .frame(width: 10, height: 10)
-                        .position(x: x(Double(rssi)), y: 0)
+                        .position(x: xPos(Double(rssi), width), y: 0)
                         .shadow(radius: 1)
                 }
                 Circle().fill(Color.orange)
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(.white, lineWidth: 2))
-                    .position(x: x(Double(manager.lockRSSI)), y: 0)
+                    .position(x: xPos(Double(manager.lockRSSI), width), y: 0)
                 Circle().fill(Color.green)
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(.white, lineWidth: 2))
-                    .position(x: x(Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)), y: 0)
+                    .position(x: xPos(Double(manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI), width), y: 0)
             }
             .frame(height: 14)
             .frame(maxWidth: .infinity)

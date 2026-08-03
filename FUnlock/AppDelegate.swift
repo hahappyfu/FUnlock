@@ -585,13 +585,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func setupSettingsWindow() {
-        let dashboard = MenuDashboardView(manager: manager, fun: fun)
+        let dashboard = MainWindowView(manager: manager, fun: fun)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "FUnlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
-        settingsWindow.contentMinSize = NSSize(width: 440, height: 480)
-        settingsWindow.contentMaxSize = NSSize(width: 520, height: 800)
+        settingsWindow.contentMinSize = NSSize(width: 560, height: 420)
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()
     }

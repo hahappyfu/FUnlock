@@ -3,6 +3,34 @@
 
 import SwiftUI
 
+// MARK: - Tab 枚举
+
+enum MenuTab: String, CaseIterable {
+    case overview   = "overview"
+    case device     = "device"
+    case basic      = "basic"
+    case unlock     = "unlock"
+    case lock       = "lock"
+    case network    = "network"
+    case config     = "config"
+    case diagnostics = "diagnostics"
+
+    var icon: String {
+        switch self {
+        case .overview:  return "gauge.medium"
+        case .device:    return "antenna.radiowaves.left.and.right"
+        case .basic:     return "gearshape"
+        case .unlock:    return "lock.open"
+        case .lock:      return "lock"
+        case .network:   return "wifi"
+        case .config:    return "folder"
+        case .diagnostics: return "waveform.path.ecg"
+        }
+    }
+
+    var label: String { t(rawValue) }
+}
+
 struct MainWindowView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
