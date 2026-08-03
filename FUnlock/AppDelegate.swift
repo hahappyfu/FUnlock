@@ -263,14 +263,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Popover
 
     @MainActor @objc func toggleSettingsWindow(_ sender: AnyObject?) {
+        // 防御：窗口延迟初始化可能尚未完成（macOS Sequoia TCC 兼容）
+        if settingsWindow == nil { setupSettingsWindow() }
         if settingsWindow.isVisible {
             settingsWindow.orderOut(nil)
             fun.stopScanning()
         } else {
-            // 居中显示
+            // 先激活再前置窗口：菜单栏 app 点击菜单项后必须先 activate，
+            // 否则第一次调用 makeKeyAndOrderFront 不生效（经典"点两次"问题）
+            NSApp.activate(ignoringOtherApps: true)
             settingsWindow.center()
             settingsWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             fun.startScanning()
         }
     }
@@ -512,14 +515,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: t("menu_change_password"), action: #selector(changePassword), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: t("menu_check_update"), action: #selector(checkForUpdates), keyEquivalent: ""))
+        let openSettings = NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: "")
+        openSettings.target = self
+        menu.addItem(openSettings)
+        let changePassword = NSMenuItem(title: t("menu_change_password"), action: #selector(changePassword), keyEquivalent: "")
+        changePassword.target = self
+        menu.addItem(changePassword)
+        let checkUpdate = NSMenuItem(title: t("menu_check_update"), action: #selector(checkForUpdates), keyEquivalent: "")
+        checkUpdate.target = self
+        menu.addItem(checkUpdate)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: t("menu_lock_now"), action: #selector(lockNow), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: t("menu_stats"), action: #selector(showStats), keyEquivalent: ""))
+        let lockNow = NSMenuItem(title: t("menu_lock_now"), action: #selector(lockNow), keyEquivalent: "")
+        lockNow.target = self
+        menu.addItem(lockNow)
+        let stats = NSMenuItem(title: t("menu_stats"), action: #selector(showStats), keyEquivalent: "")
+        stats.target = self
+        menu.addItem(stats)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: t("menu_quit"), action: #selector(quitApp), keyEquivalent: ""))
+        let quit = NSMenuItem(title: t("menu_quit"), action: #selector(quitApp), keyEquivalent: "")
+        quit.target = self
+        menu.addItem(quit)
         statusItem.menu = menu
     }
 

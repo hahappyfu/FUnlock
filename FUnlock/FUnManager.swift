@@ -136,8 +136,8 @@ final class FUnManager: ObservableObject {
     // MARK: - 决策记录辅助
 
     private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
-        let effDetail = "有效信号=\(String(format: "%.1f", fun.effectiveRSSI)) 阈值=\(fun.unlockRSSI) 在场=\(fun.presence ? "是" : "否")"
-        let combinedDetail = detail.isEmpty ? effDetail : "\(detail) | \(effDetail)"
+        let effDetail = "信号 \(String(format: "%.1f", fun.effectiveRSSI)) dBm（解锁阈值 \(fun.unlockRSSI) dBm）"
+        let combinedDetail = detail.isEmpty ? effDetail : "\(detail)（\(effDetail)）"
         decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
                               screen: state.screen.description, detail: combinedDetail)
@@ -520,7 +520,7 @@ final class FUnManager: ObservableObject {
         // 与 onDeviceApproached 的阶梯门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard fun.effectiveRSSI >= Double(fun.unlockStairThreshold) else {
             Log.sm.debug("SKIP: signal below stair threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
-            recordUnlock(reason: .signalBelowThreshold, detail: "有效信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) < 阶梯阈值 \(self.fun.unlockStairThreshold)")
+            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) dBm 低于阶梯阈值 \(self.fun.unlockStairThreshold) dBm")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁

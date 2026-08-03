@@ -54,6 +54,7 @@ struct MainWindowView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
             contentView
+                .padding(.bottom, 26)
         }
         .frame(minWidth: 560, minHeight: 460)
         .toolbar {
