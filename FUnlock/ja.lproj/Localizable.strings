@@ -223,3 +223,7 @@
 "manual_lock_no_auto_unlock_desc" = "手動ロック後、自動ロック解除をスキップします";
 "pause_on_wifi_desc" = "指定したWi-Fiに接続中、自動ロック解除を一時停止します";
 "passive_mode_desc" = "スキャンを停止し、手動トリガー時のみロック/ロック解除します";
+"sidebar_group_common" = "Common";
+"sidebar_group_settings" = "Settings";
+"sidebar_group_diagnostics" = "Diagnostics";
+"distance_threshold" = "Distance Threshold";

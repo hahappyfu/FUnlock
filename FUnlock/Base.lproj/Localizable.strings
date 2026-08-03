@@ -286,3 +286,7 @@
 "action_reenter_password" = "Re-enter Password";
 "action_go_to_settings" = "Open Settings";
 "action_reset_state_machine" = "Resume Auto-Unlock";
+"sidebar_group_common" = "Common";
+"sidebar_group_settings" = "Settings";
+"sidebar_group_diagnostics" = "Diagnostics";
+"distance_threshold" = "Distance Threshold";

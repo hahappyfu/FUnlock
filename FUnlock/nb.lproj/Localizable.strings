@@ -219,3 +219,7 @@
 "manual_lock_no_auto_unlock_desc" = "Hopp over automatisk opplåsing etter manuell låsing";
 "pause_on_wifi_desc" = "Pause automatisk opplåsing ved tilkobling til angitt Wi-Fi";
 "passive_mode_desc" = "Stopp skanning; lås/lås opp kun ved manuell utløsning";
+"sidebar_group_common" = "Common";
+"sidebar_group_settings" = "Settings";
+"sidebar_group_diagnostics" = "Diagnostics";
+"distance_threshold" = "Distance Threshold";

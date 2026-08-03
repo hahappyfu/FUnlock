@@ -219,3 +219,7 @@
 "manual_lock_no_auto_unlock_desc" = "Automatisches Entsperren nach manuellem Sperren überspringen";
 "pause_on_wifi_desc" = "Automatisches Entsperren bei Verbindung mit angegebenem Wi-Fi pausieren";
 "passive_mode_desc" = "Scannen stoppen; nur bei manueller Auslösung sperren/entsperren";
+"sidebar_group_common" = "Common";
+"sidebar_group_settings" = "Settings";
+"sidebar_group_diagnostics" = "Diagnostics";
+"distance_threshold" = "Distance Threshold";

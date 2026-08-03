@@ -219,3 +219,7 @@
 "manual_lock_no_auto_unlock_desc" = "Manuel kilitlemeden sonra otomatik kilidi açmayı atla";
 "pause_on_wifi_desc" = "Belirli Wi-Fi'ye bağlıyken otomatik kilidi açmayı duraklat";
 "passive_mode_desc" = "Taramayı durdur; sadece manuel tetikleme ile kilitle/kilidi aç";
+"sidebar_group_common" = "Common";
+"sidebar_group_settings" = "Settings";
+"sidebar_group_diagnostics" = "Diagnostics";
+"distance_threshold" = "Distance Threshold";
