@@ -207,7 +207,7 @@ struct DiagnosticsView: View {
         switch (event.category, event.outcome) {
         case (.unlock, .success): return ("lock.open.fill", .green)
         case (.unlock, .failed), (.unlock, .blocked): return ("exclamationmark.triangle.fill", .red)
-        case (.unlock, .skipped): return ("lock.open", .secondary)
+        case (.unlock, .skipped), (.unlock, .info): return ("lock.open", .secondary)
         case (.lock, .success): return ("lock.fill", .orange)
         case (.lock, _): return ("lock", .secondary)
         case (.system, _): return ("power", .blue)

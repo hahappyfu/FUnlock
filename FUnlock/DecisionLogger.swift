@@ -156,12 +156,19 @@ final class DecisionLogger: ObservableObject {
            last.outcome == outcome,
            last.reason == reason,
            now.timeIntervalSince(last.timestamp) < coalescingWindow {
-            last.timestamp = now
-            if let newRSSI = rssi { last.rssi = newRSSI }
-            if let newDevice = device { last.device = newDevice }
-            if let newScreen = screen { last.screen = newScreen }
-            last.detail = detail
-            events[events.count - 1] = last
+            // 创建新的 DecisionEvent 替代旧的，保持值类型不可变性
+            let updatedEvent = DecisionEvent(
+                id: last.id,
+                timestamp: now,
+                category: last.category,
+                outcome: last.outcome,
+                reason: last.reason,
+                rssi: rssi ?? last.rssi,
+                device: device ?? last.device,
+                screen: screen ?? last.screen,
+                detail: detail
+            )
+            events[events.count - 1] = updatedEvent
             return
         }
 

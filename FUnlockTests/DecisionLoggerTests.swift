@@ -52,9 +52,13 @@ final class DecisionLoggerTests: XCTestCase {
     }
 
     func testRingCapacityRespected() {
-        for _ in 0..<600 {
+        // 使用不同原因避免同因合并
+        let reasons: [DecisionReason] = [.noPresence, .signalBelowThreshold, .unlockCooldownActive,
+                                         .lockBufferActive, .manualLockActive]
+        for i in 0..<600 {
             currentTime = currentTime.addingTimeInterval(1)
-            logger.record(category: .unlock, outcome: .skipped, reason: .noPresence)
+            let reason = reasons[i % reasons.count]
+            logger.record(category: .unlock, outcome: .skipped, reason: reason)
         }
         XCTAssertEqual(logger.events.count, 500, "环形缓冲最多保留 500 条")
     }
@@ -110,17 +114,23 @@ final class DecisionLoggerTests: XCTestCase {
     }
 }
 
+@MainActor
 final class UnlockDecisionInstrumentationTests: XCTestCase {
     var logger: DecisionLogger!
+    private var tempDir: URL!
 
     override func setUp() {
         super.setUp()
-        logger = DecisionLogger(logDirectory: .testLogDirectory)
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UnlockDecisionTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        logger = DecisionLogger(testLogDirectory: tempDir)
     }
 
     override func tearDown() {
         logger.clear()
         logger = nil
+        try? FileManager.default.removeItem(at: tempDir)
         super.tearDown()
     }
 
@@ -141,9 +151,14 @@ final class UnlockDecisionInstrumentationTests: XCTestCase {
     }
 
     func testUnlockDisabledRecordsDecision() throws {
-        let events = try runAttempt { $0.fun.unlockRSSI = FUn.UNLOCK_DISABLED }
+        // unlockRSSI == UNLOCK_DISABLED 时 onDeviceApproached 记录 .unlockDisabled 事件
+        // 需要先设置 presence = true，否则会先记录 .noPresence
+        let events = try runAttempt {
+            $0.fun.presence = true
+            $0.fun.unlockRSSI = 1 // UNLOCK_DISABLED = 1
+        }
         let unlockEvents = events.events.filter { $0.category == .unlock }
-        XCTAssertFalse(unlockEvents.isEmpty, "unlockRSSI=UNLOCK_DISABLED 必须记录解锁决策")
+        XCTAssertFalse(unlockEvents.isEmpty, "UNLOCK_DISABLED 时必须记录解锁决策")
         XCTAssertEqual(unlockEvents.last?.outcome, .skipped)
         XCTAssertEqual(unlockEvents.last?.reason, .unlockDisabled)
     }
