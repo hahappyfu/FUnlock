@@ -61,3 +61,4 @@ fastlane/screenshots
 
 *.dmg
 session_log_*.txt
+.superpowers/
