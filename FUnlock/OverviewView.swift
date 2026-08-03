@@ -22,6 +22,7 @@ struct OverviewView: View {
     @State private var scanTimer: Timer?
 
     @State private var showUnbindConfirm = false
+    @State private var isDeviceListExpanded = false
 
     var isThresholdApplied: Bool {
         Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == (manager.unlockRSSI == 1 ? -95 : manager.unlockRSSI)
@@ -78,15 +79,59 @@ struct OverviewView: View {
             HStack {
                 Label(manager.monitoredDeviceName ?? "", systemImage: "iphone")
                 Spacer()
+                Button(t("change_device")) { toggleDeviceList() }
+                    .controlSize(.small)
                 Button(t("unbind")) { showUnbindConfirm = true }
                     .controlSize(.small)
             }
             .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
-                Button(t("ok"), role: .destructive) { manager.unbindDevice() }
+                Button(t("ok"), role: .destructive) {
+                    manager.unbindDevice()
+                    isDeviceListExpanded = false
+                    stopScan()
+                }
                 Button(t("cancel"), role: .cancel) {}
             } message: {
                 Text(t("unbind_confirm_message"))
             }
+
+            if isDeviceListExpanded {
+                HStack {
+                    Text(t("select_device"))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if isScanning {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(t("start_search")) { startScan() }
+                            .controlSize(.small)
+                    }
+                }
+
+                if !frozenDevices.isEmpty {
+                    ForEach(frozenDevices, id: \.uuid) { device in
+                        DeviceRowView(device: device) {
+                            manager.selectDevice(device)
+                            stopScan()
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                isDeviceListExpanded = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func toggleDeviceList() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            isDeviceListExpanded.toggle()
+        }
+        if isDeviceListExpanded {
+            startScan()
+        } else {
+            stopScan()
         }
     }
 

@@ -54,7 +54,28 @@ struct MainWindowView: View {
         } detail: {
             contentView
         }
-        .frame(minWidth: 560, minHeight: 420)
+        .frame(minWidth: 560, minHeight: 460)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Button {
+                    manager.lockNow()
+                } label: {
+                    Label(t("lock_now"), systemImage: "lock.fill")
+                        .controlSize(.small)
+                }
+                Spacer()
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label(t("quit"), systemImage: "power")
+                        .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
+        }
         .overlay(alignment: .top) {
             if let msg = toastMessage {
                 ToastView(message: msg, icon: toastIcon, color: toastColor)
