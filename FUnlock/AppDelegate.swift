@@ -461,29 +461,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - 生命周期
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // 先恢复设置到 ble（manager init 会同步 ble 的值）
+        restoreSettingsToFUn()
+        setupManager()
+        restoreSavedDevice()
+        setupStatusBarAndMenu()
+        setupNotificationSubscriptions()
+        setupPermissionsAndPrivileges()
+    }
+
+    /// 从 UserDefaults 恢复 BLE 设置到 fun（manager init 会再同步一次）
+    @MainActor private func restoreSettingsToFUn() {
         let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { fun.lockRSSI = lockRSSI }
         let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { fun.unlockRSSI = unlockRSSI }
         let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { fun.signalTimeout = Double(timeout) }
         fun.setPassiveMode(prefs.bool(forKey: "passiveMode"))
         let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { fun.thresholdRSSI = thresholdRSSI }
         let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { fun.proximityTimeout = Double(lockDelay) }
+    }
 
-        // 初始化 manager（此时 ble 已有正确的 UserDefaults 值）
+    /// 初始化 manager 并接线 delegate / inputMonitor
+    @MainActor private func setupManager() {
         manager = FUnManager(fun: fun)
         fun.delegate = self
         manager.inputMonitor = inputMonitor
         fun.inputMonitor = inputMonitor
         // InputActivityMonitor 延迟到首次需要时再启动（macOS Sequoia TCC 兼容）
         // 原代码在此处直接 start() 会导致 TCC 崩溃
+    }
 
-        // 恢复已保存的设备
+    /// 恢复已保存的绑定设备
+    @MainActor private func restoreSavedDevice() {
         if let str = prefs.string(forKey: "device"), let uuid = UUID(uuidString: str) {
             manager.updateConnected(false)
             manager.monitoredDeviceName = prefs.string(forKey: "deviceName") ?? t("default_paired_device")
             fun.startMonitor(uuid: uuid)
         }
+    }
 
+    /// 状态栏图标 + 右键快捷菜单 + 设置窗口延迟初始化
+    @MainActor private func setupStatusBarAndMenu() {
         // 延迟初始化设置窗口（避免 macOS Sequoia TCC 框架崩溃）
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -495,7 +511,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.toolTip = "FUnlock"
         }
 
-        // 右键快捷菜单
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: t("menu_change_password"), action: #selector(changePassword), keyEquivalent: ""))
@@ -506,9 +521,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: t("menu_quit"), action: #selector(quitApp), keyEquivalent: ""))
         statusItem.menu = menu
+    }
 
-        // 点击外部关闭窗口 —— 已不需要（独立窗口自带关闭按钮）
-
+    /// 注册系统通知订阅（屏幕/系统睡眠唤醒、锁屏、屏保、密码变更）
+    @MainActor private func setupNotificationSubscriptions() {
         // 通知权限
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -544,7 +560,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         dnc.publisher(for: NSNotification.Name("com.apple.security.loginwindow.passwordChanged"))
             .sink { [weak self] _ in SecurityService.shared.handlePasswordChanged() }
             .store(in: &cancellables)
+    }
 
+    /// 密码检查 + 辅助功能权限 + 开机自启动同步 + 权限面板 + 快捷键 + 用户干预监听
+    @MainActor private func setupPermissionsAndPrivileges() {
         // 密码检查
         if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
             let fetchResult = SecurityService.shared.fetchPassword()

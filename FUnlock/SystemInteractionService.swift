@@ -3,22 +3,6 @@ import Cocoa
 import UserNotifications
 import IOKit
 
-/// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
-private func _log(component: String, _ message: String) {
-    let ts = _df.string(from: Date())
-    let line = "[\(ts)] [\(component)] \(message)\n"
-    if let data = line.data(using: .utf8) {
-        let fh = FileHandle(forWritingAtPath: "/tmp/funlock_debug.log")
-        fh?.seekToEndOfFile()
-        fh?.write(data)
-        fh?.closeFile()
-    }
-}
-private let _df: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return f
-}()
 
 /// Encapsulates all OS-level side effects: screen control, keyboard injection, media, notifications
 final class SystemInteractionService {
@@ -43,16 +27,16 @@ final class SystemInteractionService {
     func isSecureToInject(screenState: ScreenState?) -> Bool {
         let locked = isScreenLocked(screenState: screenState)
         guard locked else {
-            _log(component: "SystemInteraction", "isSecureToInject: NOT locked")
+            logDebug(component: "SystemInteraction", "isSecureToInject: NOT locked")
             return false
         }
         if let frontApp = NSWorkspace.shared.frontmostApplication,
            frontApp.bundleIdentifier != "com.apple.loginwindow" {
-            _log(component: "SystemInteraction", "isSecureToInject: ABORT frontmost=\(frontApp.bundleIdentifier ?? "nil")")
+            logDebug(component: "SystemInteraction", "isSecureToInject: ABORT frontmost=\(frontApp.bundleIdentifier ?? "nil")")
             Log.sm.debug("ABORT: frontmost=\(frontApp.bundleIdentifier ?? "nil"), not loginwindow")
             return false
         }
-        _log(component: "SystemInteraction", "isSecureToInject: OK")
+        logDebug(component: "SystemInteraction", "isSecureToInject: OK")
         return true
     }
 
@@ -63,7 +47,7 @@ final class SystemInteractionService {
         let reg = IORegistryEntryFromPath(kIOMainPortDefault,
                                           "IOService:/IOResources/IODisplayWrangler")
         guard reg != 0 else {
-            _log(component: "SystemInteraction", "isDisplayPoweredOn: failed to get IODisplayWrangler")
+            logDebug(component: "SystemInteraction", "isDisplayPoweredOn: failed to get IODisplayWrangler")
             return true  // 无法查询时默认通电，避免误唤醒
         }
         defer { IOObjectRelease(reg) }
@@ -72,16 +56,16 @@ final class SystemInteractionService {
             let powerState = prop.takeRetainedValue() as! CFNumber
             var value: UInt32 = 0
             CFNumberGetValue(powerState, .sInt32Type, &value)
-            _log(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower=\(value)")
+            logDebug(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower=\(value)")
             return value != 0
         }
-        _log(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower not found")
+        logDebug(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower not found")
         return true  // 属性不存在时默认通电
     }
 
     /// Wake the display before password injection
     func wakeDisplay() {
-        _log(component: "SystemInteraction", "wakeDisplay: waking display")
+        logDebug(component: "SystemInteraction", "wakeDisplay: waking display")
         Log.sm.debug("PASSWORD: waking display before injection")
         funlock_wakeDisplay()
         Thread.sleep(forTimeInterval: 0.3)
@@ -111,55 +95,55 @@ final class SystemInteractionService {
     /// isSecureCheck is called before each batch to verify screen is still locked.
     /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
-        _log(component: "SystemInteraction", "fakeKeyStrokes() START - \(string.count) chars")
+        logDebug(component: "SystemInteraction", "fakeKeyStrokes() START - \(string.count) chars")
         Log.sm.debug("PASSWORD: attempting keystroke injection for \(string.count) chars")
 
         // 检查屏幕是否可见，如果不可见则唤醒
         if !isDisplayPoweredOn() {
-            _log(component: "SystemInteraction", "fakeKeyStrokes: display off, waking")
+            logDebug(component: "SystemInteraction", "fakeKeyStrokes: display off, waking")
             Log.sm.debug("PASSWORD: display off, waking screen")
             wakeDisplay()
         }
 
         // 尝试第1级：cgSessionEventTap + virtualKey 0
-        _log(component: "SystemInteraction", "Level 1: cgSessionEventTap + vk0")
+        logDebug(component: "SystemInteraction", "Level 1: cgSessionEventTap + vk0")
         Log.sm.debug("PASSWORD: trying Level 1 - cgSessionEventTap + virtualKey 0")
         if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
-            _log(component: "SystemInteraction", "Level 1: SUCCESS")
+            logDebug(component: "SystemInteraction", "Level 1: SUCCESS")
             Log.sm.debug("PASSWORD: Level 1 injection succeeded")
             return true
         }
-        _log(component: "SystemInteraction", "Level 1: FAILED, trying Level 2")
+        logDebug(component: "SystemInteraction", "Level 1: FAILED, trying Level 2")
         Log.sm.debug("PASSWORD: Level 1 failed, trying Level 2")
 
         // 尝试第2级：cghidEventTap + virtualKey 0
-        _log(component: "SystemInteraction", "Level 2: cghidEventTap + vk0")
+        logDebug(component: "SystemInteraction", "Level 2: cghidEventTap + vk0")
         Log.sm.debug("PASSWORD: trying Level 2 - cghidEventTap + virtualKey 0")
         if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
-            _log(component: "SystemInteraction", "Level 2: SUCCESS")
+            logDebug(component: "SystemInteraction", "Level 2: SUCCESS")
             Log.sm.debug("PASSWORD: Level 2 injection succeeded")
             return true
         }
-        _log(component: "SystemInteraction", "Level 2: FAILED, trying Level 3")
+        logDebug(component: "SystemInteraction", "Level 2: FAILED, trying Level 3")
         Log.sm.debug("PASSWORD: Level 2 failed, trying Level 3")
 
         // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
         guard string.canBeConverted(to: .ascii) else {
-            _log(component: "SystemInteraction", "Level 3: SKIPPED - non-ASCII password")
+            logDebug(component: "SystemInteraction", "Level 3: SKIPPED - non-ASCII password")
             Log.sm.debug("PASSWORD: Level 3 skipped - password contains non-ASCII characters")
             return false
         }
-        _log(component: "SystemInteraction", "Level 3: AppleScript System Events")
+        logDebug(component: "SystemInteraction", "Level 3: AppleScript System Events")
         Log.sm.debug("PASSWORD: trying Level 3 - AppleScript System Events")
         let result = injectWithAppleScript(string, isSecureCheck: isSecureCheck)
         if result {
-            _log(component: "SystemInteraction", "Level 3: SUCCESS")
+            logDebug(component: "SystemInteraction", "Level 3: SUCCESS")
             Log.sm.debug("PASSWORD: Level 3 injection succeeded")
         } else {
-            _log(component: "SystemInteraction", "Level 3: FAILED - all levels exhausted")
+            logDebug(component: "SystemInteraction", "Level 3: FAILED - all levels exhausted")
             Log.sm.debug("PASSWORD: Level 3 failed - all levels exhausted")
         }
-        _log(component: "SystemInteraction", "fakeKeyStrokes() END - result=\(result)")
+        logDebug(component: "SystemInteraction", "fakeKeyStrokes() END - result=\(result)")
         return result
     }
 
@@ -213,7 +197,7 @@ final class SystemInteractionService {
 
         // osascript 执行前再次确认屏幕仍锁定，防止密码泄露给非锁定会话
         guard isSecureCheck() else {
-            _log(component: "SystemInteraction", "Level 3: ABORT - screen no longer secure before AppleScript")
+            logDebug(component: "SystemInteraction", "Level 3: ABORT - screen no longer secure before AppleScript")
             Log.sm.debug("PASSWORD: ABORT - screen no longer secure before AppleScript injection")
             return false
         }
@@ -244,7 +228,7 @@ final class SystemInteractionService {
             // osascript 为同步 waitUntilExit，此处检查只能用于结果判定：
             // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
             if !isSecureCheck() {
-                _log(component: "SystemInteraction", "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
+                logDebug(component: "SystemInteraction", "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
                 Log.sm.debug("PASSWORD: screen no longer locked after AppleScript, treating as failure")
                 return false
             }
@@ -267,14 +251,14 @@ final class SystemInteractionService {
     /// Used as a prelude before password injection to activate the login window text field.
     /// isSecureCheck is called before each event batch to verify screen is still locked.
     public func sendShiftKey(isSecureCheck: @escaping () -> Bool) -> Bool {
-        _log(component: "SystemInteraction", "sendShiftKey() START")
+        logDebug(component: "SystemInteraction", "sendShiftKey() START")
         Log.sm.debug("PASSWORD: sending Shift key prelude")
 
         let src = CGEventSource(stateID: .hidSystemState)
 
         for tap in [CGEventTapLocation.cgSessionEventTap, CGEventTapLocation.cghidEventTap] {
             guard isSecureCheck() else {
-                _log(component: "SystemInteraction", "sendShiftKey: ABORT - screen not secure")
+                logDebug(component: "SystemInteraction", "sendShiftKey: ABORT - screen not secure")
                 return false
             }
             let shiftDown = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: true)
@@ -282,13 +266,13 @@ final class SystemInteractionService {
             shiftDown?.post(tap: tap)
             shiftUp?.post(tap: tap)
             if shiftDown != nil {
-                _log(component: "SystemInteraction", "sendShiftKey: SUCCESS via tap=\(tap == .cgSessionEventTap ? "cgSession" : "cghid")")
+                logDebug(component: "SystemInteraction", "sendShiftKey: SUCCESS via tap=\(tap == .cgSessionEventTap ? "cgSession" : "cghid")")
                 Log.sm.debug("PASSWORD: Shift key sent successfully")
                 return true
             }
         }
 
-        _log(component: "SystemInteraction", "sendShiftKey: FAILED - all taps exhausted")
+        logDebug(component: "SystemInteraction", "sendShiftKey: FAILED - all taps exhausted")
         Log.sm.debug("PASSWORD: Shift key send failed")
         return false
     }
@@ -297,22 +281,22 @@ final class SystemInteractionService {
     /// The Shift key activates the login window text field before password injection.
     /// Returns true if at least one password event was posted.
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) -> Bool {
-        _log(component: "SystemInteraction", "injectPasswordWithPrelude() START - \(string.count) chars")
+        logDebug(component: "SystemInteraction", "injectPasswordWithPrelude() START - \(string.count) chars")
         Log.sm.debug("PASSWORD: injection with prelude - Shift + 300ms delay")
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         if shiftSent {
-            _log(component: "SystemInteraction", "injectPasswordWithPrelude: Shift sent, waiting 300ms")
+            logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: Shift sent, waiting 300ms")
             Log.sm.debug("PASSWORD: Shift prelude sent, waiting 300ms before password")
             Thread.sleep(forTimeInterval: 0.3)
         } else {
-            _log(component: "SystemInteraction", "injectPasswordWithPrelude: Shift failed, proceeding without delay")
+            logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: Shift failed, proceeding without delay")
             Log.sm.debug("PASSWORD: Shift prelude failed, proceeding without delay")
         }
 
-        _log(component: "SystemInteraction", "injectPasswordWithPrelude: injecting password")
+        logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: injecting password")
         let result = fakeKeyStrokes(string, isSecureCheck: isSecureCheck)
-        _log(component: "SystemInteraction", "injectPasswordWithPrelude() END - result=\(result)")
+        logDebug(component: "SystemInteraction", "injectPasswordWithPrelude() END - result=\(result)")
         return result
     }
 
@@ -395,12 +379,12 @@ final class SystemInteractionService {
             // 检查 CGSession
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
                 if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
-                    _log(component: "SystemInteraction", "waitForUnlockNotification: unlocked via CGSession")
+                    logDebug(component: "SystemInteraction", "waitForUnlockNotification: unlocked via CGSession")
                     return true
                 }
             } else {
                 // CGSession 为 nil 表示无会话信息，不视为解锁，继续轮询
-                _log(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → 继续轮询")
+                logDebug(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → 继续轮询")
             }
             // 唤醒信号检测到后用更短间隔轮询（50ms），否则200ms
             wakeSignal.lock()
@@ -409,7 +393,7 @@ final class SystemInteractionService {
             let interval: UInt64 = detected ? 50_000_000 : 200_000_000
             try? await Task.sleep(nanoseconds: interval)
         }
-        _log(component: "SystemInteraction", "waitForUnlockNotification: timeout (\(timeout)s)")
+        logDebug(component: "SystemInteraction", "waitForUnlockNotification: timeout (\(timeout)s)")
         return false
     }
 
@@ -420,16 +404,16 @@ final class SystemInteractionService {
         while Date() < deadline {
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
                 if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
-                    _log(component: "SystemInteraction", "checkScreenUnlocked: screen unlocked via CGSession")
+                    logDebug(component: "SystemInteraction", "checkScreenUnlocked: screen unlocked via CGSession")
                     return true
                 }
             } else {
                 // CGSession 为 nil 表示无会话信息，不视为解锁，继续轮询
-                _log(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → 继续轮询")
+                logDebug(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → 继续轮询")
             }
             try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
         }
-        _log(component: "SystemInteraction", "checkScreenUnlocked: timeout (\(timeout)s)")
+        logDebug(component: "SystemInteraction", "checkScreenUnlocked: timeout (\(timeout)s)")
         return false
     }
 

@@ -22,6 +22,8 @@
 		3DD4B659226C1C3400451B7B /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 3DD4B657226C1C3400451B7B /* MainMenu.xib */; };
 		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
 		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
+		DDGP00000000000000000001 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDGP00000000000000000002 /* DebugLog.swift */; };
+		DDGP00000000000000000003 /* SignalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDGP00000000000000000004 /* SignalPipeline.swift */; };
 		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
 		AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000010226C1DF200000012 /* FUnlockTests.swift */; };
@@ -110,6 +112,8 @@
 		3DD4B662226C1CEF00451B7B /* lowlevel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lowlevel.h; sourceTree = "<group>"; };
 		3DD4B663226C1CF000451B7B /* lowlevel.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lowlevel.c; sourceTree = "<group>"; };
 		3DD4B665226C1DF200451B7B /* FUn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUn.swift; sourceTree = "<group>"; };
+		DDGP00000000000000000002 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		DDGP00000000000000000004 /* SignalPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalPipeline.swift; sourceTree = "<group>"; };
 		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
 		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
@@ -224,6 +228,8 @@
 				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
 				3DD4B665226C1DF200451B7B /* FUn.swift */,
+				DDGP00000000000000000002 /* DebugLog.swift */,
+				DDGP00000000000000000004 /* SignalPipeline.swift */,
 				AA000002226C1DF200000001 /* FUnManager.swift */,
 				CC000002226C1DF200000001 /* ProfileManager.swift */,
 				AA000006226C1DF200000001 /* CalibrationWizardView.swift */,
@@ -457,6 +463,8 @@
 			files = (
 				3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */,
 				3DD4B666226C1DF200451B7B /* FUn.swift in Sources */,
+				DDGP00000000000000000001 /* DebugLog.swift in Sources */,
+				DDGP00000000000000000003 /* SignalPipeline.swift in Sources */,
 				AA000001226C1DF200000001 /* FUnManager.swift in Sources */,
 				CC000001226C1DF200000001 /* ProfileManager.swift in Sources */,
 				AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */,
