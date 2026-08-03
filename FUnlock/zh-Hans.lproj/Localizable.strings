@@ -288,3 +288,4 @@
 "sidebar_group_common" = "常用";
 "sidebar_group_settings" = "设置";
 "sidebar_group_diagnostics" = "诊断";
+"distance_threshold" = "距离阈值";
