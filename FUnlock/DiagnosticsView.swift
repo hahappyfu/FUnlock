@@ -119,10 +119,17 @@ struct DiagnosticsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 时间轴（方案 D：时间轴布局）
+    // MARK: - 时间轴
+
+    /// 轴布局常量：保持 columnWidth / 2 == lineOffset + lineWidth / 2 即可让圆点与竖线对齐
+    private enum AxisLayout {
+        static let columnWidth: CGFloat = 18
+        static let dotSize: CGFloat = 9
+        static let lineWidth: CGFloat = 2
+    }
 
     private var timeline: some View {
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(groupedEvents, id: \.title) { group in
                 Text(group.title)
                     .font(.system(size: 11, weight: .semibold))
@@ -137,11 +144,11 @@ struct DiagnosticsView: View {
     /// 单组时间轴：左侧一条竖线贯穿整组，每个事件是轴上的一个节点
     private func timelineGroup(for group: (title: String, events: [DecisionEvent])) -> some View {
         ZStack(alignment: .topLeading) {
-            // 竖线（中心 x = 9pt，与节点圆点对齐），浅色细线贯穿整组
+            // 竖线：中心 x = columnWidth / 2，与节点圆点水平居中对齐
             Rectangle()
                 .fill(Color.secondary.opacity(0.25))
-                .frame(width: 2)
-                .padding(.leading, 8)
+                .frame(width: AxisLayout.lineWidth)
+                .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.lineWidth / 2)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(group.events) { event in
                     itemRow(for: event)
@@ -154,15 +161,12 @@ struct DiagnosticsView: View {
     private func itemRow(for event: DecisionEvent) -> some View {
         let iconInfo = Self.icon(for: event)
         return HStack(alignment: .top, spacing: 8) {
-            // 节点圆点：18pt 轴列内水平居中，描边色 = 事件状态色，背景填充遮住竖线
-            ZStack {
-                Circle()
-                    .fill(Color(nsColor: .windowBackgroundColor))
-                    .frame(width: 9, height: 9)
-                    .overlay(Circle().stroke(iconInfo.1, lineWidth: 2))
-            }
-            .frame(width: 18)
-            .padding(.top, 4)
+            // 节点圆点：轴列内水平居中，描边色 = 事件状态色，背景填充遮住竖线
+            Circle()
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .frame(width: AxisLayout.dotSize, height: AxisLayout.dotSize)
+                .overlay(Circle().stroke(iconInfo.1, lineWidth: AxisLayout.lineWidth))
+                .frame(width: AxisLayout.columnWidth)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: iconInfo.0)
