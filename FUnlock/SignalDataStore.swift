@@ -23,6 +23,9 @@ final class SignalDataStore: ObservableObject {
     /// 底层环形缓冲（高频写入，不触发 UI）
     private var ring = RingBuffer<SignalSample>(capacity: 300)
 
+    /// 互斥锁：保护 ring 的跨线程访问（BLE 回调线程写、主线程 Timer 读）
+    private let lock = NSLock()
+
     /// 节流后暴露给 UI 的快照（~1 秒刷新一次）
     @Published private(set) var samples: [SignalSample] = []
 
@@ -40,7 +43,9 @@ final class SignalDataStore: ObservableObject {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self else { return }
+                self.lock.lock()
                 let snapshot = self.ring.toArray()
+                self.lock.unlock()
                 if snapshot.count != self.samples.count ||
                     snapshot.last?.id != self.samples.last?.id {
                     self.samples = snapshot
@@ -63,12 +68,16 @@ final class SignalDataStore: ObservableObject {
             isAnomalous: isAnomalous,
             event: event
         )
+        lock.lock()
         ring.append(sample)
+        lock.unlock()
     }
 
     /// 清空所有数据
     func clear() {
+        lock.lock()
         ring.clear()
+        lock.unlock()
         samples = []
     }
 }

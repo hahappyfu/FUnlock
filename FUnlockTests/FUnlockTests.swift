@@ -2968,17 +2968,17 @@ class UserInterventionTests: XCTestCase {
                        "用户干预后应从 cooldown 恢复到 active")
     }
 
-    // MARK: - 重置失败计数
+    // MARK: - 保留失败计数（唤醒不能用于绕过暴力破解保护）
 
-    func testUserInterventionClearsConsecutiveFailures() {
+    func testUserInterventionPreservesConsecutiveFailures() {
         manager.stateMachine.handleUnlockFailure()
         manager.stateMachine.handleUnlockFailure()
         XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2,
                        "两次失败后 consecutiveFailures 应为 2")
 
         manager.onUserIntervention()
-        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
-                       "用户干预后 consecutiveFailures 应清零")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 2,
+                       "用户干预后 consecutiveFailures 应保留为 2，唤醒不能用于绕过暴力破解保护")
     }
 
     // MARK: - 幂等性：对 active 状态调用不产生副作用
@@ -3005,49 +3005,49 @@ class UserInterventionTests: XCTestCase {
         manager.onUserIntervention()
         XCTAssertEqual(manager.stateMachine.currentState, .active,
                        "连续多次用户干预后状态机应稳定在 active")
-        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
-                       "连续多次干预后失败计数应为 0")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 3,
+                       "连续多次干预后失败计数应保留为 3，唤醒不能用于绕过暴力破解保护")
     }
 
-    // MARK: - 干预后 canAttemptUnlock 恢复
+    // MARK: - 干预后 canAttemptUnlock 不恢复
 
-    func testUserInterventionRestoresCanAttemptUnlock() {
+    func testUserInterventionDoesNotRestoreCanAttemptUnlockFromDegraded() {
         // 降级 → canAttemptUnlock 应为 false
         manager.stateMachine.handleUnlockFailure()
         manager.stateMachine.handleUnlockFailure()
         manager.stateMachine.handleUnlockFailure()
         XCTAssertFalse(manager.stateMachine.canAttemptUnlock, "降级后不应允许解锁尝试")
 
-        // 用户干预
+        // 用户干预：状态机回到 active，但失败计数（≥3）与冷却保留，下次解锁尝试仍被拒绝
         manager.onUserIntervention()
-        XCTAssertTrue(manager.stateMachine.canAttemptUnlock,
-                      "用户干预后应恢复 canAttemptUnlock")
+        XCTAssertFalse(manager.stateMachine.canAttemptUnlock,
+                       "用户干预后 canAttemptUnlock 仍应为 false，唤醒不能用于绕过暴力破解保护")
     }
 
-    // MARK: - 干预后 isInCooldown 清除
+    // MARK: - 干预后冷却保留
 
-    func testUserInterventionClearsCooldown() {
+    func testUserInterventionPreservesCooldown() {
         // 触发失败 → isInCooldown 应为 true
         manager.stateMachine.handleUnlockFailure()
         XCTAssertTrue(manager.stateMachine.isInCooldown, "失败后应处于冷却期")
 
         manager.onUserIntervention()
-        XCTAssertFalse(manager.stateMachine.isInCooldown,
-                       "用户干预后冷却应被清除")
+        XCTAssertTrue(manager.stateMachine.isInCooldown,
+                       "用户干预后冷却应保留，唤醒不能用于绕过暴力破解保护")
     }
 
-    // MARK: - 与 onUnlock 的行为一致性
+    // MARK: - 与 onUnlock 的行为差异
 
-    func testUserInterventionSameAsOnUnlockForStateMachine() {
+    func testUserInterventionDiffersFromOnUnlockForStateMachine() {
         // 降级
         manager.stateMachine.handleUnlockFailure()
         manager.stateMachine.handleUnlockFailure()
         manager.stateMachine.handleUnlockFailure()
 
-        // 用户干预应与 onUnlock 达到相同的状态机结果
+        // 用户干预只恢复 active，不清零失败计数；与 onUnlock 的清零行为形成对照
         manager.onUserIntervention()
         XCTAssertEqual(manager.stateMachine.currentState, .active)
-        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0)
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 3)
     }
 }
 
@@ -3423,14 +3423,21 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         XCTAssertFalse(manager.stateMachine.attemptUnlock(),
                        "降级状态下 attemptUnlock 应返回 false")
 
-        // 4. 用户干预恢复
+        // 4. 用户干预（唤醒）：只恢复 active，保留失败计数与冷却
         manager.onUserIntervention()
         XCTAssertEqual(manager.stateMachine.currentState, .active,
                        "用户干预后应恢复为 active")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 3,
+                       "用户干预后失败计数应保留为 3，唤醒不能用于绕过暴力破解保护")
+        XCTAssertFalse(manager.stateMachine.canAttemptUnlock,
+                       "用户干预后仍不可解锁（计数 ≥3 且冷却中）")
+
+        // 5. 用户点击降级通知（与 AppDelegate 处理逻辑一致）→ 真正恢复
+        manager.stateMachine.resetToActive()
         XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,
-                       "用户干预后失败计数应清零")
+                       "点击通知后失败计数应清零")
         XCTAssertTrue(manager.stateMachine.canAttemptUnlock,
-                      "用户干预后应恢复解锁能力")
+                      "点击通知后应恢复解锁能力")
     }
 
     /// 场景：onUnlock 也能从降级状态恢复（用户手动输入密码解锁）
@@ -3470,8 +3477,9 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         manager.stateMachine.handleUnlockFailure()
         XCTAssertFalse(manager.stateMachine.canAttemptUnlock)
 
-        // 2. 恢复
-        manager.onUserIntervention()
+        // 2. 恢复：模拟用户点击降级通知（AppDelegate 处理逻辑）真正恢复，
+        //    屏幕唤醒（onUserIntervention）只恢复 active 不清零计数，无法作为恢复路径
+        manager.stateMachine.resetToActive()
         XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
 
         // 3. 正常解锁
@@ -3572,8 +3580,8 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         XCTAssertEqual(manager.lockRSSI, -85)
         XCTAssertEqual(manager.unlockRSSI, -65)
 
-        // 恢复后阈值保持
-        manager.onUserIntervention()
+        // 恢复后阈值保持（模拟用户点击降级通知真正恢复，唤醒不恢复解锁能力）
+        manager.stateMachine.resetToActive()
         XCTAssertEqual(manager.lockRSSI, -85)
         XCTAssertEqual(manager.unlockRSSI, -65)
         XCTAssertTrue(manager.stateMachine.canAttemptUnlock)

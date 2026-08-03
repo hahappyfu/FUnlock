@@ -151,7 +151,7 @@ final class SystemInteractionService {
         }
         _log(component: "SystemInteraction", "Level 3: AppleScript System Events")
         Log.sm.debug("PASSWORD: trying Level 3 - AppleScript System Events")
-        let result = injectWithAppleScript(string)
+        let result = injectWithAppleScript(string, isSecureCheck: isSecureCheck)
         if result {
             _log(component: "SystemInteraction", "Level 3: SUCCESS")
             Log.sm.debug("PASSWORD: Level 3 injection succeeded")
@@ -204,9 +204,17 @@ final class SystemInteractionService {
 
     /// Inject password using AppleScript System Events (only for ASCII passwords).
     /// Returns true if injection was initiated successfully.
-    private func injectWithAppleScript(_ string: String) -> Bool {
+    /// 执行前与结束后均调用 isSecureCheck 确认屏幕仍处于锁定状态（防密码泄露给非锁定会话）
+    private func injectWithAppleScript(_ string: String, isSecureCheck: () -> Bool) -> Bool {
         guard string.canBeConverted(to: .ascii) else {
             Log.sm.debug("PASSWORD: AppleScript rejected - non-ASCII characters")
+            return false
+        }
+
+        // osascript 执行前再次确认屏幕仍锁定，防止密码泄露给非锁定会话
+        guard isSecureCheck() else {
+            _log(component: "SystemInteraction", "Level 3: ABORT - screen no longer secure before AppleScript")
+            Log.sm.debug("PASSWORD: ABORT - screen no longer secure before AppleScript injection")
             return false
         }
 
@@ -233,6 +241,13 @@ final class SystemInteractionService {
             try task.run()
             task.waitUntilExit()
             let status = task.terminationStatus
+            // osascript 为同步 waitUntilExit，此处检查只能用于结果判定：
+            // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
+            if !isSecureCheck() {
+                _log(component: "SystemInteraction", "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
+                Log.sm.debug("PASSWORD: screen no longer locked after AppleScript, treating as failure")
+                return false
+            }
             if status == 0 {
                 Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
                 return true
@@ -384,8 +399,8 @@ final class SystemInteractionService {
                     return true
                 }
             } else {
-                _log(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → unlocked")
-                return true
+                // CGSession 为 nil 表示无会话信息，不视为解锁，继续轮询
+                _log(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → 继续轮询")
             }
             // 唤醒信号检测到后用更短间隔轮询（50ms），否则200ms
             wakeSignal.lock()
@@ -409,9 +424,8 @@ final class SystemInteractionService {
                     return true
                 }
             } else {
-                // CGSessionCopyCurrentDictionary 在非锁定状态可能返回 nil，视为已解锁
-                _log(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → unlocked")
-                return true
+                // CGSession 为 nil 表示无会话信息，不视为解锁，继续轮询
+                _log(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → 继续轮询")
             }
             try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
         }

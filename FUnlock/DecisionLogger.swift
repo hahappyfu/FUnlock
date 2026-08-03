@@ -169,6 +169,14 @@ final class DecisionLogger: ObservableObject {
                 detail: detail
             )
             events[events.count - 1] = updatedEvent
+            ring.replaceLast(updatedEvent)
+            // 即使合并也写入最新状态到磁盘（追加一行，轮转时用内存覆盖）
+            let latest = events
+            let file = logFile
+            let maxSize = maxFileSize
+            queue.async {
+                Self.write(updatedEvent, latest: latest, to: file, maxFileSize: maxSize)
+            }
             return
         }
 

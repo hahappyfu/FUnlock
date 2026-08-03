@@ -134,6 +134,8 @@ final class FUnManager: ObservableObject {
     private let maxUnlockAttempts = 3
     private var lastAXRevokedAlertTime: Date = .distantPast
     private var mediaWasPlaying = false
+    /// FUn 是否正在执行自动解锁（用于区分手动解锁入侵）
+    private var isAutoUnlocking = false
 
     // MARK: - 冷却与缓冲策略（可测试时间源）
     private var nowProvider: () -> Date = { Date() }
@@ -150,9 +152,11 @@ final class FUnManager: ObservableObject {
     // MARK: - 决策记录辅助
 
     private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
+        let effDetail = "effectiveRSSI=\(String(format: "%.1f", fun.effectiveRSSI)) threshold=\(fun.unlockRSSI) presence=\(fun.presence)"
+        let combinedDetail = detail.isEmpty ? effDetail : "\(detail) | \(effDetail)"
         decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
-                              screen: state.screen.description, detail: detail)
+                              screen: state.screen.description, detail: combinedDetail)
     }
 
     private func recordLock(_ reason: DecisionReason, detail: String = "") {
@@ -277,9 +281,10 @@ final class FUnManager: ObservableObject {
     }
 
     /// 用户主动干预（如手动唤醒屏幕）时调用，强制状态机回到 active
+    /// 注意：不清空失败计数与冷却（clearFailures: false），防止屏幕唤醒被用作绕过暴力破解保护的途径
     func onUserIntervention() {
         Log.sm.debug("[SM] userIntervention — force reset to active")
-        stateMachine.resetToActive()
+        stateMachine.resetToActive(clearFailures: false)
         wakeTask?.cancel()
         wakeTask = nil
         unlockTask?.cancel()
@@ -299,12 +304,15 @@ final class FUnManager: ObservableObject {
         Task { stateMachine.resetToActive() }
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
+        // Task 是逃逸闭包，内部再读 self.isAutoUnlocking 会拿到 2 秒后的值，
+        // 因此必须在启动 Task 前同步捕获快照
+        let wasFUnUnlock = isAutoUnlocking
         intrudeCheckTask?.cancel()
         intrudeCheckTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
             guard let self else { return }
-            if Date().timeIntervalSince1970 >= self.state.unlockedAt.timeIntervalSince1970 + 10 {
+            if !wasFUnUnlock {
                 if self.fun.unlockRSSI != self.fun.UNLOCK_DISABLED {
                     ScriptRunner.shared.runScript("intruded", rssi: self.rssi, deviceName: self.monitoredDeviceName)
                     ScriptRunner.shared.logEvent("intruded", rssi: self.rssi)
@@ -352,14 +360,17 @@ final class FUnManager: ObservableObject {
     // MARK: - FUn 设备事件
 
     func onDeviceApproached() {
-        guard prefs.bool(forKey: "enabled") else { return }
+        // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
+        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
+        guard enabled else { return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
+        let smoothed = fun.effectiveRSSI
+        print("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
 
         // 清除锁屏通知
         SystemInteractionService.shared.clearLockNotification()
 
         // 阶梯唤醒：平滑信号达到 preWakeThreshold（-60dBm）时唤醒显示器
-        let smoothed = fun.effectiveRSSI
         if state.screen == .displaySleeping
             && prefs.bool(forKey: "wakeOnProximity")
             && !displayWakeRequested
@@ -375,9 +386,14 @@ final class FUnManager: ObservableObject {
     }
 
     func onDeviceLeft(reason: String) {
-        guard prefs.bool(forKey: "enabled") else { return }
-        guard state.screen == .unlocked else { return }
-        guard fun.lockRSSI != fun.LOCK_DISABLED else { return }
+        // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
+        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
+        let screenState = state.screen
+        let lockDisabled = fun.lockRSSI == fun.LOCK_DISABLED
+        print("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", fun.effectiveRSSI))")
+        guard enabled else { print("[LOCK] onDeviceLeft blocked: enabled=false"); return }
+        guard screenState == .unlocked else { print("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
+        guard !lockDisabled else { print("[LOCK] onDeviceLeft blocked: lock disabled"); return }
 
         displayWakeRequested = false
         state.screen = .displaySleeping
@@ -518,6 +534,13 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); recordUnlock(reason: .noPresence); return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); recordUnlock(reason: .unlockDisabled); return }
+        // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
+        // 与 onDeviceApproached 的阶梯门控保持一致，信号不足（如已衰减）时拒绝解锁
+        guard fun.effectiveRSSI >= Double(fun.unlockStairThreshold) else {
+            Log.sm.debug("SKIP: signal below stair threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
+            recordUnlock(reason: .signalBelowThreshold, detail: "eff \(String(format: "%.1f", self.fun.effectiveRSSI)) < stair \(self.fun.unlockStairThreshold)")
+            return
+        }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
         guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); recordUnlock(reason: .stateMachineBlocked); return }
 
@@ -545,8 +568,8 @@ final class FUnManager: ObservableObject {
                 return
             }
         }
-        // #5: 手动锁屏后不自动解锁
-        if prefs.bool(forKey: "manualLockNoAutoUnlock") && state.intent.isManualLockActive {
+        // #5: 手动锁屏后不自动解锁（deadline 语义已含 60s/24h 区分，不依赖键是否缺失）
+        if state.intent.isManualLockActive {
             Log.sm.debug("SKIP: manualLock active, waiting for manual unlock")
             recordUnlock(reason: .manualLockActive)
             return
@@ -633,6 +656,8 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
+        // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
+        self.isAutoUnlocking = true
         _log(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude(\(password.count) chars)")
         let posted = sys.injectPasswordWithPrelude(password) {
             self.state.screen != .unlocked
@@ -642,6 +667,8 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
             Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
+            // 注入失败，本次不算自动解锁，立即复位标记
+            self.isAutoUnlocking = false
             recordUnlock(.blocked, reason: .axRevoked, detail: "CGEvent post failed")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
@@ -664,6 +691,8 @@ final class FUnManager: ObservableObject {
                 let sys = SystemInteractionService.shared
                 let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
                 guard let self else { return }
+                // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
+                defer { self.isAutoUnlocking = false }
                 if verification.unlock {
                     // 通知或 CGSession 确认解锁成功
                     Log.sm.debug("dual verify: unlock confirmed")
@@ -727,6 +756,12 @@ final class FUnManager: ObservableObject {
 
         wakeTask?.cancel()
         wakeTask = Task {
+            // defer 兜底：无论取消/成功/失败，都释放 wake assertion 并复位唤醒请求标记，
+            // 防止 assertion 泄漏（显示器无法自动熄屏）与 displayWakeRequested 卡死（唤醒功能失效）
+            defer {
+                funlock_releaseWakeAssertion()
+                self.displayWakeRequested = false
+            }
             for attempt in 0..<10 {
                 guard !Task.isCancelled else { return }
                 if attempt > 0 {
@@ -738,14 +773,12 @@ final class FUnManager: ObservableObject {
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
                     state.wake = .succeeded
-                    funlock_releaseWakeAssertion()
                     self.attemptAutoUnlock()
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
-            funlock_releaseWakeAssertion()
             self.attemptAutoUnlock()
         }
     }

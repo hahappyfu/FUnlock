@@ -135,10 +135,12 @@ final class FUnlockStateMachine {
 
     // MARK: - 重置状态
 
-    func resetToActive() {
+    func resetToActive(clearFailures: Bool = true) {
         currentState = .active
-        consecutiveFailures = 0
-        failureCooldownDeadline = .distantPast  // 清除失败冷却
+        if clearFailures {
+            consecutiveFailures = 0
+            failureCooldownDeadline = .distantPast  // 清除失败冷却
+        }
         activeTask?.cancel()
         activeTask = nil
     }

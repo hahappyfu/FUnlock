@@ -29,6 +29,13 @@ struct RingBuffer<T> {
         return buffer[actual]!
     }
 
+    /// 替换最后一个元素（为空时无操作）
+    mutating func replaceLast(_ element: T) {
+        guard count > 0 else { return }
+        let lastIndex = (head - 1 + capacity) % capacity
+        buffer[lastIndex] = element
+    }
+
     /// 清空
     mutating func clear() {
         buffer = [T?](repeating: nil, count: capacity)

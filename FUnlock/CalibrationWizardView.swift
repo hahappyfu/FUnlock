@@ -16,6 +16,7 @@ struct CalibrationWizardView: View {
     @State private var samplingTask: Task<Void, Never>?
     @State private var countdownTask: Task<Void, Never>?
     @State private var currentRSSI: Int? = nil
+    @State private var errorMessage = ""          // 采样失败提示（如"未检测到信号"）
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,6 +79,13 @@ struct CalibrationWizardView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+            if !errorMessage.isEmpty {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundColor(.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
             Spacer()
             Button(t("calibration_start")) { startUnlockCalibration() }
                 .buttonStyle(.borderedProminent)
@@ -300,6 +308,7 @@ struct CalibrationWizardView: View {
         step = 1
         countdown = 5
         samples = []
+        errorMessage = ""
         countdownTask = Task {
             for i in (1...5).reversed() {
                 guard !Task.isCancelled else { return }
@@ -308,8 +317,13 @@ struct CalibrationWizardView: View {
             }
             guard !Task.isCancelled else { return }
             startSampling(duration: 10, completion: {
-                self.avgUnlock = self.averageSamples()
-                startLockCountdown()
+                guard let avg = self.averageSamples() else {
+                    // 未采到任何样本（设备不在信号范围），中断校准并提示用户重试
+                    self.abortCalibration()
+                    return
+                }
+                self.avgUnlock = avg
+                self.startLockCountdown()
             })
         }
     }
@@ -326,7 +340,12 @@ struct CalibrationWizardView: View {
             }
             guard !Task.isCancelled else { return }
             startSampling(duration: 10, completion: {
-                self.avgLock = self.averageSamples()
+                guard let avg = self.averageSamples() else {
+                    // 未采到任何样本（设备不在信号范围），中断校准并提示用户重试
+                    self.abortCalibration()
+                    return
+                }
+                self.avgLock = avg
                 NSSound(named: "Glass")?.play()
                 self.step = 5
             })
@@ -354,9 +373,19 @@ struct CalibrationWizardView: View {
         }
     }
 
-    private func averageSamples() -> Int {
-        guard !samples.isEmpty else { return -70 }
+    private func averageSamples() -> Int? {
+        guard !samples.isEmpty else { return nil }
         return samples.reduce(0, +) / samples.count
+    }
+
+    // 采样失败（未检测到信号）时中断校准：回到欢迎页并显示提示
+    private func abortCalibration() {
+        samplingTask?.cancel()
+        countdownTask?.cancel()
+        samples = []
+        currentRSSI = nil
+        errorMessage = "未检测到信号，请靠近设备后重试"
+        step = 0
     }
 
     private func applyValues() {

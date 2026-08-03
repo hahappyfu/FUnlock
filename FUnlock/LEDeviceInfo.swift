@@ -44,6 +44,8 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
         Log.dev.debug("failed to prepare")
         return nil
     }
+    // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
+    defer { sqlite3_finalize(stmt) }
     uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil
@@ -69,6 +71,8 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
         Log.dev.debug("failed to prepare")
         return nil
     }
+    // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
+    defer { sqlite3_finalize(stmt) }
     uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil

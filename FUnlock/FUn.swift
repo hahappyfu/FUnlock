@@ -486,12 +486,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
+            print("[BLE] Bluetooth powered on - starting scan")
             Log.ble.debug("Bluetooth powered on")
             if activeModeTimer == nil {
                 scanForPeripherals()
             }
             powerWarn = false
         case .poweredOff:
+            print("[BLE] Bluetooth powered off")
             Log.ble.debug("Bluetooth powered off")
             invalidateAllTimers()
             let shouldWarn: Bool = lock.withLock {
@@ -566,6 +568,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
             // 冷静期：刚解锁后不立即触发锁定
             let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
+            print("[LOCK] heartbeat eff=\(String(format: "%.1f", eff)) threshold=\(Int(threshold)) hasTimer=\(hasTimer) graceElapsed=\(String(format: "%.1f", graceElapsed)) inputActive=\(self.isUserInputActive)")
             if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
                 if self.isUserInputActive {
                     // 用户活跃时重置衰减基准，阻止衰减累积
@@ -624,7 +627,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             guard let self = self else { return }
             let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                 || UserDefaults.standard.bool(forKey: "lockOnIdle")
+            let nowEff = self.getEffectiveRSSI()
+            let nowThreshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            let nowPresence = self.lock.withLock { self.presence }
+            print("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
+            if nowEff >= nowThreshold {
+                print("[LOCK] timer fired but signal recovered (eff=\(String(format: "%.1f", nowEff)) >= threshold=\(Int(nowThreshold))), skipping lock")
+                self.lock.withLock { self.proximityTimer = nil }
+                return
+            }
             if lockOnIdle && self.isUserInputActive {
+                print("[LOCK] timer fired but input active, deferring lock")
                 Log.sm.debug("[SM] input active at lock timer fire, deferring")
                 self.lock.withLock {
                     self.proximityTimer = nil
@@ -646,8 +659,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             self.lock.withLock { self.proximityTimer = nil }
         })
-        RunLoop.main.add(timer, forMode: .common)
         lock.withLock { proximityTimer = timer }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     func updateMonitoredPeripheral(_ rssi: Int) {
@@ -656,6 +669,10 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
         // 1. 信号处理（纯计算）
         let decision = processSignal(rssi: rssi, source: source, now: now)
+
+        // 调试日志：追踪 effectiveRSSI 计算
+        let isActive = lock.withLock { activeModeTimer != nil }
+        Log.ble.debug("[DEBUG] updateMonitored rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", decision.effectiveRSSI)) kalman=\(String(format: "%.1f", decision.kalmanEstimate)) source=\(source == .connected ? "connected" : "scanning") activeMode=\(isActive)")
 
         // 2. 更新 displayRSSI
         updateDisplayRSSI(rssi: rssi)
@@ -738,6 +755,13 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let signal = effectiveRSSI
         var shouldNotifyClose = false
 
+        // 调试日志：追踪 presence 判断条件
+        let debugInfo: (isMonitored: Bool, presence: Bool, uuidCount: Int) = lock.withLock {
+            (monitoredUUID != nil, presence, monitoredUUIDs.count)
+        }
+        print("[BLE] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) presence=\(debugInfo.presence)")
+        Log.ble.debug("[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
+
         let dispRSSI: Double = lock.withLock {
             let disp = displayRSSI
             let wasPresent = presence
@@ -783,24 +807,31 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
         } else {
             let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
+            print("[LOCK] applyLockTimer eff=\(String(format: "%.1f", effectiveRSSI)) threshold=\(Int(threshold)) presence=\(curPresence) hasTimer=\(curTimer != nil)")
             if curPresence && curTimer == nil {
                 // 冷静期：刚解锁后不立即触发锁定，防止 effectiveRSSI 衰减导致振荡
                 let elapsed = Date().timeIntervalSince(lastProximityEventTime)
+                print("[LOCK] graceElapsed=\(String(format: "%.1f", elapsed))s gracePeriod=\(self.proximityGracePeriod)s")
                 if elapsed < self.proximityGracePeriod {
+                    print("[LOCK] BLOCKED by proximityGracePeriod")
                     Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
                     return
                 }
                 let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                     || UserDefaults.standard.bool(forKey: "lockOnIdle")
                 if lockOnIdle && isUserInputActive {
+                    print("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
                     Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")
                     lock.withLock {
                         lastReceiveTime = Date()
                         pipeline.decayBaseline = Date()
                     }
                 } else {
+                    print("[LOCK] all guards passed -> startLockTimer")
                     startLockTimer()
                 }
+            } else {
+                print("[LOCK] SKIPPED: presence=\(curPresence) hasTimer=\(curTimer != nil)")
             }
         }
     }
@@ -877,6 +908,15 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                         rssi RSSI: NSNumber)
     {
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
+
+        // 调试日志：追踪设备发现
+        let monitorInfo: (monitoredUUID: UUID?, uuidCount: Int) = lock.withLock {
+            (monitoredUUID, monitoredUUIDs.count)
+        }
+        let isInList = monitoredUUIDs.contains(peripheral.identifier)
+        print("[BLE] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) uuidCount=\(monitorInfo.uuidCount)")
+        Log.ble.debug("[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
+
         if monitoredUUIDs.contains(peripheral.identifier) {
             let isMonitored: Bool = lock.withLock {
                 let match = peripheral.identifier == monitoredUUID
