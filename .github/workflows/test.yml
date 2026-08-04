@@ -1,5 +1,5 @@
 # CI
-# [![CI](https://github.com/fuhahah/FUnlock/actions/workflows/test.yml/badge.svg)](https://github.com/fuhahah/FUnlock/actions/workflows/test.yml)
+# [![CI](https://github.com/hahappyfu/FUnlock/actions/workflows/test.yml/badge.svg)](https://github.com/hahappyfu/FUnlock/actions/workflows/test.yml)
 
 name: CI + Test
 
