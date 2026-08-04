@@ -3587,3 +3587,60 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
     }
 }
+
+// MARK: - 方案 A/C：解锁/锁屏效率优化测试
+
+class LockUnlockEfficiencyTests: XCTestCase {
+
+    // MARK: 方案 A：接近窗口判定（isNearThreshold）
+
+    func testNearThreshold_windowEntry() {
+        // threshold = -60，窗口 15dBm：[-75, -60) 内视为接近
+        XCTAssertTrue(FUn.isNearThreshold(-61, threshold: -60))
+        XCTAssertTrue(FUn.isNearThreshold(-74.9, threshold: -60))
+        XCTAssertFalse(FUn.isNearThreshold(-75.1, threshold: -60))
+        XCTAssertFalse(FUn.isNearThreshold(-60, threshold: -60), "已达阈值不算接近窗口")
+        XCTAssertFalse(FUn.isNearThreshold(-59, threshold: -60), "已越过阈值不算接近窗口")
+    }
+
+    func testNearThreshold_windowEdge() {
+        XCTAssertTrue(FUn.isNearThreshold(-75, threshold: -60), "窗口下边界含等号")
+        XCTAssertTrue(FUn.isNearThreshold(-60.0001, threshold: -60))
+    }
+
+    func testNearThreshold_differentThresholds() {
+        // lockRSSI = -80 时窗口为 [-95, -80)
+        XCTAssertTrue(FUn.isNearThreshold(-85, threshold: -80))
+        XCTAssertFalse(FUn.isNearThreshold(-96, threshold: -80))
+        XCTAssertFalse(FUn.isNearThreshold(-80, threshold: -80))
+    }
+
+    // MARK: 方案 C：锁屏超时随斜率自适应（lockTimeout）
+
+    func testLockTimeout_steepSlopeUsesFastTimeout() {
+        XCTAssertEqual(FUn.lockTimeout(slope: -20), fastLockTimeout)
+        XCTAssertEqual(FUn.lockTimeout(slope: -8.0), fastLockTimeout, "边界值 -8 归入快速档")
+        XCTAssertEqual(FUn.lockTimeout(slope: -50), fastLockTimeout)
+    }
+
+    func testLockTimeout_mildSlopeUsesBase() {
+        XCTAssertEqual(FUn.lockTimeout(slope: 0), 5.0)
+        XCTAssertEqual(FUn.lockTimeout(slope: -1.0), 5.0, "边界值 -1 归入缓降档")
+        XCTAssertEqual(FUn.lockTimeout(slope: 10), 5.0, "上升斜率按缓降处理")
+    }
+
+    func testLockTimeout_linearInterpolation() {
+        // -1 ~ -8 线性映射 5s ~ 2.5s，中点 -4.5 应为 3.75
+        let mid = FUn.lockTimeout(slope: -4.5)
+        XCTAssertEqual(mid, 3.75, accuracy: 0.001)
+        // -2.5 处 t = (2.5-1)/7 = 0.214 → fastLockTimeout + 2.5*0.214 ≈ 3.0357
+        let low = FUn.lockTimeout(slope: -2.5)
+        let expected = fastLockTimeout + (5.0 - fastLockTimeout) * (1.5 / 7.0)
+        XCTAssertEqual(low, expected, accuracy: 0.001)
+    }
+
+    func testLockTimeout_customBase() {
+        XCTAssertEqual(FUn.lockTimeout(slope: -20, base: 8.0), fastLockTimeout)
+        XCTAssertEqual(FUn.lockTimeout(slope: 0, base: 8.0), 8.0)
+    }
+}

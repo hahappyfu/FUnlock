@@ -8,6 +8,17 @@ let ManufacturerName = CBUUID(string:"2A29")
 let ModelName = CBUUID(string:"2A24")
 let ExposureNotification = CBUUID(string:"FD6F")
 
+/// 接近阈值窗口（dBm）：有效信号进入 [threshold-window, threshold) 时启用快速轮询
+let proximityPollWindow = 15.0
+/// 快速轮询间隔（s）：信号接近阈值时降低感知延迟
+let fastPollInterval = 0.5
+/// 快速锁屏（s）：信号快速下降时的锁屏超时
+let fastLockTimeout = 2.5
+/// 判定「快速下降」的斜率阈值（dBm/s），slope ≤ -8 视为快速离开
+let fastSlopeThreshold = 8.0
+/// 判定「缓降」的斜率阈值（dBm/s），slope ≥ -1 视为接近平稳
+let mildSlopeThreshold = 1.0
+
 func getMACFromUUID(_ uuid: String) -> String? {
     guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist") else { return nil }
     guard let cbcache = plist["CoreBluetoothCache"] as? NSDictionary else { return nil }
@@ -458,8 +469,29 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
+    /// 方案 C：按下降斜率计算锁屏超时 —— 陡降（slope ≤ -fastSlopeThreshold）→ fastLockTimeout；
+    /// 缓降/平稳（slope ≥ -mildSlopeThreshold）→ base；中间线性插值
+    static func lockTimeout(slope: Double, base: TimeInterval = 5.0) -> TimeInterval {
+        if slope <= -fastSlopeThreshold {
+            return fastLockTimeout
+        } else if slope >= -mildSlopeThreshold {
+            return base
+        } else {
+            let t = (-slope - mildSlopeThreshold) / (fastSlopeThreshold - mildSlopeThreshold)
+            return fastLockTimeout + (base - fastLockTimeout) * t
+        }
+    }
+
+    /// 方案 A：信号是否处于接近窗口（有效信号进入 [threshold-window, threshold)）
+    static func isNearThreshold(_ effectiveRSSI: Double, threshold: Double) -> Bool {
+        effectiveRSSI >= threshold - proximityPollWindow && effectiveRSSI < threshold
+    }
+
     private func startLockTimer() {
-        let timer = Timer(timeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
+        // 方案 C：锁屏超时随下降斜率自适应
+        let slope = lock.withLock { pipeline.smoothedSlope }
+        let timeout = Self.lockTimeout(slope: slope, base: proximityTimeout)
+        let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
             let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                 || UserDefaults.standard.bool(forKey: "lockOnIdle")
@@ -894,18 +926,34 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             lastReadAt = now
             let fluctuation = abs(k - Double(lastEstimatedRSSI))
             lastEstimatedRSSI = Int(k)
-            if fluctuation < 5 {
-                stableCount += 1
+            // 方案 A：信号接近阈值（有效信号进入 [threshold-window, threshold)）时启用快速轮询，
+            // 信号一触线立刻被感知，缩短解锁/锁屏感知延迟
+            let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
+            let nearThreshold = Self.isNearThreshold(effectiveRSSI, threshold: threshold)
+            if nearThreshold {
+                if activePollInterval != fastPollInterval {
+                    activePollInterval = fastPollInterval
+                    restartPolling = true
+                }
             } else {
-                stableCount = 0
-            }
-            if stableCount >= 10 && activePollInterval < 8.0 {
-                activePollInterval = 8.0
-                restartPolling = true
-            } else if fluctuation >= 5 && activePollInterval > 2.0 {
-                activePollInterval = 2.0
-                stableCount = 0
-                restartPolling = true
+                if fluctuation < 5 {
+                    stableCount += 1
+                } else {
+                    stableCount = 0
+                }
+                if activePollInterval == fastPollInterval {
+                    // 离开接近窗口：快速档回落 2s 基准
+                    activePollInterval = 2.0
+                    stableCount = 0
+                    restartPolling = true
+                } else if stableCount >= 10 && activePollInterval < 8.0 {
+                    activePollInterval = 8.0
+                    restartPolling = true
+                } else if fluctuation >= 5 && activePollInterval > 2.0 {
+                    activePollInterval = 2.0
+                    stableCount = 0
+                    restartPolling = true
+                }
             }
             return k
         }
