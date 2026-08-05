@@ -306,3 +306,9 @@
 "mb_disconnected" = "未连接";
 "mb_enable" = "启用 FUnlock";
 "mb_update_failed" = "更新失败";
+"mb_signal_excellent" = "信号极佳";
+"mb_signal_very_close" = "非常近";
+"mb_signal_good" = "信号良好";
+"mb_signal_close" = "较近";
+"mb_signal_weak" = "信号较弱";
+"mb_signal_far" = "较远";

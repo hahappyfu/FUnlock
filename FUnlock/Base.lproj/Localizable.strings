@@ -308,3 +308,9 @@
 "mb_disconnected" = "Disconnected";
 "mb_enable" = "Enable FUnlock";
 "mb_update_failed" = "Update failed";
+"mb_signal_excellent" = "Excellent signal";
+"mb_signal_very_close" = "Very close";
+"mb_signal_good" = "Good signal";
+"mb_signal_close" = "Close";
+"mb_signal_weak" = "Weak signal";
+"mb_signal_far" = "Far";

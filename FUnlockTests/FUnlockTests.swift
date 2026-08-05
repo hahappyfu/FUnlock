@@ -3655,18 +3655,29 @@ final class MenuBarPopoverViewTests: XCTestCase {
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -95), 1)
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -100), 1)
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -91), 1)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -82), 1, "边界 -82 归入 1 格档")
     }
 
     func testSignalBars_steps() {
-        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -85), 2)
-        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -75), 3)
-        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -65), 4)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -81), 2)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -75), 2, "边界 -75 归入较弱档")
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -68), 3)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -67), 3, "边界 -67 归入 3 格档")
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -66), 4)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -60), 4, "边界 -60 归入良好档")
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -55), 5)
     }
 
     func testSignalBars_strongSignalMax() {
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -30), 5)
-        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -60), 5, "边界 -60 及以上归入满格档")
-        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -61), 4)
+        XCTAssertEqual(MenuBarPopoverView.signalBars(for: -59), 5, "-59 高于 -60 满格")
+    }
+
+    func testSignalLevel_buckets() {
+        XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -45), .excellent)
+        XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -60), .good)
+        XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -74), .good)
+        XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -75), .weak, "边界 -75 归入较弱档")
+        XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -90), .weak)
     }
 }

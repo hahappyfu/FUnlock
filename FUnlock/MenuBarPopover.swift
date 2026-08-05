@@ -58,6 +58,61 @@ struct MenuBarPopoverView: View {
 
     // MARK: - 状态卡
 
+    /// 信号档位：RSSI > -60 极佳；-75 ~ -60 良好；< -75 较弱
+    enum SignalLevel: Equatable {
+        case excellent
+        case good
+        case weak
+
+        var main: String {
+            switch self {
+            case .excellent: return t("mb_signal_excellent")
+            case .good: return t("mb_signal_good")
+            case .weak: return t("mb_signal_weak")
+            }
+        }
+
+        var proximity: String {
+            switch self {
+            case .excellent: return t("mb_signal_very_close")
+            case .good: return t("mb_signal_close")
+            case .weak: return t("mb_signal_far")
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .excellent: return .green
+            case .good: return .blue
+            case .weak: return .orange
+            }
+        }
+
+        /// 信号格数：档位内按子档细分（越近格数越多）
+        func bars(for rssi: Double) -> Int {
+            switch self {
+            case .excellent: return 5
+            case .good: return rssi > -67 ? 4 : 3
+            case .weak: return rssi > -82 ? 2 : 1
+            }
+        }
+    }
+
+    /// 按有效 RSSI 分档
+    static func signalLevel(for rssi: Double) -> SignalLevel {
+        if rssi > -60 { return .excellent }
+        if rssi > -75 { return .good }
+        return .weak
+    }
+
+    static func signalBars(for rssi: Double) -> Int {
+        signalLevel(for: rssi).bars(for: rssi)
+    }
+
+    private var signalLevel: SignalLevel {
+        MenuBarPopoverView.signalLevel(for: fun.effectiveRSSI)
+    }
+
     private var statusCard: some View {
         HStack(spacing: 10) {
             ZStack {
@@ -70,30 +125,38 @@ struct MenuBarPopoverView: View {
             }
             .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
+                // 第一行：设备名称（粗体 13pt）
                 HStack(spacing: 6) {
                     Text(deviceName)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                     Circle()
                         .fill(connectionColor)
                         .frame(width: 6, height: 6)
                 }
-                TimelineView(.periodic(from: .now, by: 1.0)) { _ in
-                    HStack(spacing: 6) {
-                        signalBars
-                        Text(signalText)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(screenStateText)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(screenStateColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(screenStateColor.opacity(0.12), in: Capsule())
-                    }
+                // 第二行：信号条 + 语义化描述（12pt）+ 屏幕状态胶囊
+                HStack(spacing: 7) {
+                    signalBarsView
+                    (Text(signalLevel.main)
+                        .foregroundColor(signalLevel.color)
+                        + Text(" (\(signalLevel.proximity))")
+                            .foregroundColor(.secondary))
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer(minLength: 4)
+                    Text(screenStateText)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(screenStateColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(screenStateColor.opacity(0.12), in: Capsule())
                 }
+                .padding(.top, 4)
+                // 第三行：原始信号数值（10pt 次级灰，辅助信息）
+                Text(signalText)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
             }
         }
     }
@@ -118,27 +181,17 @@ struct MenuBarPopoverView: View {
         return manager.state.screen == .unlocked ? .green : .blue
     }
 
-    /// 信号格数：按有效 RSSI 分档（数值越大信号越强）
-    static func signalBars(for rssi: Double) -> Int {
-        switch rssi {
-        case ..<(-90): return 1
-        case ..<(-80): return 2
-        case ..<(-70): return 3
-        case ..<(-60): return 4
-        default: return 5
-        }
-    }
-
-    private var signalBars: some View {
-        HStack(spacing: 1.5) {
+    private var signalBarsView: some View {
+        let level = signalLevel
+        return HStack(spacing: 1.5) {
             ForEach(0..<5, id: \.self) { i in
                 Capsule()
-                    .fill(i < MenuBarPopoverView.signalBars(for: fun.effectiveRSSI)
-                          ? Color.accentColor : Color.secondary.opacity(0.22))
+                    .fill(i < level.bars(for: fun.effectiveRSSI)
+                          ? level.color : Color.secondary.opacity(0.22))
                     .frame(width: 3, height: 4 + CGFloat(i) * 1.5)
             }
         }
-        .frame(height: 11, alignment: .bottom)
+        .frame(height: 12, alignment: .bottom)
     }
 
     private var signalText: String {
