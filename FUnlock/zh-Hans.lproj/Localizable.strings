@@ -300,3 +300,9 @@
 "sidebar_toggle" = "显示或隐藏侧边栏";
 "diagnostics_today" = "今天";
 "diagnostics_yesterday" = "昨天";
+"mb_no_device" = "未绑定设备";
+"mb_unlocked" = "已解锁";
+"mb_locked" = "已锁定";
+"mb_disconnected" = "未连接";
+"mb_enable" = "启用 FUnlock";
+"mb_update_failed" = "更新失败";

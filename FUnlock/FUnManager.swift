@@ -108,7 +108,7 @@ final class FUnManager: ObservableObject {
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let updateChecker = UpdateChecker()
     private let downloader = UpdateDownloader()
-    private(set) var updateState: UpdateDownloader.State = .idle
+    @Published private(set) var updateState: UpdateDownloader.State = .idle
     private let prefs = UserDefaults.standard
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?

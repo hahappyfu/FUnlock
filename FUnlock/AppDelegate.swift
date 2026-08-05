@@ -156,6 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var settingsWindow: NSWindow!
+    private var popover: NSPopover?
 
     // MARK: - 核心依赖
 
@@ -293,54 +294,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor @objc func checkForUpdates() {
-        // 更新菜单项状态
-        guard let menu = statusItem.menu else { return }
-        for item in menu.items where item.action == #selector(checkForUpdates) {
-            item.title = t("menu_checking")
-            item.isEnabled = false
-        }
+        // 更新检查已内嵌到菜单栏 Popover 视图；此方法保留给更新通知点击等外部入口
         manager.forceCheckUpdate { [weak self] version in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                guard let menu = self.statusItem.menu else { return }
-                if version != nil {
-                    // 有新版本，downloader 会自动开始下载
-                    self.observeDownloadProgress()
-                } else {
-                    // 已是最新
-                    for item in menu.items where item.action == #selector(self.checkForUpdates) {
-                        item.title = t("menu_check_update")
-                        item.isEnabled = true
-                    }
+                if version == nil {
                     self.showSimpleAlert(title: t("already_latest"))
                 }
-            }
-        }
-    }
-
-    private func observeDownloadProgress() {
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
-            guard let menu = self.statusItem.menu else { timer.invalidate(); return }
-            switch self.manager.updateState {
-            case .downloading(let progress):
-                for item in menu.items where item.action == #selector(self.checkForUpdates) {
-                    item.title = String(format: t("menu_download_progress"), Int(progress * 100))
-                }
-            case .completed:
-                timer.invalidate()
-                for item in menu.items where item.action == #selector(self.checkForUpdates) {
-                    item.title = t("menu_check_update")
-                    item.isEnabled = true
-                }
-            case .failed:
-                timer.invalidate()
-                for item in menu.items where item.action == #selector(self.checkForUpdates) {
-                    item.title = t("menu_check_update")
-                    item.isEnabled = true
-                }
-            case .idle:
-                break
             }
         }
     }
@@ -501,7 +461,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    /// 状态栏图标 + 右键快捷菜单 + 设置窗口延迟初始化
+    /// 状态栏图标 + 设置窗口延迟初始化（菜单改为 NSPopover + SwiftUI）
     @MainActor private func setupStatusBarAndMenu() {
         // 延迟初始化设置窗口（避免 macOS Sequoia TCC 框架崩溃）
         DispatchQueue.main.async { [weak self] in
@@ -511,31 +471,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if let button = statusItem.button {
             button.image = NSImage(named: "StatusBarDisconnected")
             button.target = self
+            button.action = #selector(toggleMenuBarPopover(_:))
             button.toolTip = "FUnlock"
         }
 
-        let menu = NSMenu()
-        let openSettings = NSMenuItem(title: t("menu_open_settings"), action: #selector(toggleSettingsWindow(_:)), keyEquivalent: "")
-        openSettings.target = self
-        menu.addItem(openSettings)
-        let changePassword = NSMenuItem(title: t("menu_change_password"), action: #selector(changePassword), keyEquivalent: "")
-        changePassword.target = self
-        menu.addItem(changePassword)
-        let checkUpdate = NSMenuItem(title: t("menu_check_update"), action: #selector(checkForUpdates), keyEquivalent: "")
-        checkUpdate.target = self
-        menu.addItem(checkUpdate)
-        menu.addItem(NSMenuItem.separator())
-        let lockNow = NSMenuItem(title: t("menu_lock_now"), action: #selector(lockNow), keyEquivalent: "")
-        lockNow.target = self
-        menu.addItem(lockNow)
-        let stats = NSMenuItem(title: t("menu_stats"), action: #selector(showStats), keyEquivalent: "")
-        stats.target = self
-        menu.addItem(stats)
-        menu.addItem(NSMenuItem.separator())
-        let quit = NSMenuItem(title: t("menu_quit"), action: #selector(quitApp), keyEquivalent: "")
-        quit.target = self
-        menu.addItem(quit)
-        statusItem.menu = menu
+        let hosting = NSHostingController(rootView: MenuBarPopoverView(manager: manager, fun: fun) { [weak self] action in
+            self?.handleMenuBarAction(action)
+        })
+        let popover = NSPopover()
+        popover.contentViewController = hosting
+        popover.behavior = .transient
+        popover.contentSize = hosting.view.fittingSize
+        self.popover = popover
+    }
+
+    // MARK: - 状态栏 Popover
+
+    @MainActor @objc func toggleMenuBarPopover(_ sender: AnyObject?) {
+        guard let button = statusItem.button else { return }
+        if let popover, popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover?.contentSize = (popover?.contentViewController?.view.fittingSize) ?? NSSize(width: 282, height: 300)
+            popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    @MainActor private func handleMenuBarAction(_ action: MenuBarAction) {
+        switch action {
+        case .openSettings: toggleSettingsWindow(nil)
+        case .changePassword: changePassword()
+        case .checkUpdate: checkForUpdates()
+        case .lockNow: lockNow()
+        case .showStats: showStats()
+        case .quit: quitApp()
+        }
     }
 
     /// 注册系统通知订阅（屏幕/系统睡眠唤醒、锁屏、屏保、密码变更）

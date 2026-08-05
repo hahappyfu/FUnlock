@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUnlock 状态栏菜单 · 交互设计稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: linear-gradient(170deg, #f5f5f7 0%, #dedee3 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px;
+    color: #1d1d1f;
+  }
+  .header { text-align: center; margin-bottom: 18px; }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header p { font-size: 12.5px; color: #86868b; margin-top: 4px; }
+
+  /* 屏幕模拟框 */
+  .screen {
+    width: 820px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    overflow: hidden;
+    position: relative;
+  }
+  /* macOS 菜单栏 */
+  .menubar {
+    height: 32px;
+    background: linear-gradient(180deg, #fafafa 0%, #e8e8e8 100%);
+    border-bottom: 1px solid rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 12.5px;
+    position: relative;
+    z-index: 10;
+  }
+  .menubar .apple { font-weight: 600; margin-right: 22px; }
+  .menubar .apps { display: flex; gap: 16px; color: #333; }
+  .menubar .apps span { padding: 2px 4px; border-radius: 4px; }
+  .menubar .apps span.on { background: rgba(0,0,0,0.08); }
+  .menubar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; color: #333; }
+  .status-icon {
+    width: 28px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .status-icon:hover { background: rgba(0,0,0,0.08); }
+  .status-icon.active { background: #007aff; color: #fff; }
+
+  /* ============ 最终菜单设计 ============ */
+  .menu {
+    position: absolute;
+    top: 36px; right: 12px;
+    width: 268px;
+    background: rgba(246,246,246,0.92);
+    backdrop-filter: blur(30px) saturate(1.8);
+    -webkit-backdrop-filter: blur(30px) saturate(1.8);
+    border: 1px solid rgba(0,0,0,0.14);
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.28);
+    padding: 5px;
+    font-size: 13px;
+    z-index: 100;
+    display: none;
+    animation: pop 0.13s ease-out;
+    transform-origin: top right;
+  }
+  .menu.show { display: block; }
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(-5px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* 信息区卡片 */
+  .status-card {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.07);
+    border-radius: 8px;
+    padding: 9px 11px;
+    margin: 3px 3px 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .status-card .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #f1f1f4;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .status-card .info { flex: 1; min-width: 0; }
+  .status-card .name { font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+  .status-card .name .dot { width: 7px; height: 7px; border-radius: 50%; background: #c8c8cc; }
+  .status-card .sig { font-size: 11px; color: #86868b; display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .bars { display: flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+  .bars span { width: 3px; border-radius: 1px; background: #34c759; opacity: 0.25; }
+  .bars span.on { opacity: 1; }
+  .bars span:nth-child(1){height:4px} .bars span:nth-child(2){height:6px}
+  .bars span:nth-child(3){height:8px} .bars span:nth-child(4){height:10px}
+  .pill { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; flex-shrink: 0; }
+  .pill.unlocked { background: rgba(52,199,89,0.16); color: #248a3d; }
+  .pill.locked { background: rgba(255,149,0,0.16); color: #c46a00; }
+  .pill.away { background: rgba(0,0,0,0.07); color: #6e6e73; }
+  .pill.off { background: rgba(255,59,48,0.12); color: #d70015; }
+
+  .mitem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 11px;
+    border-radius: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .mitem:hover { background: #007aff; color: #fff; }
+  .mitem .glyph { width: 16px; text-align: center; font-size: 12px; opacity: 0.75; }
+  .mitem:hover .glyph { opacity: 1; }
+  .mitem .lbl { flex: 1; }
+  .mitem .hint { font-size: 11px; color: #86868b; }
+  .mitem:hover .hint { color: rgba(255,255,255,0.75); }
+  .msep { height: 1px; background: rgba(0,0,0,0.1); margin: 5px 10px; }
+
+  /* 开关 */
+  .switch { margin-left: auto; width: 34px; height: 20px; border-radius: 10px; background: #c8c8cc; position: relative; transition: background 0.15s; flex-shrink: 0; }
+  .switch::after { content:""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.3); transition: left 0.15s; }
+  .switch.on { background: #34c759; }
+  .switch.on::after { left: 16px; }
+
+  /* 底部提示 */
+  .hintbar {
+    text-align: center;
+    font-size: 12px;
+    color: #6e6e73;
+    margin-top: 14px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 8px;
+    padding: 8px 14px;
+    max-width: 820px;
+    line-height: 1.6;
+  }
+
+  /* 状态模拟器 */
+  .simulator {
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .simulator .lbl { font-size: 12px; color: #86868b; margin-right: 4px; }
+  .sbtn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.15);
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.12s;
+  }
+  .sbtn:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+  .sbtn.on { background: #007aff; color: #fff; border-color: transparent; }
+
+  .toast {
+    position: fixed;
+    bottom: 26px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(30,30,32,0.92);
+    color: #fff;
+    font-size: 12.5px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: all 0.2s;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>FUnlock 状态栏菜单 · 交互设计稿</h1>
+  <p>点击右上角图标弹出菜单 · 用下方模拟器切换不同场景看动态效果</p>
+</div>
+
+<div class="screen">
+  <!-- 模拟 macOS 菜单栏 -->
+  <div class="menubar">
+    <span class="apple"></span>
+    <div class="apps"><span>FUnlock</span><span class="on">Finder</span><span>File</span><span>Edit</span><span>View</span></div>
+    <div class="right">
+      <span>🔋</span><span>🔊</span><span>📶</span>
+      <span class="status-icon" id="icon" onclick="toggleMenu()" title="FUnlock">🔓</span>
+      <span id="clock">09:41</span>
+    </div>
+  </div>
+
+  <!-- 最终菜单设计 -->
+  <div class="menu" id="menu">
+    <!-- 信息区 -->
+    <div class="status-card" id="statusCard">
+      <div class="avatar" id="avatar">📱</div>
+      <div class="info">
+        <div class="name"><span id="devName">iPhone 15 Pro</span><span class="dot" id="connDot"></span></div>
+        <div class="sig">
+          <span class="bars" id="sigBars"><span></span><span></span><span></span><span></span></span>
+          <span id="sigText">-45 dBm</span>
+        </div>
+      </div>
+      <div class="pill" id="statePill">已解锁</div>
+    </div>
+
+    <!-- 主开关 -->
+    <div class="mitem" onclick="toggleEnable()">
+      <span class="glyph">⚡</span>
+      <span class="lbl">启用 FUnlock</span>
+      <div class="switch on" id="enableSwitch"></div>
+    </div>
+
+    <div class="msep"></div>
+
+    <!-- 操作区 -->
+    <div class="mitem" onclick="act('立即锁定')">
+      <span class="glyph">🔒</span>
+      <span class="lbl">立即锁定</span>
+      <span class="hint">⌃⌘Q</span>
+    </div>
+    <div class="mitem" onclick="act('打开设置窗口')">
+      <span class="glyph">⚙️</span>
+      <span class="lbl">打开设置</span>
+    </div>
+    <div class="mitem" onclick="act('修改密码')">
+      <span class="glyph">🗝️</span>
+      <span class="lbl">修改密码</span>
+    </div>
+    <div class="mitem" onclick="act('检查更新')">
+      <span class="glyph">🔄</span>
+      <span class="lbl">检查更新</span>
+    </div>
+
+    <div class="msep"></div>
+
+    <div class="mitem" onclick="act('退出 FUnlock')">
+      <span class="glyph">⏏️</span>
+      <span class="lbl">退出</span>
+    </div>
+  </div>
+</div>
+
+<!-- 状态模拟器 -->
+<div class="simulator">
+  <span class="lbl">模拟场景：</span>
+  <button class="sbtn on" data-state="unlocked" onclick="setState('unlocked', this)">已解锁</button>
+  <button class="sbtn" data-state="locked" onclick="setState('locked', this)">已锁定</button>
+  <button class="sbtn" data-state="away" onclick="setState('away', this)">设备远离·待锁</button>
+  <button class="sbtn" data-state="off" onclick="setState('off', this)">未连接设备</button>
+</div>
+
+<div class="hintbar">
+  💡 设计要点：顶部白色信息卡展示「设备 + 实时信号 + 屏幕状态」；
+  蓝色开关一键启用/停用；操作区四个高频动作；
+  菜单弹出时数据实时刷新（menuWillOpen）。图标随场景变化：绿=已解锁 / 原色=已连接 / 灰=未连接
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const menu = document.getElementById('menu');
+  const icon = document.getElementById('icon');
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 1400);
+  }
+  function act(msg) { toast('（演示）点击了：' + msg); }
+
+  function toggleMenu() {
+    const show = menu.classList.toggle('show');
+    icon.classList.toggle('active', show);
+    if (show) refresh();
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.menu') && !e.target.closest('.status-icon')) {
+      menu.classList.remove('show');
+      icon.classList.remove('active');
+    }
+  });
+
+  function toggleEnable() {
+    document.getElementById('enableSwitch').classList.toggle('on');
+  }
+
+  // 场景状态
+  const STATES = {
+    unlocked: { icon:'🔓', pill:'已解锁', pillCls:'unlocked', bars:4, rssi:-45, dot:'#34c759', name:'iPhone 15 Pro' },
+    locked:   { icon:'🔒', pill:'已锁定', pillCls:'locked',   bars:4, rssi:-48, dot:'#34c759', name:'iPhone 15 Pro' },
+    away:     { icon:'🔒', pill:'设备远离', pillCls:'away',   bars:1, rssi:-85, dot:'#ff9500', name:'iPhone 15 Pro' },
+    off:      { icon:'⛔', pill:'未连接',  pillCls:'off',     bars:0, rssi:'--', dot:'#c8c8cc', name:'未绑定设备' },
+  };
+
+  function refresh() {
+    // 实时信号微调（模拟）
+    const cur = STATES[document.querySelector('.sbtn.on').dataset.state];
+    const drift = Math.round(Math.sin(Date.now()/3000)*3);
+    if (cur.rssi !== '--') {
+      cur._rssi = cur.rssi + drift;
+      document.getElementById('sigText').textContent = cur._rssi + ' dBm';
+    }
+  }
+
+  function setState(key, btn) {
+    document.querySelectorAll('.sbtn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const s = STATES[key];
+    icon.textContent = s.icon;
+    document.getElementById('statePill').textContent = s.pill;
+    document.getElementById('statePill').className = 'pill ' + s.pillCls;
+    document.getElementById('devName').textContent = s.name;
+    document.getElementById('connDot').style.background = s.dot;
+    document.getElementById('sigText').textContent = s.rssi + ' dBm';
+    const bars = document.querySelectorAll('#sigBars span');
+    bars.forEach((b, i) => b.classList.toggle('on', i < s.bars));
+    toast('场景切换：' + s.pill);
+  }
+
+  // 时钟
+  function tick() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+  tick(); setInterval(tick, 1000);
+  setInterval(() => {
+    if (menu.classList.contains('show')) refresh();
+  }, 2000);
+</script>
+</body>
+</html>

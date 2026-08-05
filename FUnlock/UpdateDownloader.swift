@@ -1,11 +1,11 @@
 import Foundation
 
 class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
-    enum State {
+    enum State: Equatable {
         case idle
         case downloading(progress: Double)
         case completed(URL)   // 解压后的 FUnlock.app 路径
-        case failed(Error)
+        case failed(String)   // 错误描述
     }
 
     var onStateChange: ((State) -> Void)?
@@ -99,7 +99,7 @@ class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
         } catch {
             try? FileManager.default.removeItem(at: tempDir)
             DispatchQueue.main.async { [weak self] in
-                self?.onStateChange?(.failed(error))
+                self?.onStateChange?(.failed(error.localizedDescription))
             }
         }
     }
@@ -117,7 +117,7 @@ class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error = error else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(.failed(error))
+            self?.onStateChange?(.failed(error.localizedDescription))
         }
     }
 }

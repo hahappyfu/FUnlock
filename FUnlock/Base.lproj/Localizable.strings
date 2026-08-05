@@ -302,3 +302,9 @@
 "sidebar_toggle" = "Show or Hide Sidebar";
 "diagnostics_today" = "Today";
 "diagnostics_yesterday" = "Yesterday";
+"mb_no_device" = "No Device";
+"mb_unlocked" = "Unlocked";
+"mb_locked" = "Locked";
+"mb_disconnected" = "Disconnected";
+"mb_enable" = "Enable FUnlock";
+"mb_update_failed" = "Update failed";

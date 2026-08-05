@@ -50,6 +50,7 @@
 		DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DT0000010000000100000001 /* DecisionLoggerTests.swift */; };
 		RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RM0000010000000100000001 /* ReasonActionMappingTests.swift */; };
 		DV0000020000000100000001 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000001 /* DiagnosticsView.swift */; };
+		MB0000020000000100000001 /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000001 /* MenuBarPopover.swift */; };
 		AA0000DD00000001 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000011 /* MainWindowView.swift */; };
 		AA0000DD00000002 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000012 /* SidebarView.swift */; };
 		AA0000DD00000003 /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000013 /* OverviewView.swift */; };
@@ -142,6 +143,7 @@
 		TL0000010000000100000002 /* TelemetryLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryLogger.swift; sourceTree = "<group>"; };
 		DL0000010000000100000001 /* DecisionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLogger.swift; sourceTree = "<group>"; };
 		DV0000010000000100000001 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		MB0000010000000100000001 /* MenuBarPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopover.swift; sourceTree = "<group>"; };
 		DT0000010000000100000001 /* DecisionLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLoggerTests.swift; sourceTree = "<group>"; };
 		RM0000010000000100000001 /* ReasonActionMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasonActionMappingTests.swift; sourceTree = "<group>"; };
 		AA0000DD00000011 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
@@ -224,6 +226,7 @@
 				TL0000010000000100000002 /* TelemetryLogger.swift */,
 				DL0000010000000100000001 /* DecisionLogger.swift */,
 				DV0000010000000100000001 /* DiagnosticsView.swift */,
+				MB0000010000000100000001 /* MenuBarPopover.swift */,
 				B200000422784D550017D8B9 /* FUnlockUtils.swift */,
 				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
@@ -485,6 +488,7 @@
 				TL0000010000000100000001 /* TelemetryLogger.swift in Sources */,
 				DL0000020000000100000001 /* DecisionLogger.swift in Sources */,
 				DV0000020000000100000001 /* DiagnosticsView.swift in Sources */,
+				MB0000020000000100000001 /* MenuBarPopover.swift in Sources */,
 				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
 				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
