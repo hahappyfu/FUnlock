@@ -127,7 +127,7 @@ struct MenuBarPopoverView: View {
                     signalBarsView
                     Text("\(signalLevel.main) (\(signalLevel.proximity))")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.accentColor)
+                        .foregroundColor(.green)
                     Spacer(minLength: 4)
                     Text(screenStateText)
                         .font(.system(size: 10, weight: .semibold))
@@ -169,11 +169,11 @@ struct MenuBarPopoverView: View {
     private var signalBarsView: some View {
         let level = signalLevel
         let rssi = fun.effectiveRSSI
-        return HStack(spacing: 2) {
+        return HStack(alignment: .bottom, spacing: 2.5) {
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(i < level.bars(for: rssi) ? Color.accentColor : Color.secondary.opacity(0.22))
-                    .frame(width: 3, height: 4 + CGFloat(i) * 2)
+                    .fill(i < level.bars(for: rssi) ? Color.green : Color.green.opacity(0.2))
+                    .frame(width: 4, height: 4 + CGFloat(i) * 2)
             }
         }
         .frame(height: 12, alignment: .bottom)
