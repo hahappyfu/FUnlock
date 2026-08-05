@@ -204,117 +204,73 @@ struct MenuBarPopoverView: View {
     // MARK: - 启用开关
 
     private var enableRow: some View {
-        Button {
+        MenuRowButton(icon: "power",
+                      iconColor: enabled ? .green : .secondary,
+                      title: t("mb_enable"),
+                      titleColor: enabled ? .primary : .secondary,
+                      hoverTint: .primary,
+                      trailing: AnyView(
+                        HStack {
+                            // 自定义开关：整行为单个按钮，避免嵌套 Toggle 控件双重触发
+                            Capsule()
+                                .fill(enabled ? Color.green : Color.gray.opacity(0.45))
+                                .frame(width: 32, height: 18)
+                                .overlay(alignment: enabled ? .trailing : .leading) {
+                                    Circle()
+                                        .fill(.white)
+                                        .frame(width: 14, height: 14)
+                                        .padding(2)
+                                }
+                                .animation(.easeInOut(duration: 0.15), value: enabled)
+                        }
+                      )) {
             enabled.toggle()
-        } label: {
-            HStack {
-                Image(systemName: "power")
-                    .font(.system(size: 12))
-                    .foregroundColor(enabled ? .green : .secondary)
-                Text(t("mb_enable"))
-                    .font(.system(size: 13))
-                    .foregroundColor(enabled ? .primary : .secondary)
-                Spacer()
-                // 自定义开关：整行为单个 Button，避免嵌套 Toggle 控件双重触发
-                Capsule()
-                    .fill(enabled ? Color.green : Color.gray.opacity(0.45))
-                    .frame(width: 32, height: 18)
-                    .overlay(alignment: enabled ? .trailing : .leading) {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 14, height: 14)
-                            .padding(2)
-                    }
-                    .animation(.easeInOut(duration: 0.15), value: enabled)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - 操作区
 
     private var actionRows: some View {
         VStack(spacing: 2) {
-            Button {
+            MenuRowButton(icon: "lock.fill", iconColor: .red, title: t("menu_lock_now"),
+                          titleColor: .red, hoverTint: .red) {
                 onAction(.lockNow)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 12))
-                        .frame(width: 16)
-                        .foregroundColor(.red)
-                    Text(t("menu_lock_now"))
-                        .font(.system(size: 13))
-                        .foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
-            .buttonStyle(.plain)
 
-            row(icon: "gearshape", title: t("menu_open_settings")) { onAction(.openSettings) }
-            row(icon: "key", title: t("menu_change_password")) { onAction(.changePassword) }
-            updateRow
+            MenuRowButton(icon: "gearshape", iconColor: .secondary, title: t("menu_open_settings"),
+                          titleColor: .primary, hoverTint: .primary) {
+                onAction(.openSettings)
+            }
+            MenuRowButton(icon: "key", iconColor: .secondary, title: t("menu_change_password"),
+                          titleColor: .primary, hoverTint: .primary) {
+                onAction(.changePassword)
+            }
+            MenuRowButton(icon: updateIcon, iconColor: .secondary, title: updateText,
+                          titleColor: .primary, hoverTint: .primary,
+                          trailing: AnyView(updateTrailing), disabled: isUpdateInProgress) {
+                startUpdateCheck()
+            }
             Divider()
                 .padding(.vertical, 3)
             // 数据展示类：与上方系统配置类操作分组隔开
-            row(icon: "chart.bar", title: t("menu_stats")) { onAction(.showStats) }
+            MenuRowButton(icon: "chart.bar", iconColor: .secondary, title: t("menu_stats"),
+                          titleColor: .primary, hoverTint: .primary) {
+                onAction(.showStats)
+            }
         }
         .padding(.vertical, 5)
     }
 
-    private func row(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .frame(width: 16)
-                    .foregroundColor(.secondary)
-                Text(title)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
+    @ViewBuilder
+    private var updateTrailing: some View {
+        if case .checking = updateStatus {
+            ProgressView()
+                .controlSize(.small)
+        } else if case .downloading(let p) = updateStatus {
+            Text("\(Int(p * 100))%")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
         }
-        .buttonStyle(.plain)
-    }
-
-    private var updateRow: some View {
-        Button {
-            startUpdateCheck()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: updateIcon)
-                    .font(.system(size: 12))
-                    .frame(width: 16)
-                    .foregroundColor(.secondary)
-                Text(updateText)
-                    .font(.system(size: 13))
-                    .foregroundColor(.primary)
-                Spacer()
-                if case .checking = updateStatus {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if case .downloading(let p) = updateStatus {
-                    Text("\(Int(p * 100))%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(isUpdateInProgress)
     }
 
     private var isUpdateInProgress: Bool {
@@ -358,22 +314,65 @@ struct MenuBarPopoverView: View {
     // MARK: - 退出
 
     private var quitRow: some View {
-        Button {
+        MenuRowButton(icon: "rectangle.portrait.and.arrow.right", iconColor: .primary,
+                      title: t("menu_quit"), titleColor: .primary, hoverTint: .primary) {
             onAction(.quit)
-        } label: {
+        }
+    }
+}
+
+// MARK: - 通用菜单行（悬停高亮 + 按压反馈）
+
+/// 带鼠标交互反馈的菜单行：悬停平滑高亮、按下背景加深并轻微缩放
+private struct MenuRowButton: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let titleColor: Color
+    let hoverTint: Color
+    var trailing: AnyView? = nil
+    var disabled = false
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
+                Image(systemName: icon)
                     .font(.system(size: 12))
                     .frame(width: 16)
-                Text(t("menu_quit"))
+                    .foregroundColor(iconColor)
+                Text(title)
                     .font(.system(size: 13))
+                    .foregroundColor(titleColor)
                 Spacer()
+                if let trailing { trailing }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isPressed ? hoverTint.opacity(0.18)
+                                    : (isHovering ? hoverTint.opacity(0.08) : .clear))
+            )
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .animation(.easeOut(duration: 0.08), value: isPressed)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering && !disabled
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1.0)
     }
 }
 
