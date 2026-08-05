@@ -81,11 +81,7 @@ struct MenuBarPopoverView: View {
         }
 
         var color: Color {
-            switch self {
-            case .excellent: return .green
-            case .good: return .blue
-            case .weak: return .orange
-            }
+            .accentColor
         }
 
         /// 信号格数：档位内按子档细分（越近格数越多）
@@ -139,7 +135,7 @@ struct MenuBarPopoverView: View {
                 HStack(spacing: 7) {
                     signalBarsView
                     (Text(signalLevel.main)
-                        .foregroundColor(signalLevel.color)
+                        .foregroundColor(Color.accentColor)
                         + Text(" (\(signalLevel.proximity))")
                             .foregroundColor(.secondary))
                         .font(.system(size: 12, weight: .medium))

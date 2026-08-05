@@ -497,6 +497,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    /// 收起状态栏菜单（应用失活时兜底，保证点击外部不常驻）
+    @MainActor private func closeMenuBarPopover() {
+        guard let popover, popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
     @MainActor private func handleMenuBarAction(_ action: MenuBarAction) {
         switch action {
         case .openSettings: toggleSettingsWindow(nil)
@@ -544,6 +550,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.security.loginwindow.passwordChanged"))
             .sink { [weak self] _ in SecurityService.shared.handlePasswordChanged() }
+            .store(in: &cancellables)
+
+        // 应用失活（点击桌面 / 切换到其他 App）时自动收起状态栏菜单
+        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .sink { [weak self] _ in self?.closeMenuBarPopover() }
             .store(in: &cancellables)
     }
 
