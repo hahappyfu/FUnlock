@@ -148,13 +148,7 @@ struct MenuBarPopoverView: View {
 
     /// 按设备名推断设备图标（Apple Watch / AirPods / iPhone 等）
     private var deviceIcon: String {
-        let name = deviceName
-        if name.contains("Watch") { return "applewatch" }
-        if name.contains("AirPods") { return "airpods" }
-        if name.contains("iPad") { return "ipad" }
-        if name.contains("MacBook") || name.contains("Mac") { return "laptopcomputer" }
-        if name.contains("iPhone") { return "iphone" }
-        return "iphone"
+        deviceIconName(for: deviceName)
     }
 
     private var deviceName: String {

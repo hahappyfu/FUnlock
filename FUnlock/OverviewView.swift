@@ -90,7 +90,7 @@ struct OverviewView: View {
             .padding(.vertical, 8)
 
             HStack {
-                Label(manager.monitoredDeviceName ?? "", systemImage: "iphone")
+                Label(manager.monitoredDeviceName ?? "", systemImage: deviceIconName(for: manager.monitoredDeviceName ?? ""))
                 Spacer()
                 Button(t("change_device")) { toggleDeviceList() }
                     .controlSize(.small)
