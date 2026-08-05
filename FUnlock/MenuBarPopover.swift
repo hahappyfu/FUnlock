@@ -80,10 +80,6 @@ struct MenuBarPopoverView: View {
             }
         }
 
-        var color: Color {
-            .accentColor
-        }
-
         /// 信号格数：档位内按子档细分（越近格数越多）
         func bars(for rssi: Double) -> Int {
             switch self {
@@ -122,23 +118,16 @@ struct MenuBarPopoverView: View {
             .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 0) {
-                // 第一行：设备名称（粗体 13pt）
-                HStack(spacing: 6) {
-                    Text(deviceName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Circle()
-                        .fill(connectionColor)
-                        .frame(width: 6, height: 6)
-                }
+                // 第一行：设备名称（粗体 13pt），状态由右上角胶囊统一表达，不再重复小圆点
+                Text(deviceName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
                 // 第二行：信号条 + 语义化描述（12pt）+ 屏幕状态胶囊
                 HStack(spacing: 7) {
                     signalBarsView
-                    (Text(signalLevel.main)
-                        .foregroundColor(Color.accentColor)
-                        + Text(" (\(signalLevel.proximity))")
-                            .foregroundColor(.secondary))
+                    Text("\(signalLevel.main) (\(signalLevel.proximity))")
                         .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.accentColor)
                     Spacer(minLength: 4)
                     Text(screenStateText)
                         .font(.system(size: 10, weight: .semibold))
@@ -180,10 +169,10 @@ struct MenuBarPopoverView: View {
     private var signalBarsView: some View {
         let level = signalLevel
         let rssi = fun.effectiveRSSI
-        return HStack(spacing: 1.5) {
+        return HStack(spacing: 2) {
             ForEach(0..<5, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(i < level.bars(for: rssi) ? level.color : level.color.opacity(0.22))
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(i < level.bars(for: rssi) ? Color.accentColor : Color.secondary.opacity(0.22))
                     .frame(width: 3, height: 4 + CGFloat(i) * 2)
             }
         }
