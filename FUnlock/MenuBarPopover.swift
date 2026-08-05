@@ -183,12 +183,12 @@ struct MenuBarPopoverView: View {
 
     private var signalBarsView: some View {
         let level = signalLevel
+        let rssi = fun.effectiveRSSI
         return HStack(spacing: 1.5) {
             ForEach(0..<5, id: \.self) { i in
-                Capsule()
-                    .fill(i < level.bars(for: fun.effectiveRSSI)
-                          ? level.color : Color.secondary.opacity(0.22))
-                    .frame(width: 3, height: 4 + CGFloat(i) * 1.5)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(i < level.bars(for: rssi) ? level.color : level.color.opacity(0.22))
+                    .frame(width: 3, height: 4 + CGFloat(i) * 2)
             }
         }
         .frame(height: 12, alignment: .bottom)
