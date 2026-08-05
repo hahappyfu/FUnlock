@@ -434,7 +434,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     /// 从 UserDefaults 恢复 BLE 设置到 fun（manager init 会再同步一次）
+    /// 先 synchronize 强制 cfprefsd 同步磁盘状态：bundle 替换后新进程首启时
+    /// 偏好域缓存可能未就绪，直接读取会返回空值导致恢复被跳过（阈值退回默认）
     @MainActor private func restoreSettingsToFUn() {
+        prefs.synchronize()
         let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { fun.lockRSSI = lockRSSI }
         let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { fun.unlockRSSI = unlockRSSI }
         let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { fun.signalTimeout = Double(timeout) }
