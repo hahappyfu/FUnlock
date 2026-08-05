@@ -324,6 +324,7 @@ final class FUnManager: ObservableObject {
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
         Log.sm.debug("[SM] systemScreenLocked")
+        let isManualLock = !isSelfLocking
         if isSelfLocking {
             // FUnlock 自动锁屏，不标记为手动锁定
             isSelfLocking = false
@@ -331,11 +332,13 @@ final class FUnManager: ObservableObject {
         } else {
             // 用户手动锁屏（⌘+Ctrl+Q 等）→ 永久阻止自动解锁，直到手动解锁
             state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
-            recordUser(.userLocked)
         }
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
         lastLockTime = now
+        // 在 state.screen 更新后记录，保证诊断日志的屏幕状态为锁屏后的 .locked(manual)，
+        // 与 onUnlock 记录 userUnlocked 的时机语义一致
+        if isManualLock { recordUser(.userLocked) }
     }
 
     // MARK: - FUn 设备事件

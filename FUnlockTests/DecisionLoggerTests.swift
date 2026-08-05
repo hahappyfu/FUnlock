@@ -44,6 +44,16 @@ final class DecisionLoggerTests: XCTestCase {
         XCTAssertEqual(logger.events.count, 2, "超过窗口应新增")
     }
 
+    func testCoalescedEventNotAppendedToFile() {
+        // 合并事件不应追加写盘，保证重启后 readTail 不会载入重复记录
+        logger.record(category: .user, outcome: .success, reason: .userLocked)
+        currentTime = currentTime.addingTimeInterval(0.01)
+        logger.record(category: .user, outcome: .success, reason: .userLocked)
+        logger.flushSync()
+        let reloaded = DecisionLogger.readTail(from: logger.logFile, max: 100)
+        XCTAssertEqual(reloaded.count, 1, "合并事件不得写入重复行")
+    }
+
     func testReasonChangeNeverCoalesced() {
         logger.record(category: .unlock, outcome: .skipped, reason: .noPresence)
         currentTime = currentTime.addingTimeInterval(1)

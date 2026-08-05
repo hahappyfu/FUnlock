@@ -170,13 +170,8 @@ final class DecisionLogger: ObservableObject {
             )
             events[events.count - 1] = updatedEvent
             ring.replaceLast(updatedEvent)
-            // 即使合并也写入最新状态到磁盘（追加一行，轮转时用内存覆盖）
-            let latest = events
-            let file = logFile
-            let maxSize = maxFileSize
-            queue.async {
-                Self.write(updatedEvent, latest: latest, to: file, maxFileSize: maxSize)
-            }
+            // 合并不追加写盘：文件保持与内存一致的条数，避免重启后 readTail 载入重复事件
+            // （轮转时以内存 latest 覆盖写回，磁盘最终仍为最新状态）
             return
         }
 
