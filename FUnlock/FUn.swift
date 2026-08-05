@@ -928,8 +928,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             lastEstimatedRSSI = Int(k)
             // 方案 A：信号接近阈值（有效信号进入 [threshold-window, threshold)）时启用快速轮询，
             // 信号一触线立刻被感知，缩短解锁/锁屏感知延迟
+            // 走近方向：解锁爬升区 [stair-window, stair) 也启用快速轮询——用户从远处走回时
+            // 若只按锁定阈值触发，爬升区用 8s 慢采样，会出现"走到面前等几十秒"的感知延迟
+            var nearClimb = false
+            if unlockRSSI != UNLOCK_DISABLED {
+                nearClimb = Self.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
+            }
             let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
-            let nearThreshold = Self.isNearThreshold(effectiveRSSI, threshold: threshold)
+            let nearThreshold = nearClimb || Self.isNearThreshold(effectiveRSSI, threshold: threshold)
             if nearThreshold {
                 if activePollInterval != fastPollInterval {
                     activePollInterval = fastPollInterval

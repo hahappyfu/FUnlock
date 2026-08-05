@@ -167,6 +167,20 @@ final class FUnManager: ObservableObject {
     private let detectionWindow: TimeInterval = 300  // 5分钟窗口
     private var lastAbnormalAlertTime: Date = .distantPast
 
+    // MARK: - 解锁时序诊断埋点（临时，验证后移除）
+
+    func timingLog(_ msg: String) {
+        let line = "[\(Date().formatted(date: .omitted, time: .standard))] \(msg)\n"
+        let url = URL(fileURLWithPath: "/tmp/funlock_timing.log")
+        if let fh = try? FileHandle(forWritingTo: url) {
+            fh.seekToEndOfFile()
+            fh.write(line.data(using: .utf8)!)
+            try? fh.close()
+        } else {
+            try? line.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
     // MARK: Init
 
     init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }, decisionLogger: DecisionLogger = .shared) {
@@ -350,6 +364,7 @@ final class FUnManager: ObservableObject {
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
         let smoothed = fun.effectiveRSSI
         print("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
+        timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
 
         // 清除锁屏通知
         SystemInteractionService.shared.clearLockNotification()
@@ -516,23 +531,26 @@ final class FUnManager: ObservableObject {
         let sys = SystemInteractionService.shared
         let screenLocked = sys.isScreenLocked(screenState: state.screen)
         let axGranted = AXIsProcessTrusted()
+        timingLog("attemptAutoUnlock | presence=\(fun.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", fun.effectiveRSSI)) locked=\(screenLocked)")
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
-        guard fun.presence else { Log.sm.debug("SKIP: no presence"); recordUnlock(reason: .noPresence); return }
-        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); recordUnlock(reason: .unlockDisabled); return }
+        guard fun.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
+        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
         // 与 onDeviceApproached 的阶梯门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard fun.effectiveRSSI >= Double(fun.unlockStairThreshold) else {
             Log.sm.debug("SKIP: signal below stair threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
+            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", fun.effectiveRSSI)) stair=\(fun.unlockStairThreshold)")
             recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) dBm 低于阶梯阈值 \(self.fun.unlockStairThreshold) dBm")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); recordUnlock(reason: .stateMachineBlocked); return }
+        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); timingLog("SKIP stateMachineBlocked"); recordUnlock(reason: .stateMachineBlocked); return }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(lastLockTime)
         guard sinceLock >= lockBufferDuration else {
             Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
+            timingLog("SKIP lockBufferActive sinceLock=\(String(format: "%.1f", sinceLock))s")
             recordUnlock(reason: .lockBufferActive, detail: "\(String(format: "%.1f", sinceLock)) 秒前已锁定")
             return
         }
@@ -540,6 +558,7 @@ final class FUnManager: ObservableObject {
         // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
         if isUnlockCooldownActive() {
             Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock)")
+            timingLog("SKIP unlockCooldownActive sinceUnlock=\(String(format: "%.1f", now.timeIntervalSince(lastUnlockTime)))s")
             recordUnlock(reason: .unlockCooldownActive, detail: "距上次解锁 \(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime))) 秒")
             return
         }
@@ -567,6 +586,7 @@ final class FUnManager: ObservableObject {
             && prefs.bool(forKey: "wakeOnProximity")
             && isSystemReadyForUnlock() {
             Log.sm.debug("starting parallel wake + unlock")
+            timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", fun.effectiveRSSI))")
             startWakeRetry()
             // 阶梯解锁：平滑信号达到 unlockStairThreshold（-50dBm）时才并行解锁
             if fun.effectiveRSSI >= Double(fun.unlockStairThreshold) {
@@ -576,7 +596,8 @@ final class FUnManager: ObservableObject {
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); recordUnlock(reason: .systemNotReady); return }
+                    self.timingLog("parallel unlock task fired after 0.8s")
+                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); self.timingLog("SKIP systemNotReady in parallel task"); recordUnlock(reason: .systemNotReady); return }
                     self.tryUnlock()
                 }
             } else {
@@ -585,8 +606,8 @@ final class FUnManager: ObservableObject {
             return
         }
 
-        guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
-        guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); recordUnlock(reason: .displaySleeping); return }
+        guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); timingLog("SKIP wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
+        guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); timingLog("SKIP stillDisplaySleeping"); recordUnlock(reason: .displaySleeping); return }
 
         // 屏幕已解锁：无需尝试解锁，直接早退，避免每轮 RSSI 轮询走到 guardFetchPassword 刷 screenNotLocked 噪音日志
         // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
@@ -597,16 +618,19 @@ final class FUnManager: ObservableObject {
         unlockTask?.cancel()
         unlockTask = Task {
             Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
+            timingLog("delayed unlock task started | sleep 0.3s")
             try? await Task.sleep(nanoseconds: UInt64(delay))
-            guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); return }
-            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); recordUnlock(reason: .systemNotReady); return }
+            guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); timingLog("delayed unlock task cancelled"); return }
+            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); timingLog("SKIP systemNotReady in delayed task"); recordUnlock(reason: .systemNotReady); return }
             Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
+            timingLog("delayed unlock task fired | tryUnlock")
             self.tryUnlock()
         }
     }
 
     // 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     private func tryUnlock() {
+        timingLog("tryUnlock enter")
         guard let password = guardFetchPassword() else { return }
         performInjectionAndVerify(password: password)
     }
@@ -616,6 +640,7 @@ final class FUnManager: ObservableObject {
         let sys = SystemInteractionService.shared
         let sec = SecurityService.shared
         let locked = sys.isScreenLocked(screenState: state.screen)
+        timingLog("guardFetchPassword | locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
         logDebug(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
         Log.sm.debug("screen locked check: \(locked)")
         guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
@@ -653,6 +678,7 @@ final class FUnManager: ObservableObject {
     /// 密码注入 + 乐观确认 + 双保险验证
     private func performInjectionAndVerify(password: String) {
         let sys = SystemInteractionService.shared
+        timingLog("performInjectionAndVerify | injecting \(password.count) chars")
         Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
@@ -684,6 +710,7 @@ final class FUnManager: ObservableObject {
                 let sys = SystemInteractionService.shared
                 let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
                 guard let self else { return }
+                self.timingLog("verifyUnlock done | unlock=\(verification.unlock)")
                 // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
                 defer { self.isAutoUnlocking = false }
                 if verification.unlock {
@@ -751,6 +778,7 @@ final class FUnManager: ObservableObject {
     private func startWakeRetry() {
         state.wake = .pending
         state.screen = .locked(reason: .away)
+        timingLog("startWakeRetry begin")
 
         wakeTask?.cancel()
         wakeTask = Task {
@@ -767,16 +795,19 @@ final class FUnManager: ObservableObject {
                 }
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
+                self.timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
                 // wakeDisplay() 不一定触发 screensDidWakeNotification，
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
                     state.wake = .succeeded
+                    self.timingLog("wake succeeded")
                     self.attemptAutoUnlock()
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
+            self.timingLog("wake failed after 10 retries")
             self.attemptAutoUnlock()
         }
     }
