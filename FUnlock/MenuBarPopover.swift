@@ -26,7 +26,7 @@ struct MenuBarPopoverView: View {
     var body: some View {
         VStack(spacing: 0) {
             statusCard
-                .padding(12)
+                .padding(EdgeInsets(top: 12, leading: 12, bottom: 10, trailing: 12))
             Divider()
             enableRow
             Divider()
@@ -64,20 +64,20 @@ struct MenuBarPopoverView: View {
                 Circle()
                     .fill(LinearGradient(colors: [.blue.opacity(0.85), .indigo.opacity(0.85)],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: "iphone")
+                Image(systemName: deviceIcon)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
             }
             .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(deviceName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .lineLimit(1)
                     Circle()
                         .fill(connectionColor)
-                        .frame(width: 7, height: 7)
+                        .frame(width: 6, height: 6)
                 }
                 TimelineView(.periodic(from: .now, by: 1.0)) { _ in
                     HStack(spacing: 6) {
@@ -85,19 +85,28 @@ struct MenuBarPopoverView: View {
                         Text(signalText)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
+                        Spacer()
+                        Text(screenStateText)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(screenStateColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(screenStateColor.opacity(0.12), in: Capsule())
                     }
                 }
             }
-
-            Spacer()
-
-            Text(screenStateText)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(screenStateColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(screenStateColor.opacity(0.12), in: Capsule())
         }
+    }
+
+    /// 按设备名推断设备图标（Apple Watch / AirPods / iPhone 等）
+    private var deviceIcon: String {
+        let name = deviceName
+        if name.contains("Watch") { return "applewatch" }
+        if name.contains("AirPods") { return "airpods" }
+        if name.contains("iPad") { return "ipad" }
+        if name.contains("MacBook") || name.contains("Mac") { return "laptopcomputer" }
+        if name.contains("iPhone") { return "iphone" }
+        return "iphone"
     }
 
     private var deviceName: String {
@@ -166,7 +175,7 @@ struct MenuBarPopoverView: View {
                     .foregroundColor(enabled ? .green : .secondary)
                 Text(t("mb_enable"))
                     .font(.system(size: 13))
-                    .foregroundColor(.primary)
+                    .foregroundColor(enabled ? .primary : .secondary)
                 Spacer()
                 Toggle("", isOn: $enabled)
                     .labelsHidden()
@@ -206,6 +215,9 @@ struct MenuBarPopoverView: View {
             row(icon: "gearshape", title: t("menu_open_settings")) { onAction(.openSettings) }
             row(icon: "key", title: t("menu_change_password")) { onAction(.changePassword) }
             updateRow
+            Divider()
+                .padding(.vertical, 3)
+            // 数据展示类：与上方系统配置类操作分组隔开
             row(icon: "chart.bar", title: t("menu_stats")) { onAction(.showStats) }
         }
         .padding(.vertical, 5)
