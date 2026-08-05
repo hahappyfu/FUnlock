@@ -170,21 +170,28 @@ struct MenuBarPopoverView: View {
             enabled.toggle()
         } label: {
             HStack {
-                Image(systemName: enabled ? "power" : "power")
+                Image(systemName: "power")
                     .font(.system(size: 12))
                     .foregroundColor(enabled ? .green : .secondary)
                 Text(t("mb_enable"))
                     .font(.system(size: 13))
                     .foregroundColor(enabled ? .primary : .secondary)
                 Spacer()
-                Toggle("", isOn: $enabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .allowsHitTesting(false)
+                // 自定义开关：整行为单个 Button，避免嵌套 Toggle 控件双重触发
+                Capsule()
+                    .fill(enabled ? Color.green : Color.gray.opacity(0.45))
+                    .frame(width: 32, height: 18)
+                    .overlay(alignment: enabled ? .trailing : .leading) {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 14, height: 14)
+                            .padding(2)
+                    }
+                    .animation(.easeInOut(duration: 0.15), value: enabled)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
