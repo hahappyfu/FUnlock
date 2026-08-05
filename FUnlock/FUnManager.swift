@@ -167,20 +167,6 @@ final class FUnManager: ObservableObject {
     private let detectionWindow: TimeInterval = 300  // 5分钟窗口
     private var lastAbnormalAlertTime: Date = .distantPast
 
-    // MARK: - 解锁时序诊断埋点（临时，验证后移除）
-
-    func timingLog(_ msg: String) {
-        let line = "[\(Date().formatted(date: .omitted, time: .standard))] \(msg)\n"
-        let url = URL(fileURLWithPath: "/tmp/funlock_timing.log")
-        if let fh = try? FileHandle(forWritingTo: url) {
-            fh.seekToEndOfFile()
-            fh.write(line.data(using: .utf8)!)
-            try? fh.close()
-        } else {
-            try? line.write(to: url, atomically: true, encoding: .utf8)
-        }
-    }
-
     // MARK: Init
 
     init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }, decisionLogger: DecisionLogger = .shared) {
@@ -596,8 +582,8 @@ final class FUnManager: ObservableObject {
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    self.timingLog("parallel unlock task fired after 0.8s")
-                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); self.timingLog("SKIP systemNotReady in parallel task"); recordUnlock(reason: .systemNotReady); return }
+                    timingLog("parallel unlock task fired after 0.8s")
+                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); recordUnlock(reason: .systemNotReady); return }
                     self.tryUnlock()
                 }
             } else {
@@ -710,7 +696,7 @@ final class FUnManager: ObservableObject {
                 let sys = SystemInteractionService.shared
                 let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
                 guard let self else { return }
-                self.timingLog("verifyUnlock done | unlock=\(verification.unlock)")
+                timingLog("verifyUnlock done | unlock=\(verification.unlock)")
                 // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
                 defer { self.isAutoUnlocking = false }
                 if verification.unlock {
@@ -795,19 +781,19 @@ final class FUnManager: ObservableObject {
                 }
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
-                self.timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
+                timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
                 // wakeDisplay() 不一定触发 screensDidWakeNotification，
                 // 直接检测屏幕是否已解锁
                 if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
                     state.wake = .succeeded
-                    self.timingLog("wake succeeded")
+                    timingLog("wake succeeded")
                     self.attemptAutoUnlock()
                     return
                 }
             }
             print("[SM] wake failed after 10 retries")
             state.wake = .failed
-            self.timingLog("wake failed after 10 retries")
+            timingLog("wake failed after 10 retries")
             self.attemptAutoUnlock()
         }
     }

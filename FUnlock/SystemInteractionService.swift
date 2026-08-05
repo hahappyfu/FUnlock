@@ -9,19 +9,6 @@ final class SystemInteractionService {
     static let shared = SystemInteractionService()
     private init() {}
 
-    /// 时序埋点：追加写 /tmp/funlock_timing.log（与 FUnManager.timingLog 同格式）
-    static func timingLog(_ msg: String) {
-        let line = "[\(Date().formatted(date: .omitted, time: .standard))] \(msg)\n"
-        let url = URL(fileURLWithPath: "/tmp/funlock_timing.log")
-        if let fh = try? FileHandle(forWritingTo: url) {
-            fh.seekToEndOfFile()
-            fh.write(line.data(using: .utf8)!)
-            try? fh.close()
-        } else {
-            try? line.write(to: url, atomically: true, encoding: .utf8)
-        }
-    }
-
     // MARK: - Screen State Detection
 
     /// Check if screen is locked (CGSession + screensaver + state fallback)
@@ -124,12 +111,12 @@ final class SystemInteractionService {
         if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
             logDebug(component: "SystemInteraction", "Level 1: SUCCESS")
             Log.sm.debug("PASSWORD: Level 1 injection succeeded")
-            Self.timingLog("keystrokeLevel1=SUCCESS")
+            timingLog("keystrokeLevel1=SUCCESS")
             return true
         }
         logDebug(component: "SystemInteraction", "Level 1: FAILED, trying Level 2")
         Log.sm.debug("PASSWORD: Level 1 failed, trying Level 2")
-        Self.timingLog("keystrokeLevel1=FAIL")
+        timingLog("keystrokeLevel1=FAIL")
 
         // 尝试第2级：cghidEventTap + virtualKey 0
         logDebug(component: "SystemInteraction", "Level 2: cghidEventTap + vk0")
@@ -137,12 +124,12 @@ final class SystemInteractionService {
         if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
             logDebug(component: "SystemInteraction", "Level 2: SUCCESS")
             Log.sm.debug("PASSWORD: Level 2 injection succeeded")
-            Self.timingLog("keystrokeLevel2=SUCCESS")
+            timingLog("keystrokeLevel2=SUCCESS")
             return true
         }
         logDebug(component: "SystemInteraction", "Level 2: FAILED, trying Level 3")
         Log.sm.debug("PASSWORD: Level 2 failed, trying Level 3")
-        Self.timingLog("keystrokeLevel2=FAIL")
+        timingLog("keystrokeLevel2=FAIL")
 
         // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
         guard string.canBeConverted(to: .ascii) else {
@@ -156,11 +143,11 @@ final class SystemInteractionService {
         if result {
             logDebug(component: "SystemInteraction", "Level 3: SUCCESS")
             Log.sm.debug("PASSWORD: Level 3 injection succeeded")
-            Self.timingLog("keystrokeLevel3=SUCCESS")
+            timingLog("keystrokeLevel3=SUCCESS")
         } else {
             logDebug(component: "SystemInteraction", "Level 3: FAILED - all levels exhausted")
             Log.sm.debug("PASSWORD: Level 3 failed - all levels exhausted")
-            Self.timingLog("keystrokeLevel3=FAIL")
+            timingLog("keystrokeLevel3=FAIL")
         }
         logDebug(component: "SystemInteraction", "fakeKeyStrokes() END - result=\(result)")
         return result
