@@ -585,6 +585,10 @@ final class FUnManager: ObservableObject {
         guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
         guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); recordUnlock(reason: .displaySleeping); return }
 
+        // 屏幕已解锁：无需尝试解锁，直接早退，避免每轮 RSSI 轮询走到 guardFetchPassword 刷 screenNotLocked 噪音日志
+        // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
+        guard screenLocked else { Log.sm.debug("SKIP: screen already unlocked"); return }
+
         // 屏幕已锁定等 0.3s
         let delay: UInt64 = 300_000_000
         unlockTask?.cancel()
