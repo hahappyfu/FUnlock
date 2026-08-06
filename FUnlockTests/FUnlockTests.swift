@@ -3780,3 +3780,37 @@ final class MenuBarPopoverViewTests: XCTestCase {
         XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -90), .weak)
     }
 }
+
+// MARK: - StatsCalculator 统计口径
+
+class StatsCalculatorTests: XCTestCase {
+
+    private func event(_ cat: DecisionCategory, _ out: DecisionOutcome, dayOffset: Int = 0) -> DecisionEvent {
+        DecisionEvent(
+            timestamp: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date())!,
+            category: cat, outcome: out, reason: nil,
+            rssi: nil, device: nil, screen: nil, detail: "")
+    }
+
+    func testTodayUnlocksCountsOnlySuccess() {
+        let events = [event(.unlock, .success), event(.unlock, .skipped),
+                      event(.unlock, .failed), event(.lock, .success)]
+        XCTAssertEqual(StatsCalculator.todayUnlocks(events), 1, "今日解锁只计解锁成功")
+    }
+
+    func testTodayLocksCountsOnlySuccess() {
+        let events = [event(.lock, .success), event(.lock, .skipped), event(.unlock, .success)]
+        XCTAssertEqual(StatsCalculator.todayLocks(events), 1, "今日锁定只计锁定成功")
+    }
+
+    func testYesterdayEventsNotCounted() {
+        let events = [event(.unlock, .success, dayOffset: -1), event(.lock, .success, dayOffset: -1)]
+        XCTAssertEqual(StatsCalculator.todayUnlocks(events), 0, "昨日解锁不计入今日")
+        XCTAssertEqual(StatsCalculator.todayLocks(events), 0, "昨日锁定不计入今日")
+    }
+
+    func testThisWeekUnlocksCountsSuccess() {
+        let events = [event(.unlock, .success), event(.unlock, .skipped), event(.unlock, .failed)]
+        XCTAssertEqual(StatsCalculator.thisWeekUnlocks(events), 1, "本周解锁只计成功")
+    }
+}

@@ -405,3 +405,24 @@ struct SlopeChartView: View {
         .frame(height: 200)
     }
 }
+
+// MARK: - 统计口径
+
+/// 统计口径：只计成功事件（解锁=category.unlock 且 outcome.success，锁定同理）
+enum StatsCalculator {
+    static func todayUnlocks(_ events: [DecisionEvent], now: Date = Date(), calendar: Calendar = .current) -> Int {
+        events.filter { $0.category == .unlock && $0.outcome == .success
+            && calendar.isDate($0.timestamp, inSameDayAs: now) }.count
+    }
+
+    static func todayLocks(_ events: [DecisionEvent], now: Date = Date(), calendar: Calendar = .current) -> Int {
+        events.filter { $0.category == .lock && $0.outcome == .success
+            && calendar.isDate($0.timestamp, inSameDayAs: now) }.count
+    }
+
+    static func thisWeekUnlocks(_ events: [DecisionEvent], now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+        return events.filter { $0.category == .unlock && $0.outcome == .success
+            && $0.timestamp >= startOfWeek }.count
+    }
+}
