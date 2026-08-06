@@ -3814,3 +3814,90 @@ class StatsCalculatorTests: XCTestCase {
         XCTAssertEqual(StatsCalculator.thisWeekUnlocks(events), 1, "本周解锁只计成功")
     }
 }
+
+// MARK: - 配置文件导入导出
+
+class ProfileImportExportTests: XCTestCase {
+    private var manager: ProfileManager!
+
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "profiles")
+        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        manager = ProfileManager()
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: "profiles")
+        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        super.tearDown()
+    }
+
+    private func profile(_ id: String, _ name: String, lock: Int) -> Profile {
+        Profile(id: id, name: name, lockRSSI: lock, unlockRSSI: -60, enabled: true)
+    }
+
+    func testExportImportRoundTrip() {
+        manager.addProfile(profile("a", "家", lock: -70))
+        manager.addProfile(profile("b", "公司", lock: -75))
+        guard let json = manager.exportJSON() else {
+            return XCTFail("导出应成功")
+        }
+        UserDefaults.standard.removeObject(forKey: "profiles")
+        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        let fresh = ProfileManager()
+        guard let stats = fresh.importFrom(json: json) else {
+            return XCTFail("导入应成功")
+        }
+        XCTAssertEqual(stats.added, 2, "往返后新增 2 个配置")
+        XCTAssertEqual(stats.updated, 0)
+        XCTAssertEqual(stats.skipped, 0)
+        XCTAssertTrue(fresh.profiles.contains { $0.id == "a" && $0.name == "家" })
+        XCTAssertTrue(fresh.profiles.contains { $0.id == "b" && $0.lockRSSI == -75 })
+    }
+
+    func testImportOverwritesSameID() {
+        manager.addProfile(profile("a", "家", lock: -70))
+        let json = "[{\"id\":\"a\",\"name\":\"家新版\",\"lockRSSI\":-65,\"unlockRSSI\":-60,\"enabled\":true}]"
+        guard let stats = manager.importFrom(json: json) else {
+            return XCTFail("导入应成功")
+        }
+        XCTAssertEqual(stats.updated, 1, "同 id 应覆盖")
+        XCTAssertEqual(manager.profiles.first { $0.id == "a" }?.lockRSSI, -65)
+        XCTAssertEqual(manager.profiles.first { $0.id == "a" }?.name, "家新版")
+    }
+
+    func testImportSkipsDefault() {
+        let json = "[{\"id\":\"default\",\"name\":\"恶意默认\",\"lockRSSI\":-30,\"unlockRSSI\":-20,\"enabled\":true}]"
+        guard let stats = manager.importFrom(json: json) else {
+            return XCTFail("导入应成功")
+        }
+        XCTAssertEqual(stats.skipped, 1, "default 应被跳过保护")
+        XCTAssertEqual(manager.profiles.first { $0.id == "default" }?.name, "默认", "内置默认不得被覆盖")
+    }
+
+    func testImportAppendsNew() {
+        manager.addProfile(profile("a", "家", lock: -70))
+        let json = "[{\"id\":\"a\",\"name\":\"家\",\"lockRSSI\":-70,\"unlockRSSI\":-60,\"enabled\":true},{\"id\":\"c\",\"name\":\"新\",\"lockRSSI\":-78,\"unlockRSSI\":-55,\"enabled\":true}]"
+        guard let stats = manager.importFrom(json: json) else {
+            return XCTFail("导入应成功")
+        }
+        XCTAssertEqual(stats.updated, 1)
+        XCTAssertEqual(stats.added, 1, "全新 id 应追加")
+        XCTAssertTrue(manager.profiles.contains { $0.id == "c" })
+    }
+
+    func testImportInvalidJSONReturnsNil() {
+        XCTAssertNil(manager.importFrom(json: "not json"))
+        XCTAssertNil(manager.importFrom(json: "{\"wrong\":\"shape\"}"), "非数组结构应失败")
+    }
+
+    func testExportProducesValidJSONArray() {
+        manager.addProfile(profile("a", "家", lock: -70))
+        guard let json = manager.exportJSON(), let data = json.data(using: .utf8) else {
+            return XCTFail("导出应成功")
+        }
+        let array = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        XCTAssertNotNil(array, "导出内容应为合法 JSON 数组")
+    }
+}

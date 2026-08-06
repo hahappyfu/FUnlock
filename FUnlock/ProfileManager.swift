@@ -70,6 +70,43 @@ class ProfileManager: ObservableObject {
         addProfile(newProfile)
     }
 
+    // MARK: - 导入导出
+
+    /// 导出全部用户配置为 JSON 字符串（prettyPrinted）；编码失败返回 nil。
+    /// 内置 default 配置不导出（导入端对 default 有跳过保护，导出端对称排除）
+    func exportJSON() -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        guard let data = try? encoder.encode(profiles.filter { $0.id != "default" }) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// 解析 JSON 并合并进现有配置：
+    /// 同 id 覆盖（updated）；id == "default" 跳过保护（skipped）；新 id 追加（added）。
+    /// 解析失败返回 nil；成功则持久化并返回统计。
+    func importFrom(json: String) -> (added: Int, updated: Int, skipped: Int)? {
+        guard let data = json.data(using: .utf8),
+              let incoming = try? JSONDecoder().decode([Profile].self, from: data) else {
+            return nil
+        }
+        var added = 0, updated = 0, skipped = 0
+        for p in incoming {
+            if p.id == "default" {
+                skipped += 1
+                continue
+            }
+            if let idx = profiles.firstIndex(where: { $0.id == p.id }) {
+                profiles[idx] = p
+                updated += 1
+            } else {
+                profiles.append(p)
+                added += 1
+            }
+        }
+        save()
+        return (added, updated, skipped)
+    }
+
     // MARK: - Persistence
 
     private func save() {
