@@ -4,32 +4,6 @@
 import SwiftUI
 import Combine
 
-// MARK: - 事件日志（保留原有逻辑）
-
-struct LogEntry {
-    let timestamp: Date
-    let event: String  // "unlocked" / "locked: away" / "locked: lost"
-}
-
-func loadRecentEvents(maxCount: Int = 200) -> [LogEntry] {
-    guard let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return [] }
-    let logURL = supportDir.appendingPathComponent("FUnlock/events.log")
-    guard let data = try? Data(contentsOf: logURL),
-          let content = String(data: data, encoding: .utf8) else { return [] }
-
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
-    var entries: [LogEntry] = []
-    for line in content.components(separatedBy: .newlines).suffix(maxCount) {
-        let parts = line.components(separatedBy: " | ")
-        guard parts.count >= 2,
-              let date = formatter.date(from: parts[0]) else { continue }
-        entries.append(LogEntry(timestamp: date, event: parts[1]))
-    }
-    return entries
-}
-
 // MARK: - 图表模式
 
 enum ChartMode: String, CaseIterable {
@@ -42,23 +16,21 @@ enum ChartMode: String, CaseIterable {
 struct StatsView: View {
     @Binding var isPresented: Bool
     @ObservedObject private var dataStore = SignalDataStore.shared
+    @ObservedObject private var logger = DecisionLogger.shared
 
-    private let events = loadRecentEvents()
     @State private var chartMode: ChartMode = .signal
 
-    private var calendar: Calendar { Calendar.current }
-    private var today: Date { calendar.startOfDay(for: Date()) }
+    private var recentEvents: [DecisionEvent] {
+        logger.events
+            .filter { $0.category == .unlock || $0.category == .lock }
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(10)
+            .map { $0 }
+    }
 
-    private var todayUnlocks: Int {
-        events.filter { $0.event == "unlocked" && calendar.isDate($0.timestamp, inSameDayAs: today) }.count
-    }
-    private var todayLocks: Int {
-        events.filter { $0.event != "unlocked" && calendar.isDate($0.timestamp, inSameDayAs: today) }.count
-    }
-    private var thisWeekUnlocks: Int {
-        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-        return events.filter { $0.event == "unlocked" && $0.timestamp >= startOfWeek }.count
-    }
+    private var todayUnlocks: Int { StatsCalculator.todayUnlocks(logger.events) }
+    private var todayLocks: Int { StatsCalculator.todayLocks(logger.events) }
+    private var thisWeekUnlocks: Int { StatsCalculator.thisWeekUnlocks(logger.events) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,7 +51,7 @@ struct StatsView: View {
 
             Divider()
 
-            if dataStore.samples.isEmpty && events.isEmpty {
+            if dataStore.samples.isEmpty && recentEvents.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
                     Image(systemName: "chart.bar.xaxis.ascending")
@@ -143,27 +115,43 @@ struct StatsView: View {
                         }
                     }
 
-                    // 最近事件
+                    // 最近事件（圆角卡片容器，时间戳在左）
                     Section(t("stats_recent_events")) {
-                        ForEach(events.suffix(8).reversed().indices, id: \.self) { i in
-                            let entry = events.suffix(8).reversed()[i]
-                            HStack {
-                                Image(systemName: entry.event == "unlocked" ? "lock.open.fill" : "lock.fill")
-                                    .foregroundColor(entry.event == "unlocked" ? .green : .orange)
-                                    .frame(width: 16)
-                                Text(t("stats_event_\(entry.event == "unlocked" ? "unlocked" : "locked")"))
-                                    .font(.callout)
-                                Spacer()
-                                Text(entry.timestamp, format: .dateTime.month().day().hour().minute().second())
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(t("stats_recent_10"))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            ForEach(recentEvents) { entry in
+                                HStack(spacing: 8) {
+                                    Text(entry.timestamp, format: .dateTime.hour().minute().second())
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 62, alignment: .leading)
+                                    Image(systemName: entry.icon.0)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(entry.icon.1)
+                                        .frame(width: 16)
+                                    Text(t(entry.reason?.titleKey ?? entry.outcome.rawValue))
+                                        .font(.callout.weight(.medium))
+                                        .lineLimit(1)
+                                    if !entry.detail.isEmpty {
+                                        Text(entry.detail)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
                             }
                         }
+                        .padding(10)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
                 .formStyle(.grouped)
             }
         }
+        .onAppear { if logger.events.isEmpty { logger.loadHistory() } }
         .frame(width: 440, height: 560)
     }
 
