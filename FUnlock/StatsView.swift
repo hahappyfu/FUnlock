@@ -95,10 +95,10 @@ struct StatsView: View {
                 Form {
                     // 概览
                     Section {
-                        HStack(spacing: 12) {
-                            statCard(t("stats_today_unlocks"), value: "\(todayUnlocks)", icon: "lock.open.fill", color: .green)
-                            statCard(t("stats_today_locks"), value: "\(todayLocks)", icon: "lock.fill", color: .orange)
-                            statCard(t("stats_week_unlocks"), value: "\(thisWeekUnlocks)", icon: "calendar", color: .accentColor)
+                        HStack(spacing: 10) {
+                            largeStatCard(t("stats_today_unlocks"), value: "\(todayUnlocks)", icon: "lock.open.fill", color: .green)
+                            largeStatCard(t("stats_today_locks"), value: "\(todayLocks)", icon: "lock.fill", color: .orange)
+                            largeStatCard(t("stats_week_unlocks"), value: "\(thisWeekUnlocks)", icon: "calendar", color: .accentColor)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -223,24 +223,24 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - 统计卡
+    // MARK: - 统计卡（大数字圆体）
 
-    private func statCard(_ title: String, value: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
-            VStack(alignment: .leading, spacing: 2) {
+    private func largeStatCard(_ title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(value)
-                    .font(.title3.bold())
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundColor(color)
             }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
