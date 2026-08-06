@@ -203,12 +203,14 @@ struct OverviewView: View {
                                value: $sliderUnlock, isDragging: $isSliderDragging)
 
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
-                               title: t("wake_advance"), detail: t("wake_advance_detail"),
-                               result: String(format: t("wake_advance_result"), Int(sliderUnlock) - wakeAdvance),
+                               title: t("wake_advance"),
+                               preText: t("subtitle_pre"), postText: t("wake_subtitle_post"),
+                               derivedValue: Int(sliderUnlock) - wakeAdvance,
                                value: $wakeAdvance)
             ThresholdOffsetRow(icon: "bolt.fill", color: .purple,
-                               title: t("pre_unlock_trigger"), detail: t("pre_unlock_trigger_detail"),
-                               result: String(format: t("pre_unlock_trigger_result"), Int(sliderUnlock) - preUnlockTrigger),
+                               title: t("pre_unlock_trigger"),
+                               preText: t("subtitle_pre"), postText: t("pre_subtitle_post"),
+                               derivedValue: Int(sliderUnlock) - preUnlockTrigger,
                                value: $preUnlockTrigger)
 
             Button {
@@ -390,31 +392,33 @@ private struct ThresholdSliderRow: View {
 
 // MARK: - 偏移量输入行
 
-/// 可填数字的偏移量行：唤醒提前量 / 预解锁触发量（dB，0-20）
+/// 可填数字的偏移量行：主标题 + 带动态数值的简练副标题（dB，0-20）
 private struct ThresholdOffsetRow: View {
     let icon: String
     let color: Color
     let title: String
-    let detail: String
-    let result: String
+    let preText: String
+    let postText: String
+    let derivedValue: Int
     @Binding var value: Int
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon).foregroundColor(color).frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                Text(detail)
-                    .font(.caption2)
+                (Text(preText)
                     .foregroundColor(.secondary)
-                    .lineLimit(1)
-                Text(result)
+                 + Text("\(derivedValue) dBm")
+                    .fontWeight(.semibold)
+                    .foregroundColor(.accentColor)
+                 + Text(postText)
+                    .foregroundColor(.secondary))
                     .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
+                    .lineSpacing(2)
             }
             Spacer()
-            // 输入框 + 单位：右侧固定宽度整体右对齐，两行视觉对齐
+            // 输入框 + 单位：右侧固定宽度整体右对齐
             HStack(spacing: 4) {
                 TextField("dB", value: $value, format: .number)
                     .textFieldStyle(.roundedBorder)

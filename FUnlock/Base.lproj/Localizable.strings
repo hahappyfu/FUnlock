@@ -314,9 +314,8 @@
 "mb_signal_close" = "Close";
 "mb_signal_weak" = "Weak signal";
 "mb_signal_far" = "Far";
-"wake_advance" = "Wake Advance (dB)";
-"wake_advance_detail" = "Screen wakes this many dB before unlock threshold";
-"pre_unlock_trigger" = "Pre-Unlock Trigger (dB)";
-"pre_unlock_trigger_detail" = "Starts pre-unlock prep this many dB before unlock threshold";
-"wake_advance_result" = "Screen wake-prep signal threshold %lld dBm";
-"pre_unlock_trigger_result" = "Pre-unlock prep signal threshold %lld dBm";
+"wake_advance" = "Wake Advance";
+"pre_unlock_trigger" = "Pre-Unlock Trigger";
+"subtitle_pre" = "When signal reaches ";
+"wake_subtitle_post" = ", the screen lights up early.";
+"pre_subtitle_post" = ", pre-unlock prep begins.";
