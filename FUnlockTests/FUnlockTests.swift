@@ -2837,6 +2837,54 @@ class PreWakeStaircaseTests: XCTestCase {
         XCTAssertTrue(fun.preWakeThreshold < fun.unlockStairThreshold,
                       "preWakeThreshold 应 < unlockStairThreshold")
     }
+
+    // MARK: - 手动锁屏保护端到端
+
+    /// 手动锁屏 → 自动解锁被 manualLock 拦截 → 手动解锁 → 恢复自动解锁能力
+    func testManualLockBlocksAutoUnlockUntilManualUnlock() {
+        manager.fun.unlockRSSI = -60   // stair = -70（预解锁触发量 10）
+        manager.fun.lockRSSI = -80
+        manager.lockBufferDuration = 0  // 跳过锁屏缓冲，直测 manualLock 门
+
+        // 1. 手动锁屏（系统通知，非 FUnlock 自锁）
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "手动锁屏后应进入 manualLock")
+        XCTAssertFalse(manager.state.canAutoUnlock,
+                       "manualLock 下 canAutoUnlock 应为 false")
+
+        // 2. 设备靠近且信号已达阶梯解锁阈值 → 自动解锁被 manualLockActive 拦下
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -65.0  // ≥ stair -70
+        manager.onDeviceApproached()
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "手动锁屏后即便信号达标也不应改变 manualLock")
+        if case .locked = manager.state.screen {
+            // OK — 屏幕保持锁定
+        } else {
+            XCTFail("manualLock 拦截下屏幕应保持锁定")
+        }
+
+        // 3. 用户手动解锁 → intent 重置，恢复自动解锁能力
+        manager.onUnlock()
+        XCTAssertFalse(manager.state.intent.isManualLockActive,
+                       "手动解锁后应清除 manualLock")
+        XCTAssertTrue(manager.state.canAutoUnlock,
+                       "手动解锁后应恢复自动解锁能力")
+
+        // 4. 再次靠近 → manualLock 不应复发（后续由冷却/屏幕状态门控接管）
+        manager.onDeviceApproached()
+        XCTAssertFalse(manager.state.intent.isManualLockActive,
+                       "手动解锁后 manualLock 不应复发")
+    }
+
+    /// FUnlock 自动锁屏不应被误标为 manualLock（否则设备回来无法自动解锁）
+    func testAutoLockNotMarkedAsManualLock() {
+        manager.isSelfLocking = true  // 模拟 FUnlock 自动锁屏前置标志
+        manager.onSystemScreenLocked()
+        XCTAssertEqual(manager.state.intent, .autoLock,
+                       "FUnlock 自动锁屏不应标记为 manualLock")
+    }
 }
 
 // MARK: - Keychain 安全收紧：冷启动错误码捕获测试
