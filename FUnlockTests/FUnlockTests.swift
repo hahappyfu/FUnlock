@@ -2604,32 +2604,46 @@ class SmoothedRSSITests: XCTestCase {
     }
 }
 
-/// 测试阶梯唤醒阈值常量
+/// 测试阶梯唤醒阈值（由解锁阈值 + 用户偏移派生）
 class StaircaseThresholdTests: XCTestCase {
 
-    func testPreWakeThresholdIsNegative60() {
+    func testPreWakeThresholdDerivedFromUnlockRSSI() {
         let fun = FUn()
-        XCTAssertEqual(fun.preWakeThreshold, -60,
-                       "预备唤醒阈值应为 -60dBm")
+        UserDefaults.standard.set(10, forKey: "wakeAdvance")
+        XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI - 10,
+                       "预备唤醒阈值 = 解锁阈值 - 唤醒提前量（默认 10dB）")
     }
 
-    func testUnlockStairThresholdIsNegative50() {
+    func testUnlockStairThresholdDerivedFromUnlockRSSI() {
         let fun = FUn()
-        XCTAssertEqual(fun.unlockStairThreshold, -50,
-                       "阶梯解锁阈值应为 -50dBm")
+        UserDefaults.standard.set(0, forKey: "unlockMargin")
+        XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI,
+                       "阶梯解锁阈值 = 解锁阈值 + 触发余量（默认 0，到位即解锁）")
     }
 
     func testStaircaseGapIs10dBm() {
         let fun = FUn()
+        UserDefaults.standard.set(10, forKey: "wakeAdvance")
+        UserDefaults.standard.set(0, forKey: "unlockMargin")
         let gap = fun.unlockStairThreshold - fun.preWakeThreshold
         XCTAssertEqual(gap, 10,
-                       "阶梯间距应为 10dBm（-60 → -50）")
+                       "阶梯间距应为 10dBm（解锁-10 → 解锁）")
     }
 
     func testPreWakeThresholdIsWeakerThanUnlockThreshold() {
         let fun = FUn()
+        UserDefaults.standard.set(10, forKey: "wakeAdvance")
+        UserDefaults.standard.set(0, forKey: "unlockMargin")
         XCTAssertLessThan(fun.preWakeThreshold, fun.unlockStairThreshold,
                           "preWakeThreshold 应比 unlockStairThreshold 更弱（更负）")
+    }
+
+    func testCustomOffsetsApply() {
+        let fun = FUn()
+        UserDefaults.standard.set(20, forKey: "wakeAdvance")
+        UserDefaults.standard.set(5, forKey: "unlockMargin")
+        XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI - 20, "自定义唤醒提前量生效")
+        XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI + 5, "自定义触发余量生效")
     }
 }
 
@@ -2688,19 +2702,20 @@ class PreWakeStaircaseTests: XCTestCase {
     }
 
     func testOnRSSIUpdatedAboveThresholdTriggersPreWake() {
-        // 多次输入 -50dBm 让平滑值收敛到 -50 附近（> -60）
+        // 多次输入 -50dBm 让平滑值收敛（> preWakeThreshold = 解锁阈值 - 10）
         manager.fun.unlockRSSI = -60
         manager.fun.lockRSSI = -80
+        UserDefaults.standard.set(10, forKey: "wakeAdvance")
         manager.onDisplaySleep()
 
-        // 填充 EMA 使其超过 -60 阈值
+        // 填充 EMA 使其超过唤醒阈值
         for _ in 0..<10 {
             manager.onRSSIUpdated(rssi: -50, active: false)
         }
-        // smoothedRSSI 应 > -60
+        // smoothedRSSI 应 > preWakeThreshold（-70）
         let rawSmoothed = manager.fun.smoothedRSSI(-50)
-        XCTAssertGreaterThan(rawSmoothed, -60.0,
-                             "多次 -50dBm 输入后平滑值应 > -60")
+        XCTAssertGreaterThan(rawSmoothed, Double(manager.fun.preWakeThreshold),
+                             "多次 -50dBm 输入后平滑值应超过唤醒阈值（-70）")
     }
 
     // MARK: - onDeviceApproached 阶梯解锁门控

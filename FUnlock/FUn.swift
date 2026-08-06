@@ -150,11 +150,19 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     /// EMA 平滑 RSSI（alpha=0.3），用于预备唤醒阈值判断
     private var smoothedRSSIValue: Double = -100.0
     private let smoothedRSSIAlpha: Double = 0.3
-    // MARK: 阶梯唤醒阈值
-    /// 预备唤醒阈值（dBm）：信号达到此值时唤醒显示器
-    let preWakeThreshold: Int = -60
-    /// 解锁阈值（dBm）：信号达到此值时触发自动解锁
-    let unlockStairThreshold: Int = -50
+    // MARK: 阶梯唤醒阈值（由解锁阈值 + 用户偏移派生）
+    /// 预备唤醒阈值（dBm）：解锁阈值往更远方向提前 wakeAdvance（UI 可填，默认 10）
+    var preWakeThreshold: Int {
+        guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
+        let advance = UserDefaults.standard.object(forKey: "wakeAdvance") as? Int ?? 10
+        return unlockRSSI - advance
+    }
+    /// 解锁触发阈值（dBm）：解锁阈值往更近方向再加 unlockMargin（UI 可填，0 即到位解锁）
+    var unlockStairThreshold: Int {
+        guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
+        let margin = UserDefaults.standard.object(forKey: "unlockMargin") as? Int ?? 0
+        return unlockRSSI + margin
+    }
     var lastReceiveTime: Date = Date()
     var lastSignalAnomalous: Bool = false
     // Heartbeat timer (独立状态机，不在管道内)

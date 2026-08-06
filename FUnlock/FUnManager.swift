@@ -211,6 +211,18 @@ final class FUnManager: ObservableObject {
         thresholdVersion += 1
     }
 
+    /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前
+    func setWakeAdvance(_ value: Int) {
+        UserDefaults.standard.set(value, forKey: "wakeAdvance")
+        thresholdVersion += 1
+    }
+
+    /// 设置解锁触发余量（dB）：解锁阈值往更近方向再加
+    func setUnlockMargin(_ value: Int) {
+        UserDefaults.standard.set(value, forKey: "unlockMargin")
+        thresholdVersion += 1
+    }
+
     // MARK: - 扫描控制
 
     func startScanning() {
