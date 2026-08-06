@@ -319,3 +319,4 @@
 "subtitle_pre" = "When signal reaches ";
 "wake_subtitle_post" = ", the screen lights up early.";
 "pre_subtitle_post" = ", pre-unlock prep begins.";
+"stats_recent_10" = "Latest 10";

@@ -319,3 +319,4 @@
 "subtitle_pre" = "当信号达到 ";
 "wake_subtitle_post" = " 时，提前点亮屏幕。";
 "pre_subtitle_post" = " 时，进入预热准备状态。";
+"stats_recent_10" = "最新 10 条";
