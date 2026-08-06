@@ -152,7 +152,9 @@ struct MainWindowView: View {
         case .network:
             NetworkSettingsView(fun: fun)
         case .config:
-            ConfigSettingsView(manager: manager)
+            ConfigSettingsView(manager: manager, onToast: { message, icon, color in
+                self.showToast(message, icon: icon, color: color)
+            })
         case .diagnostics:
             DiagnosticsView(manager: manager,
                             onNavigate: { selectedTab = $0 })

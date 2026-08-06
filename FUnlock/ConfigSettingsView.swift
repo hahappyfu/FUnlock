@@ -1,5 +1,6 @@
 // ConfigSettingsView.swift
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ConfigSettingsView: View {
     @ObservedObject var manager: FUnManager
@@ -8,6 +9,8 @@ struct ConfigSettingsView: View {
     @State private var showAddProfile = false
     @State private var showDeleteProfile = false
     @State private var newProfileName = ""
+
+    var onToast: ((String, String, Color) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -35,6 +38,14 @@ struct ConfigSettingsView: View {
                             Button { showDeleteProfile = true } label: {
                                 Image(systemName: "minus.circle")
                             }
+                        }
+                        Divider()
+                            .frame(height: 12)
+                        Button(action: importProfiles) {
+                            Image(systemName: "arrow.down.doc")
+                        }
+                        Button(action: exportProfiles) {
+                            Image(systemName: "arrow.up.doc")
                         }
                     }
                 }
@@ -65,6 +76,45 @@ struct ConfigSettingsView: View {
             Button(t("cancel"), role: .cancel) {}
         } message: {
             Text(t("profile_delete_hint"))
+        }
+    }
+
+    // MARK: - 导入/导出
+
+    private func importProfiles() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url,
+                  let content = try? String(contentsOf: url, encoding: .utf8),
+                  let stats = self.profileManager.importFrom(json: content) else {
+                self.onToast?(t("profile_import_failed"), "xmark.circle", .red)
+                return
+            }
+            self.onToast?(String(format: t("profile_import_done"), stats.added, stats.updated),
+                          "checkmark.circle", .green)
+        }
+    }
+
+    private func exportProfiles() {
+        guard let json = profileManager.exportJSON() else {
+            onToast?(t("profile_export_failed"), "xmark.circle", .red)
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = t("profile_export_filename")
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try json.write(to: url, atomically: true, encoding: .utf8)
+                self.onToast?(t("profile_export_done"), "checkmark.circle", .green)
+            } catch {
+                self.onToast?(t("profile_export_failed"), "xmark.circle", .red)
+            }
         }
     }
 }
