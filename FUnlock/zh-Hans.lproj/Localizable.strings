@@ -312,3 +312,9 @@
 "mb_signal_close" = "较近";
 "mb_signal_weak" = "信号较弱";
 "mb_signal_far" = "较远";
+
+// 高级距离阈值配置（总览）
+"wake_advance" = "唤醒提前量";
+"wake_advance_detail" = "在正式解锁前，提前点亮屏幕的信号裕度";
+"pre_unlock_trigger" = "预解锁触发量";
+"pre_unlock_trigger_detail" = "进入解锁临界区前的预热准备阈值";

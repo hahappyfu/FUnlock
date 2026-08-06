@@ -16,9 +16,9 @@ struct OverviewView: View {
     @State private var sliderUnlock: Double = 0
     @State private var isSliderDragging = false
 
-    // 偏移量草稿（唤醒提前量 / 解锁触发余量，dB）
-    @State private var wakeAdvance: Int = 10
-    @State private var unlockMargin: Int = 0
+    // 偏移量草稿（唤醒提前量 / 预解锁触发量，dB）
+    @State private var wakeAdvance: Int = 20
+    @State private var preUnlockTrigger: Int = 10
 
     // 扫描状态
     @State private var isScanning = false
@@ -41,8 +41,8 @@ struct OverviewView: View {
 
     var isThresholdApplied: Bool {
         Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == effectiveUnlockRSSI
-            && wakeAdvance == thresholdSettingValue("wakeAdvance", default: 10)
-            && unlockMargin == thresholdSettingValue("unlockMargin", default: 0)
+            && wakeAdvance == thresholdSettingValue("wakeAdvance", default: 20)
+            && preUnlockTrigger == thresholdSettingValue("preUnlockTrigger", default: 10)
     }
 
     private func thresholdSettingValue(_ key: String, default dft: Int) -> Int {
@@ -70,8 +70,8 @@ struct OverviewView: View {
         .onAppear {
             sliderLock = Double(manager.lockRSSI)
             sliderUnlock = Double(effectiveUnlockRSSI)
-            wakeAdvance = thresholdSettingValue("wakeAdvance", default: 10)
-            unlockMargin = thresholdSettingValue("unlockMargin", default: 0)
+            wakeAdvance = thresholdSettingValue("wakeAdvance", default: 20)
+            preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: 10)
         }
         .onReceive(manager.$lockRSSI) { newValue in
             if Int(sliderLock) != newValue && !isSliderDragging {
@@ -205,13 +205,13 @@ struct OverviewView: View {
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
                                title: t("wake_advance"), detail: t("wake_advance_detail"), value: $wakeAdvance)
             ThresholdOffsetRow(icon: "bolt.fill", color: .purple,
-                               title: t("unlock_margin"), detail: t("unlock_margin_detail"), value: $unlockMargin)
+                               title: t("pre_unlock_trigger"), detail: t("pre_unlock_trigger_detail"), value: $preUnlockTrigger)
 
             Button {
                 manager.setLockRSSI(Int(sliderLock))
                 manager.setUnlockRSSI(Int(sliderUnlock))
                 manager.setWakeAdvance(wakeAdvance)
-                manager.setUnlockMargin(unlockMargin)
+                manager.setPreUnlockTrigger(preUnlockTrigger)
             } label: {
                 Label(isThresholdApplied ? t("applied") : t("apply_thresholds"),
                       systemImage: isThresholdApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
@@ -386,7 +386,7 @@ private struct ThresholdSliderRow: View {
 
 // MARK: - 偏移量输入行
 
-/// 可填数字的偏移量行：唤醒提前量 / 解锁触发余量（dB，0-20）
+/// 可填数字的偏移量行：唤醒提前量 / 预解锁触发量（dB，0-20）
 private struct ThresholdOffsetRow: View {
     let icon: String
     let color: Color
@@ -402,14 +402,21 @@ private struct ThresholdOffsetRow: View {
                 Text(detail)
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
             Spacer()
-            TextField("dB", value: $value, format: .number)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 56)
-                .multilineTextAlignment(.trailing)
-            Text("dB").font(.caption).foregroundColor(.secondary)
+            // 输入框 + 单位：右侧固定宽度整体右对齐，两行视觉对齐
+            HStack(spacing: 4) {
+                TextField("dB", value: $value, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 54)
+                Text("dB")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+            .frame(width: 88, alignment: .trailing)
         }
     }
 }

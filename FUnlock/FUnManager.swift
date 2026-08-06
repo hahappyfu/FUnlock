@@ -217,9 +217,9 @@ final class FUnManager: ObservableObject {
         thresholdVersion += 1
     }
 
-    /// 设置解锁触发余量（dB）：解锁阈值往更近方向再加
-    func setUnlockMargin(_ value: Int) {
-        UserDefaults.standard.set(value, forKey: "unlockMargin")
+    /// 设置预解锁触发量（dB）：解锁阈值往更远方向提前进入预解锁准备
+    func setPreUnlockTrigger(_ value: Int) {
+        UserDefaults.standard.set(value, forKey: "preUnlockTrigger")
         thresholdVersion += 1
     }
 

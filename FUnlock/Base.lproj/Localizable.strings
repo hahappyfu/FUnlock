@@ -316,5 +316,5 @@
 "mb_signal_far" = "Far";
 "wake_advance" = "Wake Advance (dB)";
 "wake_advance_detail" = "Screen wakes this many dB before unlock threshold";
-"unlock_margin" = "Unlock Margin (dB)";
-"unlock_margin_detail" = "Require signal this many dB closer than unlock threshold (0 = unlock on arrival)";
+"pre_unlock_trigger" = "Pre-Unlock Trigger (dB)";
+"pre_unlock_trigger_detail" = "Starts pre-unlock prep this many dB before unlock threshold";
