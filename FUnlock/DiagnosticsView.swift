@@ -159,7 +159,7 @@ struct DiagnosticsView: View {
 
     /// 时间轴节点行：圆点位于竖线上，右侧为事件内容
     private func itemRow(for event: DecisionEvent) -> some View {
-        let iconInfo = Self.icon(for: event)
+        let iconInfo = event.icon
         return HStack(alignment: .top, spacing: 8) {
             // 节点圆点：轴列内水平居中，描边色 = 事件状态色，背景填充遮住竖线
             Circle()
@@ -255,18 +255,6 @@ struct DiagnosticsView: View {
     }
 
     // MARK: - 渲染辅助
-
-    static func icon(for event: DecisionEvent) -> (String, Color) {
-        switch (event.category, event.outcome) {
-        case (.unlock, .success): return ("lock.open.fill", .green)
-        case (.unlock, .failed), (.unlock, .blocked): return ("exclamationmark.triangle.fill", .red)
-        case (.unlock, .skipped), (.unlock, .info): return ("lock.open", .secondary)
-        case (.lock, .success): return ("lock.fill", .orange)
-        case (.lock, _): return ("lock", .secondary)
-        case (.system, _): return ("power", .blue)
-        case (.user, _): return ("person.fill", .teal)
-        }
-    }
 
     static func timeString(_ date: Date) -> String {
         let cal = Calendar.current

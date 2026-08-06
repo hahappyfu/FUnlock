@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
@@ -43,4 +44,21 @@ func deviceIconName(for deviceName: String) -> String {
     if deviceName.contains("MacBook") || deviceName.contains("Mac") { return "laptopcomputer" }
     if deviceName.contains("iPhone") { return "iphone" }
     return "iphone"
+}
+
+// MARK: - 决策事件 UI 映射
+
+extension DecisionEvent {
+    /// 事件图标与颜色（诊断页/统计页共享）
+    var icon: (String, Color) {
+        switch (category, outcome) {
+        case (.unlock, .success): return ("lock.open.fill", .green)
+        case (.unlock, .failed), (.unlock, .blocked): return ("exclamationmark.triangle.fill", .red)
+        case (.unlock, .skipped), (.unlock, .info): return ("lock.open", .secondary)
+        case (.lock, .success): return ("lock.fill", .orange)
+        case (.lock, _): return ("lock", .secondary)
+        case (.system, _): return ("power", .blue)
+        case (.user, _): return ("person.fill", .teal)
+        }
+    }
 }
