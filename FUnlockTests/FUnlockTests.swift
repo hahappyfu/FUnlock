@@ -2658,6 +2658,24 @@ class StaircaseThresholdTests: XCTestCase {
         XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI - 20, "自定义唤醒提前量生效")
         XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 10, "自定义预解锁触发量生效")
     }
+
+    func testOffsetClampNegative() {
+        let fun = FUn()
+        XCTAssertEqual(FUn.clampOffset(-5), 0, "负偏移应钳制为 0")
+        XCTAssertEqual(FUn.clampOffset(30), 20, "超大偏移应钳制为 20")
+        XCTAssertEqual(FUn.clampOffset(12), 12, "范围内偏移保持不变")
+    }
+
+    func testDerivedThresholdUsesClampedValues() {
+        let fun = FUn()
+        // 越界输入在 getter 层钳制，防止无意义阈值
+        UserDefaults.standard.set(-10, forKey: "wakeAdvance")
+        UserDefaults.standard.set(50, forKey: "preUnlockTrigger")
+        XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI,
+                       "wakeAdvance -10 应钳制为 0（唤醒点=解锁阈值）")
+        XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 20,
+                       "preUnlockTrigger 50 应钳制为 20")
+    }
 }
 
 /// 测试 FUnManager 的预备唤醒与阶梯解锁行为

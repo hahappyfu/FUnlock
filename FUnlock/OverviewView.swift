@@ -17,8 +17,8 @@ struct OverviewView: View {
     @State private var isSliderDragging = false
 
     // 偏移量草稿（唤醒提前量 / 预解锁触发量，dB）
-    @State private var wakeAdvance: Int = 20
-    @State private var preUnlockTrigger: Int = 10
+    @State private var wakeAdvance: Int = FUn.defaultWakeAdvance
+    @State private var preUnlockTrigger: Int = FUn.defaultPreUnlockTrigger
 
     // 扫描状态
     @State private var isScanning = false
@@ -41,8 +41,8 @@ struct OverviewView: View {
 
     var isThresholdApplied: Bool {
         Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == effectiveUnlockRSSI
-            && wakeAdvance == thresholdSettingValue("wakeAdvance", default: 20)
-            && preUnlockTrigger == thresholdSettingValue("preUnlockTrigger", default: 10)
+            && wakeAdvance == thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
+            && preUnlockTrigger == thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
     }
 
     private func thresholdSettingValue(_ key: String, default dft: Int) -> Int {
@@ -70,8 +70,8 @@ struct OverviewView: View {
         .onAppear {
             sliderLock = Double(manager.lockRSSI)
             sliderUnlock = Double(effectiveUnlockRSSI)
-            wakeAdvance = thresholdSettingValue("wakeAdvance", default: 20)
-            preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: 10)
+            wakeAdvance = thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
+            preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
         }
         .onReceive(manager.$lockRSSI) { newValue in
             if Int(sliderLock) != newValue && !isSliderDragging {

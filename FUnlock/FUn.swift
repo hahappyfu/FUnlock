@@ -151,17 +151,32 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private var smoothedRSSIValue: Double = -100.0
     private let smoothedRSSIAlpha: Double = 0.3
     // MARK: 阶梯唤醒阈值（由解锁阈值 - 用户偏移派生）
+    /// 默认唤醒提前量（dB）
+    static let defaultWakeAdvance = 20
+    /// 默认预解锁触发量（dB）
+    static let defaultPreUnlockTrigger = 10
+    /// 偏移量允许范围（dB）
+    static let offsetRange = 0...20
+    /// 将偏移量钳制到允许范围（UI 可能输入越界值）
+    static func clampOffset(_ value: Int) -> Int {
+        min(max(value, offsetRange.lowerBound), offsetRange.upperBound)
+    }
+    /// 读取偏移设置，越界/缺失时回退默认值
+    private static func offsetSetting(_ key: String, default dft: Int) -> Int {
+        let value = UserDefaults.standard.object(forKey: key) as? Int ?? dft
+        return clampOffset(value)
+    }
     /// 预备唤醒阈值（dBm）：解锁阈值往更远方向提前 wakeAdvance（UI 可填，默认 20）
     var preWakeThreshold: Int {
         guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
-        let advance = UserDefaults.standard.object(forKey: "wakeAdvance") as? Int ?? 20
+        let advance = Self.offsetSetting("wakeAdvance", default: Self.defaultWakeAdvance)
         return unlockRSSI - advance
     }
     /// 预解锁触发阈值（dBm）：解锁阈值往更远方向提前 preUnlockTrigger（UI 可填，默认 10），
     /// 信号达到该点即进入预解锁准备状态（弹密码框）
     var unlockStairThreshold: Int {
         guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
-        let trigger = UserDefaults.standard.object(forKey: "preUnlockTrigger") as? Int ?? 10
+        let trigger = Self.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
         return unlockRSSI - trigger
     }
     var lastReceiveTime: Date = Date()

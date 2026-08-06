@@ -211,15 +211,15 @@ final class FUnManager: ObservableObject {
         thresholdVersion += 1
     }
 
-    /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前
+    /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前（自动钳制到 0-20）
     func setWakeAdvance(_ value: Int) {
-        UserDefaults.standard.set(value, forKey: "wakeAdvance")
+        UserDefaults.standard.set(FUn.clampOffset(value), forKey: "wakeAdvance")
         thresholdVersion += 1
     }
 
-    /// 设置预解锁触发量（dB）：解锁阈值往更远方向提前进入预解锁准备
+    /// 设置预解锁触发量（dB）：解锁阈值往更远方向提前进入预解锁准备（自动钳制到 0-20）
     func setPreUnlockTrigger(_ value: Int) {
-        UserDefaults.standard.set(value, forKey: "preUnlockTrigger")
+        UserDefaults.standard.set(FUn.clampOffset(value), forKey: "preUnlockTrigger")
         thresholdVersion += 1
     }
 
