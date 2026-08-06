@@ -254,15 +254,36 @@ struct SignalChartView: View {
     let unlockThreshold: Double
     let lockThreshold: Double
 
+    /// X 轴刻度间隔：按数据窗口跨度自适应，避免标签拥挤重叠
+    private var xStride: (unit: Calendar.Component, count: Int) {
+        guard let first = samples.first?.timestamp, let last = samples.last?.timestamp else { return (.minute, 5) }
+        let span = last.timeIntervalSince(first)
+        switch span {
+        case ..<300:   return (.second, 30)   // < 5 分钟 → 30 秒
+        case ..<1800:  return (.minute, 5)    // < 30 分钟 → 5 分钟
+        default:       return (.minute, 15)   // ≥ 30 分钟 → 15 分钟
+        }
+    }
+
     var body: some View {
         Chart {
-            // 阈值参考线
+            // 阈值参考线（线端标注当前动态值）
             RuleMark(y: .value("解锁阈值", unlockThreshold))
                 .foregroundStyle(.green.opacity(0.3))
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .annotation(position: .trailing, spacing: 2) {
+                    Text("解锁 \(Int(unlockThreshold))")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
             RuleMark(y: .value("锁定阈值", lockThreshold))
                 .foregroundStyle(.orange.opacity(0.3))
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .annotation(position: .trailing, spacing: 2) {
+                    Text("锁定 \(Int(lockThreshold))")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
 
             // Raw RSSI（灰色）
             ForEach(samples) { sample in
@@ -323,7 +344,7 @@ struct SignalChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .minute, count: 1)) { _ in
+            AxisMarks(values: .stride(by: xStride.unit, count: xStride.count)) { _ in
                 AxisGridLine()
                 AxisValueLabel(format: .dateTime.hour().minute())
             }
