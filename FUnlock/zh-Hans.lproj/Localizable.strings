@@ -313,6 +313,15 @@
 "mb_signal_weak" = "信号较弱";
 "mb_signal_far" = "较远";
 
+// 配置文件导入导出
+"profile_import" = "导入";
+"profile_export" = "导出";
+"profile_export_done" = "配置已导出";
+"profile_import_done" = "已导入：新增 %d，更新 %d";
+"profile_export_failed" = "导出失败";
+"profile_import_failed" = "导入失败";
+"profile_export_filename" = "FUnlock-配置.json";
+
 // 高级距离阈值配置（总览）
 "wake_advance" = "唤醒提前量";
 "pre_unlock_trigger" = "预解锁触发量";

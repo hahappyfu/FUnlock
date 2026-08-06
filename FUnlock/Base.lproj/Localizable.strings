@@ -314,6 +314,15 @@
 "mb_signal_close" = "Close";
 "mb_signal_weak" = "Weak signal";
 "mb_signal_far" = "Far";
+
+// Profile import/export
+"profile_import" = "Import";
+"profile_export" = "Export";
+"profile_export_done" = "Profiles exported";
+"profile_import_done" = "Imported: %d added, %d updated";
+"profile_export_failed" = "Export failed";
+"profile_import_failed" = "Import failed";
+"profile_export_filename" = "FUnlock-profiles.json";
 "wake_advance" = "Wake Advance";
 "pre_unlock_trigger" = "Pre-Unlock Trigger";
 "subtitle_pre" = "When signal reaches ";
