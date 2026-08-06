@@ -318,3 +318,5 @@
 "wake_advance_detail" = "Screen wakes this many dB before unlock threshold";
 "pre_unlock_trigger" = "Pre-Unlock Trigger (dB)";
 "pre_unlock_trigger_detail" = "Starts pre-unlock prep this many dB before unlock threshold";
+"wake_advance_result" = "Screen wake-prep signal threshold %lld dBm";
+"pre_unlock_trigger_result" = "Pre-unlock prep signal threshold %lld dBm";

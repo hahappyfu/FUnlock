@@ -203,9 +203,13 @@ struct OverviewView: View {
                                value: $sliderUnlock, isDragging: $isSliderDragging)
 
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
-                               title: t("wake_advance"), detail: t("wake_advance_detail"), value: $wakeAdvance)
+                               title: t("wake_advance"), detail: t("wake_advance_detail"),
+                               result: String(format: t("wake_advance_result"), Int(sliderUnlock) - wakeAdvance),
+                               value: $wakeAdvance)
             ThresholdOffsetRow(icon: "bolt.fill", color: .purple,
-                               title: t("pre_unlock_trigger"), detail: t("pre_unlock_trigger_detail"), value: $preUnlockTrigger)
+                               title: t("pre_unlock_trigger"), detail: t("pre_unlock_trigger_detail"),
+                               result: String(format: t("pre_unlock_trigger_result"), Int(sliderUnlock) - preUnlockTrigger),
+                               value: $preUnlockTrigger)
 
             Button {
                 manager.setLockRSSI(Int(sliderLock))
@@ -392,6 +396,7 @@ private struct ThresholdOffsetRow: View {
     let color: Color
     let title: String
     let detail: String
+    let result: String
     @Binding var value: Int
 
     var body: some View {
@@ -403,6 +408,10 @@ private struct ThresholdOffsetRow: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
+                Text(result)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
             }
             Spacer()
             // 输入框 + 单位：右侧固定宽度整体右对齐，两行视觉对齐
