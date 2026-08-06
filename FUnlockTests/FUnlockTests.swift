@@ -2885,6 +2885,20 @@ class PreWakeStaircaseTests: XCTestCase {
         XCTAssertEqual(manager.state.intent, .autoLock,
                        "FUnlock 自动锁屏不应标记为 manualLock")
     }
+
+    // MARK: - 信号丢失复位：UI 显示一致性
+
+    /// 失联 3 次超时 → 有效信号复位到无信号档（-100），在场标志清除，
+    /// 菜单栏不得再显示冻结的旧信号值（如 -75）
+    func testSignalLostResetsEffectiveRSSIAndPresence() {
+        manager.fun.effectiveRSSI = -65
+        manager.fun.presence = true
+        manager.fun.markSignalLost()
+        XCTAssertEqual(manager.fun.effectiveRSSI, -100.0,
+                       "失联后有效信号应复位到无信号档（-100）")
+        XCTAssertFalse(manager.fun.presence,
+                       "失联后应清除在场标志")
+    }
 }
 
 // MARK: - Keychain 安全收紧：冷启动错误码捕获测试
@@ -3778,6 +3792,21 @@ final class MenuBarPopoverViewTests: XCTestCase {
         XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -74), .good)
         XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -75), .weak, "边界 -75 归入较弱档")
         XCTAssertEqual(MenuBarPopoverView.signalLevel(for: -90), .weak)
+    }
+
+    // MARK: - 信号丢失显示（与总览「无信号」判据一致：manager.rssi == nil）
+
+    func testSignalTextWhenLostShowsDash() {
+        let s = MenuBarPopoverView.signalText(effectiveRSSI: -75, hasSignal: false)
+        XCTAssertEqual(s, "-- dBm", "失联后不得显示冻结的旧信号值 -75")
+    }
+
+    func testSignalTextFloorShowsDash() {
+        XCTAssertEqual(MenuBarPopoverView.signalText(effectiveRSSI: -100, hasSignal: true), "-- dBm")
+    }
+
+    func testSignalTextValidShowsValue() {
+        XCTAssertEqual(MenuBarPopoverView.signalText(effectiveRSSI: -75, hasSignal: true), "-75 dBm")
     }
 }
 

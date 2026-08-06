@@ -331,27 +331,36 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             if shouldLose {
                 timer.invalidate()
-                Log.sm.debug("Device is lost (3 consecutive timeouts)")
-                self.delegate?.updateRSSI(rssi: nil, active: false)
-                let wasPresent = self.lock.withLock { self.presence }
-                if wasPresent {
-                    // P1: 记录信号丢失锁定事件
-                    SignalDataStore.shared.record(
-                        rawRSSI: -100, kalmanEstimate: -100,
-                        effectiveRSSI: -100, slope: 0, isAnomalous: false,
-                        event: "locked: lost")
-                    self.lock.withLock {
-                        self.presence = false
-                        self.signalLostCount = 0
-                    }
-                    self.delegate?.updatePresence(presence: false, reason: "lost")
-                }
+                self.markSignalLost()
             } else {
                 Log.sm.debug("Signal timeout \(self.lock.withLock { self.signalLostCount })/3, waiting...")
             }
         })
         RunLoop.main.add(timer, forMode: .common)
         signalTimer = timer
+    }
+
+    /// 信号丢失（3 次连续超时）统一复位：清在场标志、有效信号复位到无信号档（-100）、
+    /// 通知 UI（rssi 置 nil，与总览「无信号」判据一致），避免菜单栏残留冻结的旧信号值
+    func markSignalLost() {
+        let wasPresent = lock.withLock { self.presence }
+        lock.withLock {
+            presence = false
+            signalLostCount = 0
+            if effectiveRSSI > -100.0 {
+                effectiveRSSI = -100.0
+            }
+        }
+        Log.sm.debug("Device is lost (3 consecutive timeouts)")
+        self.delegate?.updateRSSI(rssi: nil, active: false)
+        if wasPresent {
+            // P1: 记录信号丢失锁定事件
+            SignalDataStore.shared.record(
+                rawRSSI: -100, kalmanEstimate: -100,
+                effectiveRSSI: -100, slope: 0, isAnomalous: false,
+                event: "locked: lost")
+            self.delegate?.updatePresence(presence: false, reason: "lost")
+        }
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {

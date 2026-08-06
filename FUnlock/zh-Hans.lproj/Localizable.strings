@@ -311,6 +311,7 @@
 "mb_signal_good" = "信号良好";
 "mb_signal_close" = "较近";
 "mb_signal_weak" = "信号较弱";
+"mb_signal_lost" = "无信号";
 "mb_signal_far" = "较远";
 
 // 配置文件导入导出

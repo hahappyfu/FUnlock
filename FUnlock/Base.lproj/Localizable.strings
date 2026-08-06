@@ -313,6 +313,7 @@
 "mb_signal_good" = "Good signal";
 "mb_signal_close" = "Close";
 "mb_signal_weak" = "Weak signal";
+"mb_signal_lost" = "No signal";
 "mb_signal_far" = "Far";
 
 // Profile import/export

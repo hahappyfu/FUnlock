@@ -105,6 +105,11 @@ struct MenuBarPopoverView: View {
         MenuBarPopoverView.signalLevel(for: fun.effectiveRSSI)
     }
 
+    /// 与总览「无信号」同源判据：manager.rssi 在失联 3 次超时后被置 nil
+    private var hasSignal: Bool {
+        manager.rssi != nil
+    }
+
     private var statusCard: some View {
         HStack(spacing: 10) {
             ZStack {
@@ -124,10 +129,16 @@ struct MenuBarPopoverView: View {
                     .lineLimit(1)
                 // 第二行：信号条 + 语义化描述（12pt）+ 屏幕状态胶囊
                 HStack(spacing: 7) {
-                    signalBarsView
-                    Text("\(signalLevel.main) (\(signalLevel.proximity))")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.green)
+                    if hasSignal {
+                        signalBarsView
+                        Text("\(signalLevel.main) (\(signalLevel.proximity))")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.green)
+                    } else {
+                        Text(t("mb_signal_lost"))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.orange)
+                    }
                     Spacer(minLength: 4)
                     Text(screenStateText)
                         .font(.system(size: 10, weight: .semibold))
@@ -173,10 +184,16 @@ struct MenuBarPopoverView: View {
         .frame(height: 12, alignment: .bottom)
     }
 
-    private var signalText: String {
-        let rssi = fun.effectiveRSSI
+    /// 信号数值文本：失联（manager.rssi == nil）或有效信号低于无信号档时显示 "-- dBm"
+    static func signalText(effectiveRSSI: Double, hasSignal: Bool) -> String {
+        guard hasSignal else { return "-- dBm" }
+        let rssi = effectiveRSSI
         guard rssi > -100 else { return "-- dBm" }
         return String(format: "%.0f dBm", rssi)
+    }
+
+    private var signalText: String {
+        MenuBarPopoverView.signalText(effectiveRSSI: fun.effectiveRSSI, hasSignal: hasSignal)
     }
 
     private var screenStateText: String {
