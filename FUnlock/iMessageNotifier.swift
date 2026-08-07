@@ -3,10 +3,13 @@
 
 import Foundation
 
-extension String: Error {}
-
 /// iMessage 通知单例
 final class iMessageNotifier {
+    /// 手动测试发送结果。用嵌套私有类型避免全局污染 String 的 Error 遵循。
+    struct SendError: Error {
+        let message: String
+    }
+
     static let shared = iMessageNotifier()
     private init() {}
 
@@ -57,13 +60,17 @@ final class iMessageNotifier {
     /// 绕过 30s 防抖、不写 lastSendTime —— 测试就是要反复验证。
     /// completion 在主线程回调。
     func sendTestNotification(title: String, message: String,
-                              completion: @escaping (Result<Void, String>) -> Void) {
+                              completion: @escaping (Result<Void, iMessageNotifier.SendError>) -> Void) {
         guard enabled else {
-            completion(.failure("iMessage 通知开关未开启，请先开启"))
+            DispatchQueue.main.async {
+                completion(.failure(iMessageNotifier.SendError(message: "iMessage 通知开关未开启，请先开启")))
+            }
             return
         }
         guard let recipient = recipient, !recipient.isEmpty else {
-            completion(.failure("收件人为空，请先填写 iMessage 收件人"))
+            DispatchQueue.main.async {
+                completion(.failure(iMessageNotifier.SendError(message: "收件人为空，请先填写 iMessage 收件人")))
+            }
             return
         }
         let text = "\(title)\n\(message)"
@@ -77,7 +84,7 @@ final class iMessageNotifier {
             }
             DispatchQueue.main.async {
                 if let err = err {
-                    completion(.failure(err))
+                    completion(.failure(iMessageNotifier.SendError(message: err)))
                 } else {
                     completion(.success(()))
                 }

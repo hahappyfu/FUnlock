@@ -48,7 +48,7 @@ final class iMessageNotifierTests: XCTestCase {
         let exp = expectation(description: "disabled")
         iMessageNotifier.shared.sendTestNotification(title: "🔒 测试", message: "锁定") { result in
             switch result {
-            case .failure(let msg): XCTAssertTrue(msg.contains("开关"))
+            case .failure(let msg): XCTAssertTrue(msg.message.contains("开关"))
             case .success: XCTFail("开关关闭时不应发送")
             }
             exp.fulfill()
@@ -62,7 +62,7 @@ final class iMessageNotifierTests: XCTestCase {
         let exp = expectation(description: "noRecipient")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
             switch result {
-            case .failure(let msg): XCTAssertTrue(msg.contains("收件人"))
+            case .failure(let msg): XCTAssertTrue(msg.message.contains("收件人"))
             case .success: XCTFail("收件人为空时不应发送")
             }
             exp.fulfill()
@@ -89,7 +89,7 @@ final class iMessageNotifierTests: XCTestCase {
         let exp = expectation(description: "failure")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
             switch result {
-            case .failure(let msg): XCTAssertTrue(msg.contains("未授权"))
+            case .failure(let msg): XCTAssertTrue(msg.message.contains("未授权"))
             case .success: XCTFail("应失败")
             }
             exp.fulfill()
