@@ -12,6 +12,13 @@ struct UnlockSettingsView: View {
     @State private var testSucceeded = false
     @State private var testMessage = ""
 
+    private enum TestKind {
+        case lock, unlock
+
+        var emoji: String { self == .lock ? "🔒" : "🔓" }
+        var label: String { self == .lock ? "锁定" : "解锁" }
+    }
+
     var body: some View {
         ScrollView {
             Form {
@@ -43,11 +50,11 @@ struct UnlockSettingsView: View {
                         if !iMessageNotifyRecipient.isEmpty {
                             HStack {
                                 Button("测试锁定") {
-                                    runTest(kind: "锁定")
+                                    runTest(kind: .lock)
                                 }
                                 .disabled(isTesting)
                                 Button("测试解锁") {
-                                    runTest(kind: "解锁")
+                                    runTest(kind: .unlock)
                                 }
                                 .disabled(isTesting)
                                 if isTesting {
@@ -62,26 +69,22 @@ struct UnlockSettingsView: View {
             .formStyle(.grouped)
         }
         .alert("iMessage 测试", isPresented: $showResultAlert) {
-            Button(testSucceeded ? "已收到" : "好") {
-                showResultAlert = false
-            }
+            Button(testSucceeded ? "已收到" : "好") {}
         } message: {
             Text(testSucceeded ? "已发送，请确认 Apple Watch 是否收到" : testMessage)
         }
     }
 
-    private func runTest(kind: String) {
+    private func runTest(kind: TestKind) {
         guard !isTesting else { return }
         isTesting = true
-        let emoji = kind == "锁定" ? "🔒" : "🔓"
-        let title = "\(emoji) FUnlock 手动测试：\(kind)"
+        let title = "\(kind.emoji) FUnlock 手动测试：\(kind.label)"
         let message = "请确认 Apple Watch 是否收到"
         iMessageNotifier.shared.sendTestNotification(title: title, message: message) { result in
             isTesting = false
             switch result {
             case .success:
                 testSucceeded = true
-                testMessage = "已发送，请确认 Apple Watch 是否收到"
             case .failure(let err):
                 testSucceeded = false
                 testMessage = err.message
