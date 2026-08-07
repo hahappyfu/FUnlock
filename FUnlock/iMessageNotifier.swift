@@ -3,6 +3,8 @@
 
 import Foundation
 
+extension String: Error {}
+
 /// iMessage 通知单例
 final class iMessageNotifier {
     static let shared = iMessageNotifier()
@@ -17,6 +19,17 @@ final class iMessageNotifier {
     private let debounceInterval: TimeInterval = 30.0
     private var lastSendTime: [String: Date] = [:]
     private let lock = NSLock()
+
+    /// 测试注入点：替换真实 AppleScript 执行，便于单测（默认 nil）
+    var scriptRunner: ((String, String) -> String?)?
+
+    /// 开关 / 收件人读取（复用现有 Keys enum）
+    private var enabled: Bool {
+        UserDefaults.standard.bool(forKey: Keys.enabled)
+    }
+    private var recipient: String? {
+        UserDefaults.standard.string(forKey: Keys.recipient)
+    }
 
     /// 发送一条 iMessage 给自己（异步、防抖、失败静默）
     func sendNotification(title: String, message: String) {
@@ -40,7 +53,41 @@ final class iMessageNotifier {
         }
     }
 
-    private func runAppleScript(recipient: String, text: String) {
+    /// 手动连通性测试：发送并返回结果（成功 .success, 失败 .failure+原因）。
+    /// 绕过 30s 防抖、不写 lastSendTime —— 测试就是要反复验证。
+    /// completion 在主线程回调。
+    func sendTestNotification(title: String, message: String,
+                              completion: @escaping (Result<Void, String>) -> Void) {
+        guard enabled else {
+            completion(.failure("iMessage 通知开关未开启，请先开启"))
+            return
+        }
+        guard let recipient = recipient, !recipient.isEmpty else {
+            completion(.failure("收件人为空，请先填写 iMessage 收件人"))
+            return
+        }
+        let text = "\(title)\n\(message)"
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let err: String?
+            if let runner = self.scriptRunner {
+                err = runner(recipient, text)
+            } else {
+                err = self.runAppleScript(recipient: recipient, text: text)
+            }
+            DispatchQueue.main.async {
+                if let err = err {
+                    completion(.failure(err))
+                } else {
+                    completion(.success(()))
+                }
+            }
+        }
+    }
+
+    /// 执行 AppleScript 发送 iMessage。成功返回 nil，失败返回可读错误描述。
+    @discardableResult
+    private func runAppleScript(recipient: String, text: String) -> String? {
         let script = """
         tell application "Messages"
             set targetService to 1st service whose service type = iMessage
@@ -48,8 +95,25 @@ final class iMessageNotifier {
             send "\(text)" to targetBuddy
         end tell
         """
-        guard let appleScript = NSAppleScript(source: script) else { return }
+        guard let appleScript = NSAppleScript(source: script) else {
+            return "AppleScript 源码编译失败"
+        }
         var errorInfo: NSDictionary?
         appleScript.executeAndReturnError(&errorInfo)
+        guard let errorInfo = errorInfo else { return nil }
+        return Self.friendlyError(errorInfo: errorInfo as? [String: Any] ?? [:])
+    }
+
+    /// 手动测试：把 NSAppleScript 错误字典转换为用户可读的中文提示
+    static func friendlyError(errorInfo: [String: Any]) -> String {
+        let number = errorInfo["NSAppleScriptErrorNumber"] as? Int ?? -1
+        let message = errorInfo["NSAppleScriptErrorMessage"] as? String ?? "未知错误"
+        if number == -1743 {
+            return "Messages 未授权：请在 系统设置 → 隐私与安全性 → 自动化 中允许 FUnlock 控制 Messages"
+        }
+        if message.localizedCaseInsensitiveContains("buddy") || message.localizedCaseInsensitiveContains("not found") {
+            return "收件人无效：请检查号码/账号是否为 iMessage 好友（需先在 Messages 中有会话）"
+        }
+        return "发送失败：\(message)（错误码 \(number)）"
     }
 }

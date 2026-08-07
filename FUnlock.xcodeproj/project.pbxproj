@@ -49,6 +49,7 @@
 		DL0000020000000100000001 /* DecisionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = DL0000010000000100000001 /* DecisionLogger.swift */; };
 		DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DT0000010000000100000001 /* DecisionLoggerTests.swift */; };
 		RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RM0000010000000100000001 /* ReasonActionMappingTests.swift */; };
+		IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000001 /* iMessageNotifierTests.swift */; };
 		DV0000020000000100000001 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000001 /* DiagnosticsView.swift */; };
 		MB0000020000000100000001 /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000001 /* MenuBarPopover.swift */; };
 		AA0000DD00000001 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000011 /* MainWindowView.swift */; };
@@ -59,6 +60,7 @@
 		AA0000DD00000006 /* LockSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000016 /* LockSettingsView.swift */; };
 		AA0000DD00000007 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000017 /* NetworkSettingsView.swift */; };
 		AA0000DD00000008 /* ConfigSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000018 /* ConfigSettingsView.swift */; };
+		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,6 +148,7 @@
 		MB0000010000000100000001 /* MenuBarPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopover.swift; sourceTree = "<group>"; };
 		DT0000010000000100000001 /* DecisionLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLoggerTests.swift; sourceTree = "<group>"; };
 		RM0000010000000100000001 /* ReasonActionMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasonActionMappingTests.swift; sourceTree = "<group>"; };
+		IM0000010000000100000001 /* iMessageNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifierTests.swift; sourceTree = "<group>"; };
 		AA0000DD00000011 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		AA0000DD00000012 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		AA0000DD00000013 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
@@ -154,6 +157,7 @@
 		AA0000DD00000016 /* LockSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000017 /* NetworkSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000018 /* ConfigSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigSettingsView.swift; sourceTree = "<group>"; };
+		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -260,6 +264,7 @@
 				AA0000DD00000016 /* LockSettingsView.swift */,
 				AA0000DD00000017 /* NetworkSettingsView.swift */,
 				AA0000DD00000018 /* ConfigSettingsView.swift */,
+				AA0000DD00000019 /* iMessageNotifier.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -281,6 +286,7 @@
 				AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */,
 				DT0000010000000100000001 /* DecisionLoggerTests.swift */,
 				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
+				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -504,6 +510,7 @@
 				AA0000DD00000006 /* LockSettingsView.swift in Sources */,
 				AA0000DD00000007 /* NetworkSettingsView.swift in Sources */,
 				AA0000DD00000008 /* ConfigSettingsView.swift in Sources */,
+				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -515,6 +522,7 @@
 				AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */,
 				DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */,
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
+				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
