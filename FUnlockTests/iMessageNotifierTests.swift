@@ -76,6 +76,7 @@ final class iMessageNotifierTests: XCTestCase {
         iMessageNotifier.shared.scriptRunner = { _, _ in nil } // 模拟发送成功
         let exp = expectation(description: "success")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
+            XCTAssertTrue(Thread.isMainThread, "completion 应回到主线程")
             if case .success = result {} else { XCTFail("应成功") }
             exp.fulfill()
         }
@@ -88,6 +89,7 @@ final class iMessageNotifierTests: XCTestCase {
         iMessageNotifier.shared.scriptRunner = { _, _ in "Messages 未授权" }
         let exp = expectation(description: "failure")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
+            XCTAssertTrue(Thread.isMainThread, "completion 应回到主线程")
             switch result {
             case .failure(let msg): XCTAssertTrue(msg.message.contains("未授权"))
             case .success: XCTFail("应失败")

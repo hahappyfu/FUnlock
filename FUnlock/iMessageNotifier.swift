@@ -23,7 +23,9 @@ final class iMessageNotifier {
     private var lastSendTime: [String: Date] = [:]
     private let lock = NSLock()
 
-    /// 测试注入点：替换真实 AppleScript 执行，便于单测（默认 nil）
+    /// 测试注入点：替换真实 AppleScript 执行，便于单测（默认 nil）。
+    /// 仅供测试进程在调用 sendTestNotification 之前设置；运行期恒为 nil，
+    /// 不要在生产代码赋值，避免未来并行调用产生竞态。
     var scriptRunner: ((String, String) -> String?)?
 
     /// 开关 / 收件人读取（复用现有 Keys enum）
@@ -92,14 +94,20 @@ final class iMessageNotifier {
         }
     }
 
+    /// 转义 AppleScript 字符串字面量中的 `\` 与 `"`，防止收件人/文本含引号时脚本语法被破坏
+    private func escapedAppleScriptString(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     /// 执行 AppleScript 发送 iMessage。成功返回 nil，失败返回可读错误描述。
     @discardableResult
     private func runAppleScript(recipient: String, text: String) -> String? {
         let script = """
         tell application "Messages"
             set targetService to 1st service whose service type = iMessage
-            set targetBuddy to buddy "\(recipient)" of targetService
-            send "\(text)" to targetBuddy
+            set targetBuddy to buddy "\(escapedAppleScriptString(recipient))" of targetService
+            send "\(escapedAppleScriptString(text))" to targetBuddy
         end tell
         """
         guard let appleScript = NSAppleScript(source: script) else {
