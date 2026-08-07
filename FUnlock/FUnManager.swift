@@ -361,7 +361,7 @@ final class FUnManager: ObservableObject {
         guard enabled else { return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
         let smoothed = fun.effectiveRSSI
-        print("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
+        lockLog("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
         timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
 
         // 清除锁屏通知
@@ -387,10 +387,10 @@ final class FUnManager: ObservableObject {
         let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
         let screenState = state.screen
         let lockDisabled = fun.lockRSSI == fun.LOCK_DISABLED
-        print("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", fun.effectiveRSSI))")
-        guard enabled else { print("[LOCK] onDeviceLeft blocked: enabled=false"); return }
-        guard screenState == .unlocked else { print("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
-        guard !lockDisabled else { print("[LOCK] onDeviceLeft blocked: lock disabled"); return }
+        lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", fun.effectiveRSSI))")
+        guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
+        guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
+        guard !lockDisabled else { lockLog("[LOCK] onDeviceLeft blocked: lock disabled"); return }
 
         displayWakeRequested = false
         state.screen = .displaySleeping

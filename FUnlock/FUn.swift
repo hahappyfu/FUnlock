@@ -3,6 +3,19 @@ import CoreBluetooth
 import Combine
 import os
 
+/// 锁屏调试日志：写入文件（GUI 应用 print 被丢弃）
+func lockLog(_ msg: String) {
+    let path = "/tmp/funlock_lock.log"
+    let line = "\(Date()): \(msg)\n"
+    if let handle = FileHandle(forWritingAtPath: path) {
+        handle.seekToEndOfFile()
+        handle.write(line.data(using: .utf8)!)
+        handle.closeFile()
+    } else {
+        try? line.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+}
+
 let DeviceInformation = CBUUID(string:"180A")
 let ManufacturerName = CBUUID(string:"2A29")
 let ModelName = CBUUID(string:"2A24")
@@ -392,21 +405,33 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    // MARK: - Time decay computation (heartbeat fallback, reads self.effectiveRSSI)
+    // MARK: - Time decay computation (heartbeat fallback, depends only on self.effectiveRSSI)
+
+    /// 信号中断期间的有效信号衰减：分段的温和曲线 + 封顶。
+    /// 目的：BLE 采样短暂间隙（几秒）不应把信号强行压到锁阈值之下造成误锁；
+    /// 但同时保证真实离场（长时间无采样）仍能衰减到阈值以下触发锁定。
+    /// - Parameters:
+    ///   - effectiveRSSI: 最近一次采样的有效信号（dBm）
+    ///   - elapsedSinceLastReceive: 距离最后一次采样的时间（秒）
+    static func decayedEffectiveRSSI(effectiveRSSI: Double, elapsedSinceLastReceive: TimeInterval) -> Double {
+        let penalty: Double
+        if elapsedSinceLastReceive <= 6.0 {
+            // 6 秒内：不额外惩罚，信任管道 effectiveRSSI（缓冲 BLE 采样间隙）
+            penalty = 0
+        } else if elapsedSinceLastReceive <= 10.0 {
+            // 6~10 秒：温和线性（0.75 dB/s，最多 3 dB）
+            penalty = (elapsedSinceLastReceive - 6.0) * 0.75
+        } else {
+            // 10 秒后：1 dB/s，累计最多 20 dB（防止长时间陈旧值剧烈下探）
+            penalty = min(3.0 + (elapsedSinceLastReceive - 10.0), 20.0)
+        }
+        return max(effectiveRSSI - penalty, -100.0)
+    }
+
     func getEffectiveRSSI() -> Double {
         let (lastRecv, effRSSI) = lock.withLock { (lastReceiveTime, effectiveRSSI) }
         let elapsed = Date().timeIntervalSince(lastRecv)
-        // 仅在长时间无采样时施加轻量衰减，避免与管道衰减叠加
-        let penalty: Double
-        if elapsed < 5.0 {
-            // 5 秒内：不额外衰减，信任管道的 effectiveRSSI
-            penalty = 0
-        } else {
-            // 超过 5 秒无采样：轻量衰减确保离场能锁
-            penalty = 2.0 * (elapsed - 5.0)
-        }
-        let eff = effRSSI - penalty
-        return max(eff, -100.0)
+        return Self.decayedEffectiveRSSI(effectiveRSSI: effRSSI, elapsedSinceLastReceive: elapsed)
     }
 
     // MARK: - Direction 3: Heartbeat — proactive lock check
@@ -448,7 +473,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
             // 冷静期：刚解锁后不立即触发锁定
             let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
-            print("[LOCK] heartbeat eff=\(String(format: "%.1f", eff)) threshold=\(Int(threshold)) hasTimer=\(hasTimer) graceElapsed=\(String(format: "%.1f", graceElapsed)) inputActive=\(self.isUserInputActive)")
+            lockLog("[LOCK] heartbeat eff=\(String(format: "%.1f", eff)) threshold=\(Int(threshold)) hasTimer=\(hasTimer) graceElapsed=\(String(format: "%.1f", graceElapsed)) inputActive=\(self.isUserInputActive)")
             if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
                 if self.isUserInputActive {
                     // 用户活跃时重置衰减基准，阻止衰减累积
@@ -531,14 +556,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let nowEff = self.getEffectiveRSSI()
             let nowThreshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let nowPresence = self.lock.withLock { self.presence }
-            print("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
+            lockLog("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
             if nowEff >= nowThreshold {
-                print("[LOCK] timer fired but signal recovered (eff=\(String(format: "%.1f", nowEff)) >= threshold=\(Int(nowThreshold))), skipping lock")
+                lockLog("[LOCK] timer fired but signal recovered (eff=\(String(format: "%.1f", nowEff)) >= threshold=\(Int(nowThreshold))), skipping lock")
                 self.lock.withLock { self.proximityTimer = nil }
                 return
             }
             if lockOnIdle && self.isUserInputActive {
-                print("[LOCK] timer fired but input active, deferring lock")
+                lockLog("[LOCK] timer fired but input active, deferring lock")
                 Log.sm.debug("[SM] input active at lock timer fire, deferring")
                 self.lock.withLock {
                     self.proximityTimer = nil
@@ -708,31 +733,31 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
         } else {
             let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
-            print("[LOCK] applyLockTimer eff=\(String(format: "%.1f", effectiveRSSI)) threshold=\(Int(threshold)) presence=\(curPresence) hasTimer=\(curTimer != nil)")
+            lockLog("[LOCK] applyLockTimer eff=\(String(format: "%.1f", effectiveRSSI)) threshold=\(Int(threshold)) presence=\(curPresence) hasTimer=\(curTimer != nil)")
             if curPresence && curTimer == nil {
                 // 冷静期：刚解锁后不立即触发锁定，防止 effectiveRSSI 衰减导致振荡
                 let elapsed = Date().timeIntervalSince(lastProximityEventTime)
-                print("[LOCK] graceElapsed=\(String(format: "%.1f", elapsed))s gracePeriod=\(self.proximityGracePeriod)s")
+                lockLog("[LOCK] graceElapsed=\(String(format: "%.1f", elapsed))s gracePeriod=\(self.proximityGracePeriod)s")
                 if elapsed < self.proximityGracePeriod {
-                    print("[LOCK] BLOCKED by proximityGracePeriod")
+                    lockLog("[LOCK] BLOCKED by proximityGracePeriod")
                     Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
                     return
                 }
                 let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
                     || UserDefaults.standard.bool(forKey: "lockOnIdle")
                 if lockOnIdle && isUserInputActive {
-                    print("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
+                    lockLog("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
                     Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")
                     lock.withLock {
                         lastReceiveTime = Date()
                         pipeline.decayBaseline = Date()
                     }
                 } else {
-                    print("[LOCK] all guards passed -> startLockTimer")
+                    lockLog("[LOCK] all guards passed -> startLockTimer")
                     startLockTimer()
                 }
             } else {
-                print("[LOCK] SKIPPED: presence=\(curPresence) hasTimer=\(curTimer != nil)")
+                lockLog("[LOCK] SKIPPED: presence=\(curPresence) hasTimer=\(curTimer != nil)")
             }
         }
     }

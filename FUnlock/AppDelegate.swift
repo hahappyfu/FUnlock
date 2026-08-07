@@ -22,7 +22,7 @@ class InputActivityMonitor {
     private var hidManager: IOHIDManager?
     private var _lastInputTime: Date = Date.distantPast
     private var lock = os_unfair_lock()
-    var activityWindow: TimeInterval = 30
+    var activityWindow: TimeInterval = 15
 
     var lastInputTime: Date {
         os_unfair_lock_lock(&lock)
@@ -71,7 +71,23 @@ private func inputCallback(_ ctx: UnsafeMutableRawPointer?,
                             _ sender: UnsafeMutableRawPointer?,
                             _ value: IOHIDValue) {
     guard let ctx = ctx else { return }
-    Unmanaged<InputActivityMonitor>.fromOpaque(ctx).takeUnretainedValue().didReceiveInput()
+    let monitor = Unmanaged<InputActivityMonitor>.fromOpaque(ctx).takeUnretainedValue()
+
+    // 通过 element 的 usage page / usage 收紧过滤：
+    // 只有按下事件（value 从 0 变为非 0）才计为有效输入，忽略释放、移动、滚动、媒体键等。
+    let element = IOHIDValueGetElement(value)
+    let page = IOHIDElementGetUsagePage(element)
+    let usage = IOHIDElementGetUsage(element)
+    let intValue = IOHIDValueGetIntegerValue(value)
+    guard intValue != 0 else { return } // 释放等 value==0 的事件忽略
+
+    let isKeyPress = (page == 0x01 && usage == 0x06)   // 键盘按键
+    let isMousePress = (page == 0x01 && usage == 0x02) // 鼠标按键
+    let isTrackpadClick = (page == 0x0D && usage == 0x09) // 触控板点击按钮
+
+    if isKeyPress || isMousePress || isTrackpadClick {
+        monitor.didReceiveInput()
+    }
 }
 
 // MARK: - Carbon 全局快捷键回调
