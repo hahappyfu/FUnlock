@@ -5,6 +5,12 @@ struct UnlockSettingsView: View {
     @AppStorage("wakeOnProximity") private var wakeOnProximity = false
     @AppStorage("wakeWithoutUnlocking") private var wakeWithoutUnlocking = false
     @AppStorage("screensaver") private var useScreensaver = false
+    @AppStorage("iMessageNotify") private var iMessageNotify = false
+    @AppStorage("iMessageNotifyRecipient") private var iMessageNotifyRecipient = ""
+    @State private var isTesting = false
+    @State private var showResultAlert = false
+    @State private var testSucceeded = false
+    @State private var testMessage = ""
 
     var body: some View {
         ScrollView {
@@ -23,8 +29,64 @@ struct UnlockSettingsView: View {
                         Text(t("use_screensaver_desc")).font(.caption).foregroundColor(.secondary)
                     }
                 }
+                Section {
+                    Toggle(isOn: $iMessageNotify) {
+                        Label("iMessage 通知", systemImage: "message.fill")
+                        Text("开启后解锁/锁屏时发送 iMessage 到 Apple Watch").font(.caption).foregroundColor(.secondary)
+                    }
+                    if iMessageNotify {
+                        HStack {
+                            Text("收件人")
+                            TextField("your@apple.id", text: $iMessageNotifyRecipient)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        if !iMessageNotifyRecipient.isEmpty {
+                            HStack {
+                                Button("测试锁定") {
+                                    runTest(kind: "锁定")
+                                }
+                                .disabled(isTesting)
+                                Button("测试解锁") {
+                                    runTest(kind: "解锁")
+                                }
+                                .disabled(isTesting)
+                                if isTesting {
+                                    ProgressView().controlSize(.small)
+                                        .padding(.leading, 4)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
+        }
+        .alert("iMessage 测试", isPresented: $showResultAlert) {
+            Button(testSucceeded ? "已收到" : "好") {
+                showResultAlert = false
+            }
+        } message: {
+            Text(testSucceeded ? "已发送，请确认 Apple Watch 是否收到" : testMessage)
+        }
+    }
+
+    private func runTest(kind: String) {
+        guard !isTesting else { return }
+        isTesting = true
+        let emoji = kind == "锁定" ? "🔒" : "🔓"
+        let title = "\(emoji) FUnlock 手动测试：\(kind)"
+        let message = "请确认 Apple Watch 是否收到"
+        iMessageNotifier.shared.sendTestNotification(title: title, message: message) { result in
+            isTesting = false
+            switch result {
+            case .success:
+                testSucceeded = true
+                testMessage = "已发送，请确认 Apple Watch 是否收到"
+            case .failure(let err):
+                testSucceeded = false
+                testMessage = err.message
+            }
+            showResultAlert = true
         }
     }
 }
