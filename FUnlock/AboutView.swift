@@ -10,7 +10,7 @@ struct AboutView: View {
                     Image(nsImage: NSApp.applicationIconImage ?? NSImage())
                         .frame(width: 64, height: 64)
 
-                    Text("FUnlock")
+                    Text("Funlock")
                         .font(.title2.bold())
 
                     Text("\(t("about_version")) \(versionString)")

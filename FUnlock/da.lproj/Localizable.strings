@@ -1,5 +1,5 @@
-"about" = "Om FUnlock";
-"bluetooth_power_warn" = "Bluetooth er slået fra. Du skal slå den til for at få FUnlock til at virke.";
+"about" = "Om Funlock";
+"bluetooth_power_warn" = "Bluetooth er slået fra. Du skal slå den til for at få Funlock til at virke.";
 "cancel" = "Annuller";
 "closer" = "⬆Nærmere";
 "device" = "Enhed";
@@ -17,7 +17,7 @@
 "minutes" = "minutter";
 "not_detected" = "Signal ikke fundet";
 "notification_device_away" = "Enheden er væk";
-"notification_locked" = "Denne computer er blevet låst af FUnlock";
+"notification_locked" = "Denne computer er blevet låst af Funlock";
 "notification_lost_signal" = "Signalet er tabt";
 "notification_update_available" = "Opdatering er tilgængelig.";
 "ok" = "OK";
@@ -25,7 +25,7 @@
 "password_info" = "Din adgangskode vil blive gemt sikkert i nøglering.";
 "password_not_set" = "Der er ikke indstillet et kodeord.";
 "pause_now_playing" = "Pause \"Afspilning nu\", mens den er låst";
-"quit" = "Afslut FUnlock";
+"quit" = "Afslut Funlock";
 "scanning" = "Scanning…";
 "seconds" = "seconder";
 "set_password" = "Indstil adgangskode…";
@@ -37,7 +37,7 @@
 "wake_on_proximity" = "Vågn op på nærhed";
 "wake_without_unlocking" = "Vågn op uden at låse op";
 "ax_revoked_title" = "Tilgængelighedstilladelse mistet";
-"ax_revoked_info" = "FUnlock kan ikke indtaste adgangskoden, fordi tilgængelighedstilladelsen blev trukket tilbage. Gå til Systemindstillinger > Privatliv og sikkerhed > Tilgængelighed og aktiver FUnlock igen.";
+"ax_revoked_info" = "Funlock kan ikke indtaste adgangskoden, fordi tilgængelighedstilladelsen blev trukket tilbage. Gå til Systemindstillinger > Privatliv og sikkerhed > Tilgængelighed og aktiver Funlock igen.";
 "open_settings" = "Åbn indstillinger";
 
 // MenuDashboardView
@@ -60,7 +60,7 @@
 "sleep_display_on_lock" = "Sleep Display on Lock";
 "defer_lock_on_input" = "Defer Lock on Input";
 "manual_lock_no_auto_unlock" = "Manual Lock No Auto Unlock";
-"about_funlock" = "About FUnlock";
+"about_funlock" = "About Funlock";
 "status_unlocked" = "Device Unlocked";
 "status_locked_away" = "Locked — Device Away";
 "status_locked_lost" = "Locked — Signal Lost";
@@ -94,7 +94,7 @@
 
 // PermissionCheckView
 "permission_check_title" = "Permission Check";
-"permission_check_desc" = "FUnlock needs the following permissions to work properly:";
+"permission_check_desc" = "Funlock needs the following permissions to work properly:";
 "permission_ax_name" = "Accessibility";
 "permission_ax_desc" = "Used to type password on lock screen";
 "permission_bt_name" = "Bluetooth";
@@ -103,18 +103,18 @@
 "permission_done" = "Done";
 "permission_refresh" = "Refresh Status";
 "permission_grant" = "Grant";
-"permission_check_window_title" = "FUnlock - Permission Check";
+"permission_check_window_title" = "Funlock - Permission Check";
 
 // OnboardingView
 "onboarding_next" = "Next";
 "onboarding_skip" = "Skip";
 "onboarding_start" = "Get Started";
-"onboarding_title_0" = "Welcome to FUnlock";
+"onboarding_title_0" = "Welcome to Funlock";
 "onboarding_title_1" = "Bind Bluetooth Device";
 "onboarding_title_2" = "Calibrate Signal Thresholds";
-"onboarding_desc_0" = "FUnlock uses Bluetooth signals to automatically lock and unlock your Mac. Unlock when close, lock when away.";
-"onboarding_desc_1" = "Bind your iPhone or Apple Watch, and FUnlock will detect device distance via Bluetooth signal.";
-"onboarding_desc_2" = "Run the calibration wizard to let FUnlock learn your environment for the best lock and unlock experience.";
+"onboarding_desc_0" = "Funlock uses Bluetooth signals to automatically lock and unlock your Mac. Unlock when close, lock when away.";
+"onboarding_desc_1" = "Bind your iPhone or Apple Watch, and Funlock will detect device distance via Bluetooth signal.";
+"onboarding_desc_2" = "Run the calibration wizard to let Funlock learn your environment for the best lock and unlock experience.";
 
 // CalibrationWizardView (additional)
 "calibration_samples_collected" = "Collected ";
@@ -143,7 +143,7 @@
 "already_latest" = "Allerede den nyeste version";
 "menu_lock_now" = "Lås nu";
 "menu_stats" = "Statistik";
-"menu_quit" = "Afslut FUnlock";
+"menu_quit" = "Afslut Funlock";
 
 "enabled" = "Aktiveret";
 "failed_store_password" = "Kunne ikke gemme adgangskode i nøglering";
@@ -235,9 +235,9 @@
 "diagnostics_filter_system" = "System";
 "diagnostics_filter_unlock" = "Unlock";
 "diagnostics_filter_user" = "User";
-"diagnostics_subtitle" = "FUnlock decision timeline";
+"diagnostics_subtitle" = "Funlock decision timeline";
 "reason_ax_revoked" = "Accessibility permission revoked";
-"reason_disabled" = "FUnlock is disabled";
+"reason_disabled" = "Funlock is disabled";
 "reason_display_sleep" = "Display slept";
 "reason_display_sleeping" = "Display sleeping";
 "reason_display_wake" = "Display woke";

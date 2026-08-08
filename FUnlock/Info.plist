@@ -13,13 +13,13 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>FUnlock</string>
+	<string>Funlock</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.8.32</string>
+	<string>2.8.33</string>
 	<key>CFBundleVersion</key>
-	<string>1268</string>
+	<string>1270</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -27,11 +27,11 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>FUnlock uses Bluetooth to detect devices.</string>
+	<string>Funlock uses Bluetooth to detect devices.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2019-2026 Takeshi Sone. 二次开发维护 by fuhahah.</string>
 	<key>NSInputMonitoringUsageDescription</key>
-	<string>FUnlock monitors keyboard and trackpad input to defer locking while you're working.</string>
+	<string>Funlock monitors keyboard and trackpad input to defer locking while you're working.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

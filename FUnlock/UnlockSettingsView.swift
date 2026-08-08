@@ -78,7 +78,7 @@ struct UnlockSettingsView: View {
     private func runTest(kind: TestKind) {
         guard !isTesting else { return }
         isTesting = true
-        let title = "\(kind.emoji) FUnlock 手动测试：\(kind.label)"
+        let title = "\(kind.emoji) Funlock 手动测试：\(kind.label)"
         let message = "请确认 Apple Watch 是否收到"
         iMessageNotifier.shared.sendTestNotification(title: title, message: message) { result in
             isTesting = false

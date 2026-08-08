@@ -1,5 +1,5 @@
-"about" = "About FUnlock";
-"bluetooth_power_warn" = "Bluetooth is turned off. For FUnlock to work, turn it on.";
+"about" = "About Funlock";
+"bluetooth_power_warn" = "Bluetooth is turned off. For Funlock to work, turn it on.";
 "cancel" = "Cancel";
 "closer" = "⬆Closer";
 "device" = "Device";
@@ -18,7 +18,7 @@
 "minutes" = "minutes";
 "not_detected" = "Signal not detected";
 "notification_device_away" = "Device is away";
-"notification_locked" = "This computer has been locked by FUnlock";
+"notification_locked" = "This computer has been locked by Funlock";
 "notification_lost_signal" = "Signal is lost";
 "notification_update_available" = "Update is available.";
 "ok" = "OK";
@@ -29,7 +29,7 @@
 "password_info" = "Your password will be securely stored in Keychain.";
 "password_not_set" = "Password is not set.";
 "pause_now_playing" = "Pause \"Now Playing\" while Locked";
-"quit" = "Quit FUnlock";
+"quit" = "Quit Funlock";
 "scanning" = "Scanning…";
 "seconds" = "seconds";
 "set_password" = "Set Password…";
@@ -41,7 +41,7 @@
 "wake_on_proximity" = "Wake on Proximity";
 "wake_without_unlocking" = "Wake without Unlocking";
 "ax_revoked_title" = "Accessibility Permission Lost";
-"ax_revoked_info" = "FUnlock cannot type the password because Accessibility permission was revoked. Please go to System Settings > Privacy & Security > Accessibility and re-enable FUnlock.";
+"ax_revoked_info" = "Funlock cannot type the password because Accessibility permission was revoked. Please go to System Settings > Privacy & Security > Accessibility and re-enable Funlock.";
 "open_settings" = "Open Settings";
 
 // MenuDashboardView - scenarioText
@@ -72,7 +72,7 @@
 "sleep_display_on_lock" = "Sleep Display on Lock";
 "defer_lock_on_input" = "Defer Lock on Input";
 "manual_lock_no_auto_unlock" = "Manual Lock No Auto Unlock";
-"about_funlock" = "About FUnlock";
+"about_funlock" = "About Funlock";
 "export_diagnostics" = "Export Diagnostics";
 "status_unlocked" = "Device Unlocked";
 "status_locked_away" = "Locked — Device Away";
@@ -107,7 +107,7 @@
 
 // PermissionCheckView
 "permission_check_title" = "Permission Check";
-"permission_check_desc" = "FUnlock needs the following permissions to work properly:";
+"permission_check_desc" = "Funlock needs the following permissions to work properly:";
 "permission_ax_name" = "Accessibility";
 "permission_ax_desc" = "Used to type password on lock screen";
 "permission_bt_name" = "Bluetooth";
@@ -116,18 +116,18 @@
 "permission_done" = "Done";
 "permission_refresh" = "Refresh Status";
 "permission_grant" = "Grant";
-"permission_check_window_title" = "FUnlock - Permission Check";
+"permission_check_window_title" = "Funlock - Permission Check";
 
 // OnboardingView
 "onboarding_next" = "Next";
 "onboarding_skip" = "Skip";
 "onboarding_start" = "Get Started";
-"onboarding_title_0" = "Welcome to FUnlock";
+"onboarding_title_0" = "Welcome to Funlock";
 "onboarding_title_1" = "Bind Bluetooth Device";
 "onboarding_title_2" = "Calibrate Signal Thresholds";
-"onboarding_desc_0" = "FUnlock uses Bluetooth signals to automatically lock and unlock your Mac. Unlock when close, lock when away.";
-"onboarding_desc_1" = "Bind your iPhone or Apple Watch, and FUnlock will detect device distance via Bluetooth signal.";
-"onboarding_desc_2" = "Run the calibration wizard to let FUnlock learn your environment for the best lock and unlock experience.";
+"onboarding_desc_0" = "Funlock uses Bluetooth signals to automatically lock and unlock your Mac. Unlock when close, lock when away.";
+"onboarding_desc_1" = "Bind your iPhone or Apple Watch, and Funlock will detect device distance via Bluetooth signal.";
+"onboarding_desc_2" = "Run the calibration wizard to let Funlock learn your environment for the best lock and unlock experience.";
 
 // CalibrationWizardView (additional)
 "calibration_samples_collected" = "Collected ";
@@ -196,7 +196,7 @@
 "already_latest" = "Already the latest version";
 "menu_lock_now" = "Lock Now";
 "menu_stats" = "Statistics";
-"menu_quit" = "Quit FUnlock";
+"menu_quit" = "Quit Funlock";
 
 // WiFi Pause
 "pause_on_wifi" = "Pause Unlock on Wi-Fi";
@@ -234,7 +234,7 @@
 "pause_on_wifi_desc" = "Pause auto-unlock when connected to specified Wi-Fi";
 "passive_mode_desc" = "Stop scanning; lock/unlock only on manual trigger";
 "diagnostics" = "Diagnostics";
-"diagnostics_subtitle" = "FUnlock decision timeline";
+"diagnostics_subtitle" = "Funlock decision timeline";
 "diagnostics_all" = "All";
 "diagnostics_filter_unlock" = "Unlock";
 "diagnostics_filter_lock" = "Lock";
@@ -249,7 +249,7 @@
 "reason_lock_buffer" = "Lock buffer active";
 "reason_manual_lock" = "Manual lock protection active";
 "reason_wifi_paused" = "Paused by matching Wi-Fi";
-"reason_disabled" = "FUnlock is disabled";
+"reason_disabled" = "Funlock is disabled";
 "reason_unlock_disabled" = "Auto-unlock is disabled";
 "reason_state_machine" = "Auto-unlock paused after repeated failures";
 "reason_ax_revoked" = "Accessibility permission revoked";
@@ -306,7 +306,7 @@
 "mb_unlocked" = "Unlocked";
 "mb_locked" = "Locked";
 "mb_disconnected" = "Disconnected";
-"mb_enable" = "Enable FUnlock";
+"mb_enable" = "Enable Funlock";
 "mb_update_failed" = "Update failed";
 "mb_signal_excellent" = "Excellent signal";
 "mb_signal_very_close" = "Very close";
@@ -323,7 +323,7 @@
 "profile_import_done" = "Imported: %d added, %d updated";
 "profile_export_failed" = "Export failed";
 "profile_import_failed" = "Import failed";
-"profile_export_filename" = "FUnlock-profiles.json";
+"profile_export_filename" = "Funlock-profiles.json";
 "wake_advance" = "Wake Advance";
 "pre_unlock_trigger" = "Pre-Unlock Trigger";
 "subtitle_pre" = "When signal reaches ";

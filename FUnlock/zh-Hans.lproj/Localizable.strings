@@ -1,5 +1,5 @@
-"about" = "关于FUnlock";
-"bluetooth_power_warn" = "蓝牙已关闭。要使FUnlock正常工作，请将其打开。";
+"about" = "关于Funlock";
+"bluetooth_power_warn" = "蓝牙已关闭。要使Funlock正常工作，请将其打开。";
 "cancel" = "取消";
 "closer" = "⬆接近";
 "device" = "设备列表";
@@ -18,7 +18,7 @@
 "minutes" = "分钟";
 "not_detected" = "未检测到信息";
 "notification_device_away" = "设备掉线";
-"notification_locked" = "本电脑已被FUnlock锁定";
+"notification_locked" = "本电脑已被Funlock锁定";
 "notification_lost_signal" = "信号丢失";
 "notification_update_available" = "发现新版本。";
 "ok" = "确定";
@@ -29,7 +29,7 @@
 "password_info" = "您的密码将安全地存储在钥匙串中。";
 "password_not_set" = "密码未设置。";
 "pause_now_playing" = "锁定时暂停\"播放中\"";
-"quit" = "退出FUnlock";
+"quit" = "退出Funlock";
 "scanning" = "扫描中…";
 "seconds" = "秒钟";
 "set_password" = "设置密码…";
@@ -41,7 +41,7 @@
 "wake_on_proximity" = "靠近唤醒";
 "wake_without_unlocking" = "唤醒时不需解锁";
 "ax_revoked_title" = "无障碍权限已丢失";
-"ax_revoked_info" = "FUnlock 无法输入密码，因为无障碍权限已被撤销。请前往「系统设置 > 隐私与安全性 > 辅助功能」重新启用 FUnlock。";
+"ax_revoked_info" = "Funlock 无法输入密码，因为无障碍权限已被撤销。请前往「系统设置 > 隐私与安全性 > 辅助功能」重新启用 Funlock。";
 "open_settings" = "打开设置";
 
 // MenuDashboardView - scenarioText
@@ -72,7 +72,7 @@
 "sleep_display_on_lock" = "锁定时关闭屏幕";
 "defer_lock_on_input" = "输入活动时暂缓锁定";
 "manual_lock_no_auto_unlock" = "手动锁屏不自动解锁";
-"about_funlock" = "关于 FUnlock";
+"about_funlock" = "关于 Funlock";
 "export_diagnostics" = "导出诊断信息";
 "status_unlocked" = "设备已解锁";
 "status_locked_away" = "已锁定 — 设备远离";
@@ -107,7 +107,7 @@
 
 // PermissionCheckView
 "permission_check_title" = "权限检查";
-"permission_check_desc" = "FUnlock 需要以下权限才能正常工作：";
+"permission_check_desc" = "Funlock 需要以下权限才能正常工作：";
 "permission_ax_name" = "辅助功能";
 "permission_ax_desc" = "用于在锁屏界面输入密码";
 "permission_bt_name" = "蓝牙";
@@ -116,18 +116,18 @@
 "permission_done" = "完成";
 "permission_refresh" = "刷新状态";
 "permission_grant" = "授权";
-"permission_check_window_title" = "FUnlock - 权限检查";
+"permission_check_window_title" = "Funlock - 权限检查";
 
 // OnboardingView
 "onboarding_next" = "下一步";
 "onboarding_skip" = "跳过";
 "onboarding_start" = "开始使用";
-"onboarding_title_0" = "欢迎使用 FUnlock";
+"onboarding_title_0" = "欢迎使用 Funlock";
 "onboarding_title_1" = "绑定蓝牙设备";
 "onboarding_title_2" = "校准信号阈值";
-"onboarding_desc_0" = "FUnlock 通过蓝牙信号自动锁屏和解锁你的 Mac，靠近即解锁，离开即锁屏。";
-"onboarding_desc_1" = "绑定你的 iPhone 或 Apple Watch，FUnlock 将通过蓝牙信号检测设备距离。";
-"onboarding_desc_2" = "运行校准向导，让 FUnlock 学习你的使用环境，获得最佳的锁屏和解锁体验。";
+"onboarding_desc_0" = "Funlock 通过蓝牙信号自动锁屏和解锁你的 Mac，靠近即解锁，离开即锁屏。";
+"onboarding_desc_1" = "绑定你的 iPhone 或 Apple Watch，Funlock 将通过蓝牙信号检测设备距离。";
+"onboarding_desc_2" = "运行校准向导，让 Funlock 学习你的使用环境，获得最佳的锁屏和解锁体验。";
 
 // CalibrationWizardView (additional)
 "calibration_samples_collected" = "已采集 ";
@@ -194,7 +194,7 @@
 "already_latest" = "已是最新版本";
 "menu_lock_now" = "立即锁定";
 "menu_stats" = "解锁统计";
-"menu_quit" = "退出 FUnlock";
+"menu_quit" = "退出 Funlock";
 
 // WiFi Pause
 "pause_on_wifi" = "连接指定Wi-Fi时暂停解锁";
@@ -221,7 +221,7 @@
 
 // Setting descriptions (toggle row)
 "enable_desc" = "开启后启用自动锁定和解锁";
-"launch_at_login_desc" = "登录时自动启动 FUnlock";
+"launch_at_login_desc" = "登录时自动启动 Funlock";
 "wake_on_proximity_desc" = "检测到设备靠近时唤醒屏幕";
 "wake_without_unlock_desc" = "唤醒屏幕但不解锁";
 "use_screensaver_desc" = "锁定时启动屏幕保护程序";
@@ -232,7 +232,7 @@
 "pause_on_wifi_desc" = "连接指定 Wi-Fi 时暂停自动解锁";
 "passive_mode_desc" = "停止扫描，仅在手动触发时锁定/解锁";
 "diagnostics" = "诊断";
-"diagnostics_subtitle" = "FUnlock 决策时间线";
+"diagnostics_subtitle" = "Funlock 决策时间线";
 "diagnostics_all" = "全部";
 "diagnostics_filter_unlock" = "解锁";
 "diagnostics_filter_lock" = "锁屏";
@@ -247,7 +247,7 @@
 "reason_lock_buffer" = "锁屏缓冲期内";
 "reason_manual_lock" = "手动锁屏保护中";
 "reason_wifi_paused" = "命中暂停 Wi-Fi";
-"reason_disabled" = "FUnlock 已停用";
+"reason_disabled" = "Funlock 已停用";
 "reason_unlock_disabled" = "自动解锁已停用";
 "reason_state_machine" = "连续失败后自动解锁已暂停";
 "reason_ax_revoked" = "辅助功能权限被撤销";
@@ -304,7 +304,7 @@
 "mb_unlocked" = "已解锁";
 "mb_locked" = "已锁定";
 "mb_disconnected" = "未连接";
-"mb_enable" = "启用 FUnlock";
+"mb_enable" = "启用 Funlock";
 "mb_update_failed" = "更新失败";
 "mb_signal_excellent" = "信号极佳";
 "mb_signal_very_close" = "非常近";
@@ -321,7 +321,7 @@
 "profile_import_done" = "已导入：新增 %d，更新 %d";
 "profile_export_failed" = "导出失败";
 "profile_import_failed" = "导入失败";
-"profile_export_filename" = "FUnlock-配置.json";
+"profile_export_filename" = "Funlock-配置.json";
 
 // 高级距离阈值配置（总览）
 "wake_advance" = "唤醒提前量";

@@ -150,7 +150,7 @@ final class FUnlockStateMachine {
     /// 发送本地通知，提醒用户连续解锁失败已达上限
     func sendLocalNotification() {
         let content = UNMutableNotificationContent()
-        content.title = "FUnlock"
+        content.title = "Funlock"
         content.body = "连续自动解锁失败已达上限，已暂停自动解锁。点击此通知恢复。"
         content.sound = .default
 

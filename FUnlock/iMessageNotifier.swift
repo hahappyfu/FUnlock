@@ -159,7 +159,7 @@ final class iMessageNotifier {
     /// 按错误码映射为中文提示
     static func friendlyError(number: Int, message: String) -> String {
         if number == -1743 {
-            return "Messages 未授权：请在 系统设置 → 隐私与安全性 → 自动化 中允许 FUnlock 控制 Messages"
+            return "Messages 未授权：请在 系统设置 → 隐私与安全性 → 自动化 中允许 Funlock 控制 Messages"
         }
         if message.localizedCaseInsensitiveContains("buddy") || message.localizedCaseInsensitiveContains("not found") {
             return "收件人无效：请检查号码/账号是否为 iMessage 好友（需先在 Messages 中有会话）"

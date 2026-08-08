@@ -235,15 +235,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             NSRect(origin: .zero, size: img?.size ?? .zero).fill(using: .sourceAtop)
             img?.unlockFocus()
             button.image = img
-            button.toolTip = "FUnlock — Unlocked"
+            button.toolTip = "Funlock — Unlocked"
         } else if manager.connected {
             // 已连接但锁屏：默认模板图标
             button.image = NSImage(named: "StatusBarConnected")
-            button.toolTip = "FUnlock — Connected"
+            button.toolTip = "Funlock — Connected"
         } else {
             // 未连接
             button.image = NSImage(named: "StatusBarDisconnected")
-            button.toolTip = "FUnlock — Disconnected"
+            button.toolTip = "Funlock — Disconnected"
         }
     }
 
@@ -324,7 +324,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func showSimpleAlert(title: String) {
         let alert = NSAlert()
-        alert.messageText = "FUnlock"
+        alert.messageText = "Funlock"
         alert.informativeText = title
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
@@ -492,7 +492,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.image = NSImage(named: "StatusBarDisconnected")
             button.target = self
             button.action = #selector(toggleMenuBarPopover(_:))
-            button.toolTip = "FUnlock"
+            button.toolTip = "Funlock"
         }
 
         let hosting = NSHostingController(rootView: MenuBarPopoverView(manager: manager, fun: fun) { [weak self] action in
@@ -647,7 +647,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let dashboard = MainWindowView(manager: manager, fun: fun)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
-        settingsWindow.title = "FUnlock"
+        settingsWindow.title = "Funlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
         settingsWindow.contentMinSize = NSSize(width: 560, height: 420)
         settingsWindow.isReleasedWhenClosed = false
