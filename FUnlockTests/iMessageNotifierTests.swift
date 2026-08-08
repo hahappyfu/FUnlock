@@ -40,6 +40,32 @@ final class iMessageNotifierTests: XCTestCase {
         XCTAssertTrue(msg.contains("boom"))
     }
 
+    // MARK: - parseScriptError
+
+    func testParseScriptErrorExtracts1743() {
+        let output = "36:53: execution error: \u{201C}Messages\u{201D}\u{9047}\u{5230}\u{4E00}\u{4E2A}\u{9519}\u{8BEF}\u{FF1A}Not authorized to send Apple events to Messages. (-1743)"
+        let msg = iMessageNotifier.parseScriptError(output: output)
+        XCTAssertTrue(msg.contains("授权"), "应识别 -1743 为授权问题，实际: \(msg)")
+    }
+
+    func testParseScriptErrorExtractsBuddyNotFound() {
+        let output = "execution error: cant find buddy \u{201C}abc\u{201D} (-1708)"
+        let msg = iMessageNotifier.parseScriptError(output: output)
+        XCTAssertTrue(msg.contains("收件人"), "buddy 缺失应映射为收件人无效，实际: \(msg)")
+    }
+
+    func testParseScriptErrorUnknownCodeKeepsMessage() {
+        let output = "10:20: execution error: whatever happened. (-9999)"
+        let msg = iMessageNotifier.parseScriptError(output: output)
+        XCTAssertTrue(msg.contains("whatever happened"), "应保留原始信息，实际: \(msg)")
+        XCTAssertTrue(msg.contains("-9999"), "应保留错误码，实际: \(msg)")
+    }
+
+    func testParseScriptErrorEmptyOutput() {
+        let msg = iMessageNotifier.parseScriptError(output: "")
+        XCTAssertTrue(msg.contains("osascript"), "空输出应提示 osascript 失败，实际: \(msg)")
+    }
+
     // MARK: - sendTestNotification
 
     func testTestNotificationFailsFastWhenDisabled() {

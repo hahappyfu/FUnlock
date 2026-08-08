@@ -101,6 +101,9 @@ final class iMessageNotifier {
     }
 
     /// 执行 AppleScript 发送 iMessage。成功返回 nil，失败返回可读错误描述。
+    /// 注意：通过外部 /usr/bin/osascript 执行，而非进程内 NSAppleScript。
+    /// LSUIElement（菜单栏）App 进程内 NSAppleScript 触发 TCC AppleEvents 检查时，
+    /// 系统不弹授权框并静默拒绝（-1743），外部 osascript 可正常弹出授权提示。
     @discardableResult
     private func runAppleScript(recipient: String, text: String) -> String? {
         let script = """
@@ -110,19 +113,51 @@ final class iMessageNotifier {
             send "\(escapedAppleScriptString(text))" to targetBuddy
         end tell
         """
-        guard let appleScript = NSAppleScript(source: script) else {
-            return "AppleScript 源码编译失败"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            if task.terminationStatus == 0 { return nil }
+            return Self.parseScriptError(output: output)
+        } catch {
+            return "无法启动 osascript：\(error.localizedDescription)"
         }
-        var errorInfo: NSDictionary?
-        appleScript.executeAndReturnError(&errorInfo)
-        guard let errorInfo = errorInfo else { return nil }
-        return Self.friendlyError(errorInfo: errorInfo as? [String: Any] ?? [:])
+    }
+
+    /// 解析 osascript 错误输出（格式形如 "36:53: execution error: Messages 遇到一个错误：xxx。(-1743)"）
+    static func parseScriptError(output: String) -> String {
+        guard !output.isEmpty else { return "发送失败：osascript 退出（状态非 0）" }
+        // 提取错误码（形如 "(-1743)" 或 "（-1743）"）
+        let number: Int
+        if let match = output.range(of: #"\((-?\d+)\)"#, options: .regularExpression) {
+            number = Int(output[match].replacingOccurrences(of: "(", with: "")
+                                        .replacingOccurrences(of: ")", with: "")) ?? -1
+        } else {
+            number = -1
+        }
+        // 提取错误信息主体（去掉前缀 "xx:xx: execution error: " 与尾部错误码）
+        let trimmed = output
+            .replacingOccurrences(of: #"^\d+:\d+: execution error: "#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return friendlyError(number: number, message: trimmed)
     }
 
     /// 手动测试：把 NSAppleScript 错误字典转换为用户可读的中文提示
     static func friendlyError(errorInfo: [String: Any]) -> String {
         let number = errorInfo["NSAppleScriptErrorNumber"] as? Int ?? -1
         let message = errorInfo["NSAppleScriptErrorMessage"] as? String ?? "未知错误"
+        return friendlyError(number: number, message: message)
+    }
+
+    /// 按错误码映射为中文提示
+    static func friendlyError(number: Int, message: String) -> String {
         if number == -1743 {
             return "Messages 未授权：请在 系统设置 → 隐私与安全性 → 自动化 中允许 FUnlock 控制 Messages"
         }
