@@ -178,7 +178,8 @@ struct OverviewView: View {
                 )
                 .frame(width: 110, height: 110)
                 .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 0.5), value: signalStrength)
+                // 高频仪表盘数据：仅保留 0.1s 防闪烁过渡（原 0.5s easeInOut 让实时信号显得迟钝）
+                .animation(.easeOut(duration: 0.1), value: signalStrength)
 
             VStack(spacing: 2) {
                 Text(manager.rssi.map { "\($0)" } ?? "—")
