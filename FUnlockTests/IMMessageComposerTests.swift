@@ -76,7 +76,7 @@ final class IMMessageComposerTests: XCTestCase {
     // MARK: - normalizeRecipient
 
     func testNormalizePhoneWith86() {
-        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+86 138-1234 5678"), "8613812345678")
+        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+86 138-1234 5678"), "+8613812345678")
     }
 
     func testNormalizeLocalPhoneStays() {
@@ -85,6 +85,14 @@ final class IMMessageComposerTests: XCTestCase {
 
     func testNormalizeEmail() {
         XCTAssertEqual(IMMessageComposer.normalizeRecipient(" abc@icloud.com "), "abc@icloud.com")
+    }
+
+    func testNormalizePlusPrefixKept() {
+        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+8615167104090"), "+8615167104090", "国际格式加号必须保留，否则 buddy 匹配失败")
+    }
+
+    func testNormalizePhoneWith86Space() {
+        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+86 138-1234 5678"), "+8613812345678", "清洗空格/横线但保留加号")
     }
 
     func testNormalizeEmpty() {

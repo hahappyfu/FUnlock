@@ -48,18 +48,17 @@ enum IMMessageComposer {
         return (title, parts.joined(separator: " · "))
     }
 
-    /// 收件人规范化：`+86 138-1234 5678 → 8613812345678`；邮箱原样（去首尾空白）
+    /// 收件人规范化：`+86 138-1234 5678 → +8613812345678`；邮箱原样（去首尾空白）
+    /// 注意：保留 `+` 国际前缀，否则 buddy 匹配失败（iMessage 按 +86... 国际格式寻址）
     static func normalizeRecipient(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         if trimmed.contains("@") { return trimmed }
-        let cleaned = trimmed
+        return trimmed
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: "(", with: "")
             .replacingOccurrences(of: ")", with: "")
-            .replacingOccurrences(of: "+", with: "")
-        return cleaned
     }
 
     // MARK: - 私有

@@ -28,7 +28,9 @@ struct IMSettingsCard: View {
             let parts = r.split(separator: "@")
             return parts.count == 2 && !parts[0].isEmpty && parts[1].contains(".")
         }
-        return r.count >= 10 && r.count <= 15 && r.allSatisfy(\.isNumber)
+        // 手机号：允许可选 "+" 国际前缀，其余须为数字（10-15 位）
+        let digits = r.hasPrefix("+") ? String(r.dropFirst()) : r
+        return digits.count >= 10 && digits.count <= 15 && digits.allSatisfy(\.isNumber)
     }
 
     var body: some View {
