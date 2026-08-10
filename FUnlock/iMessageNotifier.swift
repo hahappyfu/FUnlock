@@ -24,9 +24,16 @@ final class iMessageNotifier {
     private let lock = NSLock()
 
     /// 测试注入点：替换真实 AppleScript 执行，便于单测（默认 nil）。
-    /// 仅供测试进程在调用 sendTestNotification 之前设置；运行期恒为 nil，
+    /// 仅供测试进程在调用 send/sendTestNotification 之前设置；运行期恒为 nil，
     /// 不要在生产代码赋值，避免未来并行调用产生竞态。
     var scriptRunner: ((String, String) -> String?)?
+
+    /// 仅供测试：清空防抖时间戳，避免测试间相互影响。
+    func resetDebounceForTesting() {
+        lock.lock()
+        lastSendTime.removeAll()
+        lock.unlock()
+    }
 
     /// 开关 / 收件人读取（复用现有 Keys enum）
     private var enabled: Bool {
@@ -34,6 +41,45 @@ final class iMessageNotifier {
     }
     private var recipient: String? {
         UserDefaults.standard.string(forKey: Keys.recipient)
+    }
+
+    /// 语义化事件发送：锁屏/解锁时由 FUnManager 调用。失败静默丢弃（锁时不打扰用户）。
+    /// 防抖按事件类型（lock/unlock/test）各 30 秒。
+    func send(_ event: IMEvent) {
+        guard enabled else { return }
+        guard let recipient = recipient, !recipient.isEmpty else { return }
+
+        let typeKey: String
+        switch event {
+        case .locked: typeKey = "lock"
+        case .unlocked: typeKey = "unlock"
+        case .test: typeKey = "test"
+        }
+
+        // 同类型 30 秒内防抖
+        let now = Date()
+        lock.lock()
+        if let last = lastSendTime[typeKey], now.timeIntervalSince(last) < debounceInterval {
+            lock.unlock()
+            return
+        }
+        lastSendTime[typeKey] = now
+        lock.unlock()
+
+        let (title, body) = IMMessageComposer.compose(event)
+        let text = "\(title)\n\(body)"
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let err: String?
+            if let runner = self.scriptRunner {
+                err = runner(recipient, text)
+            } else {
+                err = self.runAppleScript(recipient: recipient, text: text)
+            }
+            if let err = err {
+                Log.ble.debug("[iMessage] 发送失败（静默丢弃）: \(err)")
+            }
+        }
     }
 
     /// 发送一条 iMessage 给自己（异步、防抖、失败静默）
