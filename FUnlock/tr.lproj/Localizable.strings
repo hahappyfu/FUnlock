@@ -283,3 +283,20 @@
 "sidebar_toggle" = "Show or Hide Sidebar";
 "diagnostics_today" = "Today";
 "diagnostics_yesterday" = "Yesterday";
+
+// iMessage 通知（IMMessageComposer / IMSettingsCard）
+"im_title_locked" = "Funlock: Mac Kilitlendi";
+"im_title_unlocked" = "Funlock: Mac Kilidi Açıldı";
+"im_body_time_today" = "Bugün %@";
+"im_body_time_yesterday" = "Dün %@";
+"im_body_signal" = "Sinyal %d dBm";
+"im_settings_title" = "iMessage Bildirimleri";
+"im_settings_desc" = "Kilit/kilit açma sırasında Apple Watch'a iMessage gönderir";
+"im_recipient_label" = "Alıcı";
+"im_recipient_placeholder" = "Telefon numarası veya Apple Kimliği";
+"im_recipient_invalid" = "Geçerli bir telefon numarası (10–15 hane) veya e-posta girin";
+"im_authorized" = "Yetkili";
+"im_unauthorized" = "Yetkisiz";
+"im_go_authorize" = "Yetki Ver";
+"im_send_test" = "Test Bildirimi Gönder";
+"im_test_success" = "Gönderildi. Apple Watch'unuzu kontrol edin.";

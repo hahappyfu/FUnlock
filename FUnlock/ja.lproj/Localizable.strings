@@ -287,3 +287,20 @@
 "sidebar_toggle" = "Show or Hide Sidebar";
 "diagnostics_today" = "Today";
 "diagnostics_yesterday" = "Yesterday";
+
+// iMessage 通知（IMMessageComposer / IMSettingsCard）
+"im_title_locked" = "Funlock：Mac がロックされました";
+"im_title_unlocked" = "Funlock：Mac のロックが解除されました";
+"im_body_time_today" = "今日 %@";
+"im_body_time_yesterday" = "昨日 %@";
+"im_body_signal" = "信号 %d dBm";
+"im_settings_title" = "iMessage 通知";
+"im_settings_desc" = "ロック/ロック解除時に Apple Watch へ iMessage を送信";
+"im_recipient_label" = "送信先";
+"im_recipient_placeholder" = "電話番号または Apple ID";
+"im_recipient_invalid" = "有効な電話番号（10〜15 桁）またはメールアドレスを入力してください";
+"im_authorized" = "承認済み";
+"im_unauthorized" = "未承認";
+"im_go_authorize" = "承認する";
+"im_send_test" = "テスト通知を送信";
+"im_test_success" = "送信しました。Apple Watch を確認してください";

@@ -283,3 +283,20 @@
 "sidebar_toggle" = "Show or Hide Sidebar";
 "diagnostics_today" = "Today";
 "diagnostics_yesterday" = "Yesterday";
+
+// iMessage 通知（IMMessageComposer / IMSettingsCard）
+"im_title_locked" = "Funlock: Mac gesperrt";
+"im_title_unlocked" = "Funlock: Mac entsperrt";
+"im_body_time_today" = "Heute %@";
+"im_body_time_yesterday" = "Gestern %@";
+"im_body_signal" = "Signal %d dBm";
+"im_settings_title" = "iMessage-Benachrichtigungen";
+"im_settings_desc" = "Sendet beim Sperren/Entsperren eine iMessage an die Apple Watch";
+"im_recipient_label" = "Empfänger";
+"im_recipient_placeholder" = "Telefonnummer oder Apple-ID";
+"im_recipient_invalid" = "Gültige Telefonnummer (10–15 Ziffern) oder E-Mail eingeben";
+"im_authorized" = "Autorisiert";
+"im_unauthorized" = "Nicht autorisiert";
+"im_go_authorize" = "Autorisieren";
+"im_send_test" = "Testbenachrichtigung senden";
+"im_test_success" = "Gesendet. Bitte auf der Apple Watch prüfen.";

@@ -283,3 +283,20 @@
 "sidebar_toggle" = "Show or Hide Sidebar";
 "diagnostics_today" = "Today";
 "diagnostics_yesterday" = "Yesterday";
+
+// iMessage 通知（IMMessageComposer / IMSettingsCard）
+"im_title_locked" = "Funlock: Mac låst";
+"im_title_unlocked" = "Funlock: Mac låst opp";
+"im_body_time_today" = "I dag %@";
+"im_body_time_yesterday" = "I går %@";
+"im_body_signal" = "Signal %d dBm";
+"im_settings_title" = "iMessage-varsler";
+"im_settings_desc" = "Sender en iMessage til Apple Watch ved låsing/opplåsing";
+"im_recipient_label" = "Mottaker";
+"im_recipient_placeholder" = "Telefonnummer eller Apple-ID";
+"im_recipient_invalid" = "Angi et gyldig telefonnummer (10–15 siffer) eller en e-post";
+"im_authorized" = "Autorisert";
+"im_unauthorized" = "Ikke autorisert";
+"im_go_authorize" = "Autoriser";
+"im_send_test" = "Send testvarsel";
+"im_test_success" = "Sendt. Sjekk Apple Watch.";
