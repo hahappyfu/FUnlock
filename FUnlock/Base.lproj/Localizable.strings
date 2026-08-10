@@ -337,3 +337,13 @@
 "im_body_time_today" = "Today %@";
 "im_body_time_yesterday" = "Yesterday %@";
 "im_body_signal" = "Signal %d dBm";
+"im_settings_title" = "iMessage Notifications";
+"im_settings_desc" = "Send a message to your Apple Watch on lock/unlock";
+"im_recipient_label" = "Recipient";
+"im_recipient_placeholder" = "Phone number or Apple ID";
+"im_recipient_invalid" = "Enter a valid phone number (10-15 digits) or email";
+"im_authorized" = "Authorized";
+"im_unauthorized" = "Not authorized";
+"im_go_authorize" = "Authorize";
+"im_send_test" = "Send Test Notification";
+"im_test_success" = "Sent. Check your Apple Watch.";

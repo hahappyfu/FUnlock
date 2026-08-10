@@ -337,3 +337,13 @@
 "im_body_time_today" = "今天 %@";
 "im_body_time_yesterday" = "昨天 %@";
 "im_body_signal" = "信号 %d dBm";
+"im_settings_title" = "iMessage 通知";
+"im_settings_desc" = "解锁/锁屏时发送 iMessage 到 Apple Watch";
+"im_recipient_label" = "收件人";
+"im_recipient_placeholder" = "手机号或 Apple ID";
+"im_recipient_invalid" = "请输入有效的手机号（10-15 位数字）或邮箱";
+"im_authorized" = "已授权";
+"im_unauthorized" = "未授权";
+"im_go_authorize" = "去授权";
+"im_send_test" = "发送测试通知";
+"im_test_success" = "已发送，请查看 Apple Watch";
