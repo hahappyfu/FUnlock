@@ -82,28 +82,6 @@ final class iMessageNotifier {
         }
     }
 
-    /// 发送一条 iMessage 给自己（异步、防抖、失败静默）
-    func sendNotification(title: String, message: String) {
-        // 开关未启用或收件人为空则不发送
-        guard UserDefaults.standard.bool(forKey: Keys.enabled) else { return }
-        guard let recipient = UserDefaults.standard.string(forKey: Keys.recipient), !recipient.isEmpty else { return }
-
-        // 同状态 30 秒内防抖
-        let now = Date()
-        lock.lock()
-        if let last = lastSendTime[title], now.timeIntervalSince(last) < debounceInterval {
-            lock.unlock()
-            return
-        }
-        lastSendTime[title] = now
-        lock.unlock()
-
-        let text = "\(title)\n\(message)"
-        queue.async { [weak self] in
-            self?.runAppleScript(recipient: recipient, text: text)
-        }
-    }
-
     /// 手动连通性测试：发送并返回结果（成功 .success, 失败 .failure+原因）。
     /// 绕过 30s 防抖、不写 lastSendTime —— 测试就是要反复验证。
     /// completion 在主线程回调。

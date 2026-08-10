@@ -405,7 +405,7 @@ final class FUnManager: ObservableObject {
         ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
         let lockReason: DecisionReason = (reason == "lost") ? .lockedLost : .lockedAway
         recordLock(lockReason)
-        iMessageNotifier.shared.sendNotification(title: "🔒 Funlock: Mac已锁屏", message: "reason=\(reason)")
+        iMessageNotifier.shared.send(.locked(reason: reason, rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
         // P3: 形子模式遥测 — 记录自动锁屏事件
         TelemetryLogger.shared.log(
             event: .autoLock,
@@ -699,7 +699,7 @@ final class FUnManager: ObservableObject {
         } else {
             recordUnlockAttempt()
             recordUnlock(.success, reason: .unlockSuccess)
-            iMessageNotifier.shared.sendNotification(title: "🔓 Funlock: Mac已解锁", message: "自动解锁成功")
+            iMessageNotifier.shared.send(.unlocked(rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
             logDebug(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
             // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
