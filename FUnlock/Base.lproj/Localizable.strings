@@ -330,3 +330,10 @@
 "wake_subtitle_post" = ", the screen lights up early.";
 "pre_subtitle_post" = ", pre-unlock prep begins.";
 "stats_recent_10" = "Latest 10";
+
+// iMessage 通知（IMMessageComposer）
+"im_title_locked" = "Funlock: Mac Locked";
+"im_title_unlocked" = "Funlock: Mac Unlocked";
+"im_body_time_today" = "Today %@";
+"im_body_time_yesterday" = "Yesterday %@";
+"im_body_signal" = "Signal %d dBm";

@@ -44,9 +44,9 @@ enum IMMessageComposer {
 - `normalizeRecipient`：去空格/`-`/`+` 前缀；若为纯数字且以 86 开头、共 13 位则保留；`+86 138-1234 5678 → 8613812345678`；邮箱原样返回（去首尾空白）
 - 文案全部经 `t("im_...")` 取（key 见任务 5，先在 Base.lproj 加 zh 文案；测试环境 `t()` 返回 key 本身即可，断言用 key 存在性 + 组装逻辑而非具体中文）
 - 时间格式：今天/昨天 + HH:mm（Calendar.isDateInToday/isDateInYesterday）
-- 降级：deviceName 为空省略「 · 设备名」段；rssi 为 nil 省略「 · 信号 x dBm」段
+- 降级：deviceName 为空省略设备名段；rssi 为 nil 省略信号段；两者都有时合并为一段「设备名 信号 x dBm」（正文最低限度 = 时间段）；用数组 `join(" · ")` 组装
 - 锁定标题 `t("im_title_locked")`、解锁 `t("im_title_unlocked")`；测试事件与解锁共用文案
-- 信号显示：`Int(rssi.rounded())` 取整
+- 信号显示：`Int(rssi.rounded())` 取整；信号段模板 `im_body_signal`（含设备名时前缀拼接设备名，无独立设备段模板）
 
 测试（IMMessageComposerTests）：
 1. 锁定事件 → 标题含「已锁定」key、正文含时间与设备名与信号
@@ -104,7 +104,7 @@ enum IMMessageComposer {
 
 - `im_title_locked` / `im_title_unlocked`：锁定/解锁标题（Funlock：Mac 已锁定 / 已解锁）
 - `im_body_time_today` / `im_body_time_yesterday`：`今天 %@` / `昨天 %@`（zh-Hans 用全角冒号或空格拼接，按规格示例 `今天 23:45 · iPhone 信号 -88 dBm` 实现：composer 内拼装，key 仅含「今天/昨天」与分隔符 ` · `）
-- `im_body_device` / `im_body_signal`：设备名、信号段模板（`%@ 信号 %d dBm`）
+- `im_body_signal`：信号段模板（`信号 %d dBm`；设备名非空时在其前拼接「设备名 」）
 - `im_settings_title` / `im_settings_desc`：卡片标题/副标题
 - `im_recipient_placeholder` / `im_recipient_invalid`：输入框占位（手机号或 Apple ID）/校验错误
 - `im_authorized` / `im_unauthorized` / `im_go_authorize`：已授权 ✓ / 未授权 / 去授权 →

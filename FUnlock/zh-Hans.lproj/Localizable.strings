@@ -330,3 +330,10 @@
 "wake_subtitle_post" = " 时，提前点亮屏幕。";
 "pre_subtitle_post" = " 时，进入预热准备状态。";
 "stats_recent_10" = "最新 10 条";
+
+// iMessage 通知（IMMessageComposer）
+"im_title_locked" = "Funlock：Mac 已锁定";
+"im_title_unlocked" = "Funlock：Mac 已解锁";
+"im_body_time_today" = "今天 %@";
+"im_body_time_yesterday" = "昨天 %@";
+"im_body_signal" = "信号 %d dBm";

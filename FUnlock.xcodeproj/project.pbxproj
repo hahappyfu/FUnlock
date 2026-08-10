@@ -61,6 +61,8 @@
 		AA0000DD00000007 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000017 /* NetworkSettingsView.swift */; };
 		AA0000DD00000008 /* ConfigSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000018 /* ConfigSettingsView.swift */; };
 		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
+		AA0000DD0000000A /* IMMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001A /* IMMessageComposer.swift */; };
+		IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000002 /* IMMessageComposerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +160,8 @@
 		AA0000DD00000017 /* NetworkSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000018 /* ConfigSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
+		AA0000DD0000001A /* IMMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposer.swift; sourceTree = "<group>"; };
+		IM0000010000000100000002 /* IMMessageComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -265,6 +269,7 @@
 				AA0000DD00000017 /* NetworkSettingsView.swift */,
 				AA0000DD00000018 /* ConfigSettingsView.swift */,
 				AA0000DD00000019 /* iMessageNotifier.swift */,
+				AA0000DD0000001A /* IMMessageComposer.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -287,6 +292,7 @@
 				DT0000010000000100000001 /* DecisionLoggerTests.swift */,
 				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
+				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -511,6 +517,7 @@
 				AA0000DD00000007 /* NetworkSettingsView.swift in Sources */,
 				AA0000DD00000008 /* ConfigSettingsView.swift in Sources */,
 				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
+				AA0000DD0000000A /* IMMessageComposer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -523,6 +530,7 @@
 				DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */,
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
+				IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
