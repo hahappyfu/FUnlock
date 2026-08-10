@@ -78,17 +78,33 @@
 **修复：** `iMessageNotifier.swift` 的 `runAppleScript` 改用 NSTask + `/usr/bin/osascript`，新增 `parseScriptError` 解析 stderr（错误码 -1743/buddy 映射），`friendlyError` 拆分为 number/message 版。新增 4 个解析测试。
 - 提交：`043e14f`，版本 2.8.32，358 测试通过，用户实测「成功，收到消息」
 
+### 8. iMessage 通知产品化（已完成，2026-08-10 v2.8.35）
+
+**规格：** `docs/superpowers/specs/2026-08-08-imessage-productization-design.md`（已批准）
+
+**交付内容：**
+- **通知文案产品化**：极简状态通知「Funlock：Mac 已锁定/已解锁」+ 正文「今天 23:45 · iPhone 信号 -88 dBm」，去掉 `reason=lost` 等内部调试信息
+- **架构重构（方案 A）**：`FUnManager` → `iMessageNotifier.send(.locked/.unlocked)` 事件 API → `IMMessageComposer` 纯函数组装（可单测）
+  - 防抖改为按事件类型（lock/unlock/test）各 30s；`sendNotification(title:message:)` 已删除
+  - `IMSettingsCard`：卡片式设置（开关/收件人即时校验/授权状态行/单个「发送测试通知」+ 行内结果，未授权时引导打开自动化设置页）
+- **本地化**：iMessage 文案 8 语言齐备（Base/da/de/ja/nb/sv/tr/zh-Hans）
+- **测试**：新增 `IMMessageComposerTests` 15 个 + `iMessageNotifierTests` 新增 4 个，全量 377 通过
+
+**提交链：** `c53428d`（规格）→ `1b08f06`（计划）→ `35bdc36`（Composer）→ `64a102d`（事件 API）→ `b64cbb9`（FUnManager 迁移）→ `8a1c973`（IMSettingsCard）→ `9376af2`（i18n）→ `2e60f25`（2.8.35）
+- 版本 2.8.35 已部署 `/Applications/FUnlock.app`（PID 58412 运行中），已推送 github
+
 ## 当前分支状态
 
 ```
 分支：feat/diagnostics-tab
-最新提交：043e14f (iMessage 外部 osascript 修复)
-版本：2.8.32 (已部署 /Applications/FUnlock.app)
+最新提交：2e60f25 (chore: 版本 2.8.35)
+版本：2.8.35 (已部署 /Applications/FUnlock.app)
 ```
 
 ## 待办
 
 - [x] 用户测试 iMessage 通知功能（2.8.32 已验证，成功收到消息）
+- [ ] 用户实测 2.8.35：锁屏/解锁各收一条 iMessage（检查文案格式）、设置页测试按钮、非法收件人校验
 - [ ] 测试通过后合并到 main
 - [ ] 用户按需测试自动解锁/锁屏的 iMessage 通知（非手动测试路径）
 
