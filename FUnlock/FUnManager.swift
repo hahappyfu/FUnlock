@@ -208,7 +208,9 @@ final class FUnManager: ObservableObject {
         unlockRSSI = value
         fun.unlockRSSI = value
         UserDefaults.standard.set(value, forKey: "unlockRSSI")
-        thresholdVersion += 1
+        if value != FUn().UNLOCK_DISABLED {
+            setLockRSSI(max(value - lockUnlockDelayGap, Int(OverviewView.RSSIRange.min)))
+        }
     }
 
     /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前（自动钳制到 0-20）

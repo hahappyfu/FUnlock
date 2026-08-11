@@ -3695,9 +3695,9 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         manager.fun.unlockRSSI = -60
         manager.fun.lockRSSI = -80
 
-        // 设置新的阈值
-        manager.setLockRSSI(-75)
+        // 设置新的阈值（先解锁触发联动、再手动覆盖锁定，验证锁定滑杆可手动覆盖）
         manager.setUnlockRSSI(-55)
+        manager.setLockRSSI(-75)
         XCTAssertEqual(manager.lockRSSI, -75, "lockRSSI 应更新为 -75")
         XCTAssertEqual(manager.unlockRSSI, -55, "unlockRSSI 应更新为 -55")
         XCTAssertEqual(manager.fun.lockRSSI, -75, "FUn.lockRSSI 应同步")
@@ -3709,9 +3709,9 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         manager.stateMachine.handleUnlockFailure()
         XCTAssertEqual(manager.stateMachine.currentState, .degraded)
 
-        // 阈值仍可修改
-        manager.setLockRSSI(-85)
+        // 阈值仍可修改（先解锁触发联动、再手动覆盖锁定）
         manager.setUnlockRSSI(-65)
+        manager.setLockRSSI(-85)
         XCTAssertEqual(manager.lockRSSI, -85)
         XCTAssertEqual(manager.unlockRSSI, -65)
 
@@ -3962,5 +3962,42 @@ class ProfileImportExportTests: XCTestCase {
         }
         let array = try? JSONSerialization.jsonObject(with: data) as? [Any]
         XCTAssertNotNil(array, "导出内容应为合法 JSON 数组")
+    }
+}
+
+// MARK: - FUnManager 锁定阈值联动测试
+
+/// 测试 FUnManager 调解解锁阈值时自动联动锁定阈值（解锁-10 迟滞，钳制到滑杆下界）
+@MainActor
+class FUnManagerThresholdLinkTests: XCTestCase {
+
+    func testSetUnlockRSSIAutoAdjustsLock() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setUnlockRSSI(-55)
+        XCTAssertEqual(manager.lockRSSI, -65, "调解解锁阈值后锁定应自动设为解锁-10")
+        XCTAssertEqual(fun.lockRSSI, -65)
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: "lockRSSI"), -65)
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+    }
+
+    func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setLockRSSI(-80)
+        manager.setUnlockRSSI(FUn().UNLOCK_DISABLED)  // = 1
+        XCTAssertEqual(manager.lockRSSI, -80, "解锁禁用时不联动锁定")
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+    }
+
+    func testSetUnlockRSSIClampToRangeMin() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setUnlockRSSI(-95)
+        XCTAssertEqual(manager.lockRSSI, -95, "联动值应钳制到滑杆下界 -95")
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
     }
 }

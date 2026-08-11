@@ -25,6 +25,8 @@ let ExposureNotification = CBUUID(string:"FD6F")
 let proximityPollWindow = 15.0
 /// 快速轮询间隔（s）：信号接近阈值时降低感知延迟
 let fastPollInterval = 0.5
+/// 解锁 → 锁定 联动迟滞（dB）：调解解锁阈值时锁定自动设为 unlockRSSI - lockUnlockDelayGap
+let lockUnlockDelayGap = 10
 /// 快速锁屏（s）：信号快速下降时的锁屏超时
 let fastLockTimeout = 2.5
 /// 判定「快速下降」的斜率阈值（dBm/s），slope ≤ -8 视为快速离开
