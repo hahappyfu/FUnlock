@@ -514,6 +514,18 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// 刷新锁冷静基准（所有解锁成功路径调用）：重置 lastProximityEventTime，
+    /// 使心跳锁检查与锁计时器触发时都能看到「距最近解锁 < proximityGracePeriod」
+    func refreshProximityGrace() {
+        lock.withLock { lastProximityEventTime = Date() }
+    }
+
+    /// 是否处于锁冷静期（距最近解锁/靠近 < proximityGracePeriod）
+    func isWithinLockGracePeriod(now: Date = Date()) -> Bool {
+        let last = lock.withLock { lastProximityEventTime }
+        return now.timeIntervalSince(last) < proximityGracePeriod
+    }
+
     func invalidateAllTimers() {
         lock.withLock {
             signalTimer?.invalidate()
@@ -573,6 +585,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     self.lastReceiveTime = Date()
                     self.pipeline.decayBaseline = Date()
                 }
+                return
+            }
+            if self.isWithinLockGracePeriod() {
+                lockLog("[LOCK] timer fired but within unlock grace period, skipping lock")
+                self.lock.withLock { self.proximityTimer = nil }
                 return
             }
             Log.sm.debug("Device is away")

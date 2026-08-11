@@ -4001,3 +4001,29 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "lockRSSI")
     }
 }
+
+// MARK: - FUn 锁冷静期（解锁后 5 秒禁止锁定）测试
+
+/// 测试 FUn.refreshProximityGrace / isWithinLockGracePeriod 与 onUnlock 刷新联动
+@MainActor
+class FUnProximityGraceTests: XCTestCase {
+
+    func testRefreshProximityGraceWindow() {
+        let fun = FUn()
+        XCTAssertFalse(fun.isWithinLockGracePeriod(now: Date()),
+                       "默认（从未解锁）不应在冷静期")
+        fun.refreshProximityGrace()
+        XCTAssertTrue(fun.isWithinLockGracePeriod(now: Date()),
+                      "刷新后应进入 5 秒冷静期")
+        XCTAssertFalse(fun.isWithinLockGracePeriod(now: Date().addingTimeInterval(6)),
+                       "超过 5 秒冷静期后应允许锁定")
+    }
+
+    func testOnUnlockRefreshesProximityGrace() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.onUnlock()
+        XCTAssertTrue(fun.isWithinLockGracePeriod(now: Date()),
+                      "任何解锁成功路径应刷新锁冷静基准")
+    }
+}

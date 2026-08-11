@@ -296,6 +296,7 @@ final class FUnManager: ObservableObject {
         state.intent = .autoLock
         consecutiveUnlockAttempts = 0
         lastUnlockTime = now
+        fun.refreshProximityGrace()
         recordUser(.userUnlocked)
         recordUnlockSuccess()
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
