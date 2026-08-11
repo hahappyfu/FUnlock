@@ -42,9 +42,7 @@ func testOnDeviceApproachedBelowUnlockThresholdDoesNotAttemptUnlock() {
         .appendingPathComponent("fut-\(UUID().uuidString)")
     let logger = DecisionLogger(testLogDirectory: tmp)
     let fun = FUn()
-    manager = FUnManager(fun: fun,
-                         nowProvider: { [unowned self] in self.currentTime },
-                         decisionLogger: logger)
+    let manager = FUnManager(fun: fun, decisionLogger: logger)
     fun.unlockRSSI = -60
     fun.lockRSSI = -80
     fun.effectiveRSSI = -65.0  // ≥ 旧 stair(-70)，但 < 解锁阈值 -60
@@ -67,9 +65,7 @@ func testAttemptAutoUnlockBelowUnlockThresholdRecordsSignalBelowThreshold() {
         .appendingPathComponent("fut-\(UUID().uuidString)")
     let logger = DecisionLogger(testLogDirectory: tmp)
     let fun = FUn()
-    manager = FUnManager(fun: fun,
-                         nowProvider: { [unowned self] in self.currentTime },
-                         decisionLogger: logger)
+    let manager = FUnManager(fun: fun, decisionLogger: logger)
     fun.unlockRSSI = -60
     fun.lockRSSI = -80
     fun.effectiveRSSI = -65.0
@@ -188,7 +184,7 @@ git commit -m "test: 锁定 stair 接近窗口边界行为，保护快速轮询�
 ```swift
 func testSetUnlockRSSIAutoAdjustsLock() {
     let fun = FUn()
-    manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    let manager = FUnManager(fun: fun)
     manager.setUnlockRSSI(-55)
     XCTAssertEqual(manager.lockRSSI, -65, "调解解锁阈值后锁定应自动设为解锁-10")
     XCTAssertEqual(fun.lockRSSI, -65)
@@ -199,7 +195,7 @@ func testSetUnlockRSSIAutoAdjustsLock() {
 
 func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
     let fun = FUn()
-    manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    let manager = FUnManager(fun: fun)
     manager.setLockRSSI(-80)
     manager.setUnlockRSSI(FUn().UNLOCK_DISABLED)  // = 1
     XCTAssertEqual(manager.lockRSSI, -80, "解锁禁用时不联动锁定")
@@ -209,7 +205,7 @@ func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
 
 func testSetUnlockRSSIClampToRangeMin() {
     let fun = FUn()
-    manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    let manager = FUnManager(fun: fun)
     manager.setUnlockRSSI(-95)
     XCTAssertEqual(manager.lockRSSI, -95, "联动值应钳制到滑杆下界 -95")
     UserDefaults.standard.removeObject(forKey: "unlockRSSI")
@@ -220,7 +216,7 @@ func testSetUnlockRSSIClampToRangeMin() {
 - [ ] **步骤 2：运行测试确认失败**
 
 运行：`xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' test`
-预期：`testSetUnlockRSSIAutoAdjustsLock` FAIL（当前 `setUnlockRSSI` 不联动）；另两个 PASS（disabled 分支与钳制原本不联动，锁定值天然不变）。
+预期：`testSetUnlockRSSIAutoAdjustsLock` FAIL（当前 `setUnlockRSSI` 不联动，lockRSSI 仍为初始 -80）；`testSetUnlockRSSIClampToRangeMin` FAIL（当前不联动，lockRSSI 仍 -80）；`testSetUnlockRSSIDisabledDoesNotAdjustLock` PASS（解锁禁用时本就不联动，属保护性基线）。
 
 - [ ] **步骤 3：实现联动**
 
@@ -281,7 +277,7 @@ func testRefreshProximityGraceWindow() {
 
 func testOnUnlockRefreshesProximityGrace() {
     let fun = FUn()
-    manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+    let manager = FUnManager(fun: fun)
     manager.onUnlock()
     XCTAssertTrue(fun.isWithinLockGracePeriod(now: Date()),
                   "任何解锁成功路径应刷新锁冷静基准")
