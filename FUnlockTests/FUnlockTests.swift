@@ -2775,19 +2775,41 @@ class PreWakeStaircaseTests: XCTestCase {
         }
     }
 
-    func testOnDeviceApproachedAboveUnlockThresholdTriggersUnlock() {
-        // effectiveRSSI = -65（> unlockStairThreshold -70，仍低于解锁阈值 -60），应触发预解锁阶梯流程
-        manager.fun.unlockRSSI = -60
-        manager.fun.lockRSSI = -80
-        manager.fun.effectiveRSSI = -65.0
-        manager.fun.presence = true
+    func testOnDeviceApproachedBelowUnlockThresholdDoesNotAttemptUnlock() {
+        UserDefaults.standard.set(true, forKey: "enabled")
+        defer { UserDefaults.standard.removeObject(forKey: "enabled") }
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fut-\(UUID().uuidString)")
+        let logger = DecisionLogger(testLogDirectory: tmp)
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, decisionLogger: logger)
+        fun.unlockRSSI = -60
+        fun.lockRSSI = -80
+        fun.effectiveRSSI = -65.0  // ≥ 旧 stair(-70)，但 < 解锁阈值 -60
+        fun.presence = true
         manager.onSystemScreenLocked()
-
         manager.onDeviceApproached()
 
-        // effectiveRSSI >= unlockStairThreshold → attemptAutoUnlock 被调用
-        // 由于没有密码等实际解锁条件，unlock 本身不会成功
-        // 但关键行为：解锁流程被触发（而不是被阶梯阈值阻止）
+        XCTAssertTrue(manager.state.isEffectivelyLocked,
+                      "信号低于解锁阈值（-60）应保持锁定")
+        XCTAssertFalse(logger.events.contains { $0.category == .unlock },
+                       "-70~-60 预热带不应产生任何解锁决策记录")
+    }
+
+    func testAttemptAutoUnlockBelowUnlockThresholdRecordsSignalBelowThreshold() {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fut-\(UUID().uuidString)")
+        let logger = DecisionLogger(testLogDirectory: tmp)
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, decisionLogger: logger)
+        fun.unlockRSSI = -60
+        fun.lockRSSI = -80
+        fun.effectiveRSSI = -65.0
+        fun.presence = true
+        manager.onSystemScreenLocked()
+        manager.attemptAutoUnlock()
+        XCTAssertTrue(logger.events.contains { $0.reason == .signalBelowThreshold },
+                      "低于解锁阈值（-60）应被信号门控拦截并记录 signalBelowThreshold")
     }
 
     func testOnDeviceApproachedPreWakeWhenDisplaySleeping() {
