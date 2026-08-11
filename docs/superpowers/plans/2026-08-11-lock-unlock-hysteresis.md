@@ -153,8 +153,8 @@ func testIsNearThresholdUsesStairWindow() {
                   "窗口下界含 -84.9")
     XCTAssertFalse(FUn.isNearThreshold(-70.0, threshold: -70.0),
                    "达到阈值本身不算接近窗口")
-    XCTAssertFalse(FUn.isNearThreshold(-85.0, threshold: -70.0),
-                   "窗口外（-85）不算接近")
+    XCTAssertFalse(FUn.isNearThreshold(-85.1, threshold: -70.0),
+                   "窗口外（-85.1，下界 -85 含等号）不算接近")
 }
 ```
 
