@@ -240,6 +240,8 @@ let lockUnlockDelayGap = 10
     }
 ```
 
+> **计划裁定：** 既有集成测试 `testThresholdChangeDuringDegradation`（`FUnlockTests.swift:3694`）在 `setLockRSSI` 之后调 `setUnlockRSSI` 并断言锁定值不变，联动实现会让其失败。处理方式（方案 A）：把该测试内两处的调用顺序调换为「先 `setUnlockRSSI` 再 `setLockRSSI`」，保留原断言值——核心目标（降级期间可改阈值、恢复后保持）不偏离，且恰好验证"锁定滑杆可手动覆盖"语义。此测试改动列入本任务 commit。
+
 - [ ] **步骤 4：运行测试确认通过**
 
 运行：`xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' test`
@@ -337,7 +339,65 @@ git commit -m "fix: 解锁成功后 5 秒锁冷静期，杜绝刚解锁又秒锁
 
 ---
 
-### 任务 5：全量回归
+### 任务 5：生产调用点顺序改为「先解锁后锁定」（联动手动覆盖）
+
+**来源：** Task 3 审查裁定（用户确认）。`setUnlockRSSI` 联动后，三处生产调用点"先 `setLockRSSI` 后 `setUnlockRSSI`"会把刚写入的手动锁定值覆盖为 `unlock-10`。改为先解锁（触发联动）再手动锁定，让用户手动设的锁定滑杆值保留。
+
+**文件：** 三处，仅调换两行顺序
+- `FUnlock/OverviewView.swift:218-219`
+- `FUnlock/ProfileManager.swift:56-57`
+- `FUnlock/CalibrationWizardView.swift:358-359`
+
+- [ ] **步骤 1：调换三处调用顺序**
+
+`OverviewView.swift:217-222`：
+```swift
+            Button {
+                manager.setUnlockRSSI(Int(sliderUnlock))
+                manager.setLockRSSI(Int(sliderLock))
+                manager.setWakeAdvance(wakeAdvance)
+                manager.setPreUnlockTrigger(preUnlockTrigger)
+            } label: {
+```
+
+`ProfileManager.swift:54-58`：
+```swift
+    @MainActor func applyActiveProfile(to manager: FUnManager) {
+        let profile = activeProfile
+        manager.setUnlockRSSI(profile.unlockRSSI)
+        manager.setLockRSSI(profile.lockRSSI)
+    }
+```
+
+`CalibrationWizardView.swift:354-361`：
+```swift
+    private func applyValues() {
+        let lock = max(min(suggestedLock, -30), -95)
+        let unlock = max(min(suggestedUnlock, -30), -95)
+        let finalUnlock = max(unlock, lock + 5)
+        manager.setUnlockRSSI(finalUnlock)
+        manager.setLockRSSI(lock)
+        isPresented = false
+    }
+```
+
+> 语义：先 `setUnlockRSSI` 触发联动锁定（默认解锁-10），再 `setLockRSSI` 让用户/配置手动锁定值覆盖。联动仍生效（调解锁会自动拉开迟滞），手动锁定滑杆不再被冲掉。行为最终态不变。
+
+- [ ] **步骤 2：编译 + 回归测试**
+
+运行：`xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' test`
+预期：全部通过；`testThresholdChangeDuringDegradation` 仍验证"先解锁联动、再手锁覆盖"语义。
+
+- [ ] **步骤 3：Commit**
+
+```bash
+git add FUnlock/OverviewView.swift FUnlock/ProfileManager.swift FUnlock/CalibrationWizardView.swift
+git commit -m "fix: 生产调用点先设解锁再手动锁覆盖，调解锁联动不再冲掉手动锁定值"
+```
+
+---
+
+### 任务 6：全量回归
 
 **文件：** 无（验证任务）
 
