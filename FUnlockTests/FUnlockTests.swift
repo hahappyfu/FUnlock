@@ -3750,6 +3750,18 @@ class LockUnlockEfficiencyTests: XCTestCase {
         XCTAssertFalse(FUn.isNearThreshold(-80, threshold: -80))
     }
 
+    func testIsNearThresholdUsesStairWindow() {
+        // 接近窗口 = [stair - 15, stair)，与轮询加速触发一致
+        XCTAssertTrue(FUn.isNearThreshold(-71.0, threshold: -70.0),
+                      "-71 落在 [stair-15, stair) 窗口内")
+        XCTAssertTrue(FUn.isNearThreshold(-84.9, threshold: -70.0),
+                      "窗口下界含 -84.9")
+        XCTAssertFalse(FUn.isNearThreshold(-70.0, threshold: -70.0),
+                       "达到阈值本身不算接近窗口")
+        XCTAssertFalse(FUn.isNearThreshold(-85.1, threshold: -70.0),
+                       "窗口外（-85.1，下界 -85 含等号）不算接近")
+    }
+
     // MARK: 方案 C：锁屏超时随斜率自适应（lockTimeout）
 
     func testLockTimeout_steepSlopeUsesFastTimeout() {
