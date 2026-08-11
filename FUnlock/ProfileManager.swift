@@ -53,8 +53,8 @@ class ProfileManager: ObservableObject {
 
     @MainActor func applyActiveProfile(to manager: FUnManager) {
         let profile = activeProfile
-        manager.setLockRSSI(profile.lockRSSI)
         manager.setUnlockRSSI(profile.unlockRSSI)
+        manager.setLockRSSI(profile.lockRSSI)
     }
 
     // MARK: - Save current thresholds as a new profile

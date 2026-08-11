@@ -215,8 +215,8 @@ struct OverviewView: View {
                                value: $preUnlockTrigger)
 
             Button {
-                manager.setLockRSSI(Int(sliderLock))
                 manager.setUnlockRSSI(Int(sliderUnlock))
+                manager.setLockRSSI(Int(sliderLock))
                 manager.setWakeAdvance(wakeAdvance)
                 manager.setPreUnlockTrigger(preUnlockTrigger)
             } label: {
