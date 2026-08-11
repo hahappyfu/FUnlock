@@ -2775,19 +2775,41 @@ class PreWakeStaircaseTests: XCTestCase {
         }
     }
 
-    func testOnDeviceApproachedAboveUnlockThresholdTriggersUnlock() {
-        // effectiveRSSI = -65（> unlockStairThreshold -70，仍低于解锁阈值 -60），应触发预解锁阶梯流程
-        manager.fun.unlockRSSI = -60
-        manager.fun.lockRSSI = -80
-        manager.fun.effectiveRSSI = -65.0
-        manager.fun.presence = true
+    func testOnDeviceApproachedBelowUnlockThresholdDoesNotAttemptUnlock() {
+        UserDefaults.standard.set(true, forKey: "enabled")
+        defer { UserDefaults.standard.removeObject(forKey: "enabled") }
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fut-\(UUID().uuidString)")
+        let logger = DecisionLogger(testLogDirectory: tmp)
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, decisionLogger: logger)
+        fun.unlockRSSI = -60
+        fun.lockRSSI = -80
+        fun.effectiveRSSI = -65.0  // ≥ 旧 stair(-70)，但 < 解锁阈值 -60
+        fun.presence = true
         manager.onSystemScreenLocked()
-
         manager.onDeviceApproached()
 
-        // effectiveRSSI >= unlockStairThreshold → attemptAutoUnlock 被调用
-        // 由于没有密码等实际解锁条件，unlock 本身不会成功
-        // 但关键行为：解锁流程被触发（而不是被阶梯阈值阻止）
+        XCTAssertTrue(manager.state.isEffectivelyLocked,
+                      "信号低于解锁阈值（-60）应保持锁定")
+        XCTAssertFalse(logger.events.contains { $0.category == .unlock },
+                       "-70~-60 预热带不应产生任何解锁决策记录")
+    }
+
+    func testAttemptAutoUnlockBelowUnlockThresholdRecordsSignalBelowThreshold() {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fut-\(UUID().uuidString)")
+        let logger = DecisionLogger(testLogDirectory: tmp)
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, decisionLogger: logger)
+        fun.unlockRSSI = -60
+        fun.lockRSSI = -80
+        fun.effectiveRSSI = -65.0
+        fun.presence = true
+        manager.onSystemScreenLocked()
+        manager.attemptAutoUnlock()
+        XCTAssertTrue(logger.events.contains { $0.reason == .signalBelowThreshold },
+                      "低于解锁阈值（-60）应被信号门控拦截并记录 signalBelowThreshold")
     }
 
     func testOnDeviceApproachedPreWakeWhenDisplaySleeping() {
@@ -3673,9 +3695,9 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         manager.fun.unlockRSSI = -60
         manager.fun.lockRSSI = -80
 
-        // 设置新的阈值
-        manager.setLockRSSI(-75)
+        // 设置新的阈值（先解锁触发联动、再手动覆盖锁定，验证锁定滑杆可手动覆盖）
         manager.setUnlockRSSI(-55)
+        manager.setLockRSSI(-75)
         XCTAssertEqual(manager.lockRSSI, -75, "lockRSSI 应更新为 -75")
         XCTAssertEqual(manager.unlockRSSI, -55, "unlockRSSI 应更新为 -55")
         XCTAssertEqual(manager.fun.lockRSSI, -75, "FUn.lockRSSI 应同步")
@@ -3687,9 +3709,9 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         manager.stateMachine.handleUnlockFailure()
         XCTAssertEqual(manager.stateMachine.currentState, .degraded)
 
-        // 阈值仍可修改
-        manager.setLockRSSI(-85)
+        // 阈值仍可修改（先解锁触发联动、再手动覆盖锁定）
         manager.setUnlockRSSI(-65)
+        manager.setLockRSSI(-85)
         XCTAssertEqual(manager.lockRSSI, -85)
         XCTAssertEqual(manager.unlockRSSI, -65)
 
@@ -3726,6 +3748,18 @@ class LockUnlockEfficiencyTests: XCTestCase {
         XCTAssertTrue(FUn.isNearThreshold(-85, threshold: -80))
         XCTAssertFalse(FUn.isNearThreshold(-96, threshold: -80))
         XCTAssertFalse(FUn.isNearThreshold(-80, threshold: -80))
+    }
+
+    func testIsNearThresholdUsesStairWindow() {
+        // 接近窗口 = [stair - 15, stair)，与轮询加速触发一致
+        XCTAssertTrue(FUn.isNearThreshold(-71.0, threshold: -70.0),
+                      "-71 落在 [stair-15, stair) 窗口内")
+        XCTAssertTrue(FUn.isNearThreshold(-84.9, threshold: -70.0),
+                      "窗口下界含 -84.9")
+        XCTAssertFalse(FUn.isNearThreshold(-70.0, threshold: -70.0),
+                       "达到阈值本身不算接近窗口")
+        XCTAssertFalse(FUn.isNearThreshold(-85.1, threshold: -70.0),
+                       "窗口外（-85.1，下界 -85 含等号）不算接近")
     }
 
     // MARK: 方案 C：锁屏超时随斜率自适应（lockTimeout）
@@ -3928,5 +3962,68 @@ class ProfileImportExportTests: XCTestCase {
         }
         let array = try? JSONSerialization.jsonObject(with: data) as? [Any]
         XCTAssertNotNil(array, "导出内容应为合法 JSON 数组")
+    }
+}
+
+// MARK: - FUnManager 锁定阈值联动测试
+
+/// 测试 FUnManager 调解解锁阈值时自动联动锁定阈值（解锁-10 迟滞，钳制到滑杆下界）
+@MainActor
+class FUnManagerThresholdLinkTests: XCTestCase {
+
+    func testSetUnlockRSSIAutoAdjustsLock() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setUnlockRSSI(-55)
+        XCTAssertEqual(manager.lockRSSI, -65, "调解解锁阈值后锁定应自动设为解锁-10")
+        XCTAssertEqual(fun.lockRSSI, -65)
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: "lockRSSI"), -65)
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+    }
+
+    func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setLockRSSI(-80)
+        manager.setUnlockRSSI(FUn().UNLOCK_DISABLED)  // = 1
+        XCTAssertEqual(manager.lockRSSI, -80, "解锁禁用时不联动锁定")
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+    }
+
+    func testSetUnlockRSSIClampToRangeMin() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.setUnlockRSSI(-95)
+        XCTAssertEqual(manager.lockRSSI, -95, "联动值应钳制到滑杆下界 -95")
+        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
+        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+    }
+}
+
+// MARK: - FUn 锁冷静期（解锁后 5 秒禁止锁定）测试
+
+/// 测试 FUn.refreshProximityGrace / isWithinLockGracePeriod 与 onUnlock 刷新联动
+@MainActor
+class FUnProximityGraceTests: XCTestCase {
+
+    func testRefreshProximityGraceWindow() {
+        let fun = FUn()
+        XCTAssertFalse(fun.isWithinLockGracePeriod(now: Date()),
+                       "默认（从未解锁）不应在冷静期")
+        fun.refreshProximityGrace()
+        XCTAssertTrue(fun.isWithinLockGracePeriod(now: Date()),
+                      "刷新后应进入 5 秒冷静期")
+        XCTAssertFalse(fun.isWithinLockGracePeriod(now: Date().addingTimeInterval(6)),
+                       "超过 5 秒冷静期后应允许锁定")
+    }
+
+    func testOnUnlockRefreshesProximityGrace() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        manager.onUnlock()
+        XCTAssertTrue(fun.isWithinLockGracePeriod(now: Date()),
+                      "任何解锁成功路径应刷新锁冷静基准")
     }
 }

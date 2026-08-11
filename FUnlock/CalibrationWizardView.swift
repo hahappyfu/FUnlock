@@ -355,8 +355,8 @@ struct CalibrationWizardView: View {
         let lock = max(min(suggestedLock, -30), -95)
         let unlock = max(min(suggestedUnlock, -30), -95)
         let finalUnlock = max(unlock, lock + 5)
-        manager.setLockRSSI(lock)
         manager.setUnlockRSSI(finalUnlock)
+        manager.setLockRSSI(lock)
         isPresented = false
     }
 

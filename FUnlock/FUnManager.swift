@@ -208,7 +208,9 @@ final class FUnManager: ObservableObject {
         unlockRSSI = value
         fun.unlockRSSI = value
         UserDefaults.standard.set(value, forKey: "unlockRSSI")
-        thresholdVersion += 1
+        if value != FUn().UNLOCK_DISABLED {
+            setLockRSSI(max(value - lockUnlockDelayGap, Int(OverviewView.RSSIRange.min)))
+        }
     }
 
     /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前（自动钳制到 0-20）
@@ -294,6 +296,7 @@ final class FUnManager: ObservableObject {
         state.intent = .autoLock
         consecutiveUnlockAttempts = 0
         lastUnlockTime = now
+        fun.refreshProximityGrace()
         recordUser(.userUnlocked)
         recordUnlockSuccess()
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
@@ -376,8 +379,8 @@ final class FUnManager: ObservableObject {
             startWakeRetry()
         }
 
-        // 阶梯解锁：平滑信号达到 unlockStairThreshold（-50dBm）时才尝试解锁
-        if smoothed >= Double(fun.unlockStairThreshold) {
+        // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 才尝试解锁（-70~-60 为预热带，只唤醒不解锁）
+        if smoothed >= Double(fun.unlockRSSI) {
             attemptAutoUnlock()
         }
     }
@@ -535,11 +538,11 @@ final class FUnManager: ObservableObject {
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
         guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
-        // 与 onDeviceApproached 的阶梯门控保持一致，信号不足（如已衰减）时拒绝解锁
-        guard fun.effectiveRSSI >= Double(fun.unlockStairThreshold) else {
-            Log.sm.debug("SKIP: signal below stair threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
-            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", fun.effectiveRSSI)) stair=\(fun.unlockStairThreshold)")
-            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) dBm 低于阶梯阈值 \(self.fun.unlockStairThreshold) dBm")
+        // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
+        guard fun.effectiveRSSI >= Double(fun.unlockRSSI) else {
+            Log.sm.debug("SKIP: signal below unlock threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
+            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", fun.effectiveRSSI)) unlock=\(fun.unlockRSSI)")
+            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) dBm 低于解锁阈值 \(self.fun.unlockRSSI) dBm")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
@@ -587,8 +590,8 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("starting parallel wake + unlock")
             timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", fun.effectiveRSSI))")
             startWakeRetry()
-            // 阶梯解锁：平滑信号达到 unlockStairThreshold（-50dBm）时才并行解锁
-            if fun.effectiveRSSI >= Double(fun.unlockStairThreshold) {
+            // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
+            if fun.effectiveRSSI >= Double(fun.unlockRSSI) {
                 // 并行：等 0.8s 后尝试解锁，不等唤醒完成
                 unlockTask?.cancel()
                 unlockTask = Task { [weak self] in
@@ -600,7 +603,7 @@ final class FUnManager: ObservableObject {
                     self.tryUnlock()
                 }
             } else {
-                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", self.fun.effectiveRSSI)) < unlockStairThreshold=\(self.fun.unlockStairThreshold)")
+                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", self.fun.effectiveRSSI)) < unlockRSSI=\(self.fun.unlockRSSI)")
             }
             return
         }

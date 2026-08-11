@@ -25,6 +25,8 @@ let ExposureNotification = CBUUID(string:"FD6F")
 let proximityPollWindow = 15.0
 /// 快速轮询间隔（s）：信号接近阈值时降低感知延迟
 let fastPollInterval = 0.5
+/// 解锁 → 锁定 联动迟滞（dB）：调解解锁阈值时锁定自动设为 unlockRSSI - lockUnlockDelayGap
+let lockUnlockDelayGap = 10
 /// 快速锁屏（s）：信号快速下降时的锁屏超时
 let fastLockTimeout = 2.5
 /// 判定「快速下降」的斜率阈值（dBm/s），slope ≤ -8 视为快速离开
@@ -186,7 +188,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         return unlockRSSI - advance
     }
     /// 预解锁触发阈值（dBm）：解锁阈值往更远方向提前 preUnlockTrigger（UI 可填，默认 10），
-    /// 信号达到该点即进入预解锁准备状态（弹密码框）
+    /// 信号进入该接近窗口时启用 0.5s 快速轮询（开足马力探测）；不再直接触发解锁，
+    /// 真正解锁由信号达到 unlockRSSI 决定
     var unlockStairThreshold: Int {
         guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
         let trigger = Self.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
@@ -511,6 +514,18 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// 刷新锁冷静基准（所有解锁成功路径调用）：重置 lastProximityEventTime，
+    /// 使心跳锁检查与锁计时器触发时都能看到「距最近解锁 < proximityGracePeriod」
+    func refreshProximityGrace() {
+        lock.withLock { lastProximityEventTime = Date() }
+    }
+
+    /// 是否处于锁冷静期（距最近解锁/靠近 < proximityGracePeriod）
+    func isWithinLockGracePeriod(now: Date = Date()) -> Bool {
+        let last = lock.withLock { lastProximityEventTime }
+        return now.timeIntervalSince(last) < proximityGracePeriod
+    }
+
     func invalidateAllTimers() {
         lock.withLock {
             signalTimer?.invalidate()
@@ -570,6 +585,11 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     self.lastReceiveTime = Date()
                     self.pipeline.decayBaseline = Date()
                 }
+                return
+            }
+            if self.isWithinLockGracePeriod() {
+                lockLog("[LOCK] timer fired but within unlock grace period, skipping lock")
+                self.lock.withLock { self.proximityTimer = nil }
                 return
             }
             Log.sm.debug("Device is away")
