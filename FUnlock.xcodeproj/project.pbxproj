@@ -63,6 +63,8 @@
 		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
 		AA0000DD0000000A /* IMMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001A /* IMMessageComposer.swift */; };
 		AA0000DD0000000B /* IMSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001B /* IMSettingsCard.swift */; };
+		5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB83070CD04DF366146E88B /* ConfigStore.swift */; };
+		7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E695C91A38887907EE91F891 /* ConfigStoreTests.swift */; };
 		IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000002 /* IMMessageComposerTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -163,6 +165,8 @@
 		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
 		AA0000DD0000001A /* IMMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposer.swift; sourceTree = "<group>"; };
 		AA0000DD0000001B /* IMSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMSettingsCard.swift; sourceTree = "<group>"; };
+		3FB83070CD04DF366146E88B /* ConfigStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
+		E695C91A38887907EE91F891 /* ConfigStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStoreTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000002 /* IMMessageComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -273,6 +277,7 @@
 				AA0000DD00000019 /* iMessageNotifier.swift */,
 				AA0000DD0000001A /* IMMessageComposer.swift */,
 				AA0000DD0000001B /* IMSettingsCard.swift */,
+				3FB83070CD04DF366146E88B /* ConfigStore.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -296,6 +301,7 @@
 				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
 				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
+				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -522,6 +528,7 @@
 				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
 				AA0000DD0000000A /* IMMessageComposer.swift in Sources */,
 				AA0000DD0000000B /* IMSettingsCard.swift in Sources */,
+				5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -535,6 +542,7 @@
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
 				IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */,
+				7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
