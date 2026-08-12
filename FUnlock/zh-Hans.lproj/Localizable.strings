@@ -258,7 +258,7 @@
 "reason_system_not_ready" = "系统未就绪";
 "reason_wake_without_unlock" = "已启用唤醒不自动解锁";
 "reason_recently_unlocked" = "刚刚解锁过";
-"reason_screen_not_locked" = "屏幕已解锁";
+"reason_screen_not_locked" = "屏幕已解锁，无需操作";
 "reason_input_active" = "输入活动中，暂缓锁屏";
 "reason_grace_period" = "锁屏冷静期内";
 "reason_signal_below_lock_threshold" = "信号高于锁屏阈值";

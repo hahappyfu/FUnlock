@@ -260,7 +260,7 @@
 "reason_system_not_ready" = "System not ready";
 "reason_wake_without_unlock" = "Wake without unlocking enabled";
 "reason_recently_unlocked" = "Recently unlocked";
-"reason_screen_not_locked" = "Screen already unlocked";
+"reason_screen_not_locked" = "Screen already unlocked, no action needed";
 "reason_input_active" = "Input active, lock deferred";
 "reason_grace_period" = "Lock grace period active";
 "reason_signal_below_lock_threshold" = "Signal above lock threshold";
