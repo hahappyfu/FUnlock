@@ -193,6 +193,9 @@ struct DiagnosticsView: View {
                         .foregroundColor(.secondary)
                 }
                 HStack(spacing: 8) {
+                    if let rssi = event.rssi, event.detail.isEmpty {
+                        Text("\(rssi) dBm").font(.system(size: 11)).foregroundColor(.secondary)
+                    }
                     if let device = event.device {
                         Text(device).font(.system(size: 11)).foregroundColor(.secondary)
                     }
