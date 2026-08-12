@@ -172,4 +172,15 @@ final class UnlockDecisionInstrumentationTests: XCTestCase {
         XCTAssertEqual(unlockEvents.last?.outcome, .skipped)
         XCTAssertEqual(unlockEvents.last?.reason, .unlockDisabled)
     }
+
+    func testManualUnlockRecordsUserUnlocked() throws {
+        // 手动解锁（isAutoUnlocking = false）：onUnlock 应记录 userUnlocked，
+        // 防止修复自动解锁误标后把手动解锁分支也误删
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, nowProvider: { Date() }, decisionLogger: logger)
+        manager.onUnlock()
+        let userEvents = logger.events.filter { $0.category == .user }
+        XCTAssertTrue(userEvents.contains { $0.reason == .userUnlocked },
+                      "手动解锁必须记录 userUnlocked")
+    }
 }

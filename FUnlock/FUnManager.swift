@@ -297,7 +297,11 @@ final class FUnManager: ObservableObject {
         consecutiveUnlockAttempts = 0
         lastUnlockTime = now
         fun.refreshProximityGrace()
-        recordUser(.userUnlocked)
+        // 区分解锁来源：FUn 自动解锁的 unlockSuccess 已在 performInjectionAndVerify 记录，
+        // 这里只在真正手动解锁时记录 userUnlocked，避免自动解锁被误标为"用户手动解锁"
+        if !isAutoUnlocking {
+            recordUser(.userUnlocked)
+        }
         recordUnlockSuccess()
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
         Task { stateMachine.resetToActive() }
