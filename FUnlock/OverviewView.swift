@@ -14,6 +14,8 @@ struct OverviewView: View {
     // 阈值滑块状态（本地草稿，不即时写盘）
     @State private var sliderLock: Double = 0
     @State private var sliderUnlock: Double = 0
+    /// 用户是否主动拖动过锁定滑块（true 则解锁滑块联动不再覆盖锁定值，保留独立锁定滑杆的最终覆盖权）
+    @State private var lockSliderUserModified = false
     @State private var isSliderDragging = false
 
     // 偏移量草稿（唤醒提前量 / 预解锁触发量，dB）
@@ -70,6 +72,7 @@ struct OverviewView: View {
         .onAppear {
             sliderLock = Double(manager.lockRSSI)
             sliderUnlock = Double(effectiveUnlockRSSI)
+            lockSliderUserModified = false
             wakeAdvance = thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
             preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
         }
@@ -199,9 +202,16 @@ struct OverviewView: View {
             thresholdBar
 
             ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
-                               value: $sliderLock, isDragging: $isSliderDragging)
+                               value: $sliderLock, isDragging: $isSliderDragging,
+                               onEditingEnded: { lockSliderUserModified = true })
             ThresholdSliderRow(icon: "lock.open.fill", color: .green, title: t("unlock"),
-                               value: $sliderUnlock, isDragging: $isSliderDragging)
+                               value: $sliderUnlock, isDragging: $isSliderDragging,
+                               onEditingEnded: {
+                                   // 迟滞联动：用户调解锁阈值时，锁定自动拉开 lockUnlockDelayGap（除非用户主动改过锁定）
+                                   guard !lockSliderUserModified else { return }
+                                   let linked = Int(sliderUnlock) - lockUnlockDelayGap
+                                   sliderLock = Double(max(linked, Int(OverviewView.RSSIRange.min)))
+                               })
 
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
                                title: t("wake_advance"),
@@ -376,13 +386,18 @@ private struct ThresholdSliderRow: View {
     let title: String
     @Binding var value: Double
     @Binding var isDragging: Bool
+    /// 拖动结束时回调（editing 从 true → false 时触发），用于迟滞联动
+    var onEditingEnded: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon).foregroundColor(color).frame(width: 16)
             Text(title).frame(width: 30, alignment: .leading)
             Slider(value: $value, in: OverviewView.RSSIRange.min...OverviewView.RSSIRange.max,
-                   onEditingChanged: { editing in isDragging = editing })
+                   onEditingChanged: { editing in
+                       isDragging = editing
+                       if !editing { onEditingEnded?() }
+                   })
             Text("\(Int(value))")
                 .font(.system(size: 11, design: .monospaced))
                 .frame(width: 34, alignment: .trailing)

@@ -394,6 +394,12 @@ final class FUnManager: ObservableObject {
         guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
         guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
         guard !lockDisabled else { lockLog("[LOCK] onDeviceLeft blocked: lock disabled"); return }
+        // 锁冷静期：解锁成功后短时间内（proximityGracePeriod=5s）信号再弱也不锁，
+        // 覆盖 lost 快速锁屏路径（3 次 BLE 超时 → markSignalLost），防止刚解锁又秒锁
+        guard !fun.isWithinLockGracePeriod() else {
+            lockLog("[LOCK] onDeviceLeft blocked: within unlock grace period")
+            return
+        }
 
         displayWakeRequested = false
         state.screen = .displaySleeping
