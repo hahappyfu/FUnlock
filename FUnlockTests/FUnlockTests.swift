@@ -4027,3 +4027,52 @@ class FUnProximityGraceTests: XCTestCase {
                       "任何解锁成功路径应刷新锁冷静基准")
     }
 }
+
+// MARK: - manualLockActive 节流测试
+
+/// 诊断时间线 manualLockActive 事件 30 秒节流：同一 reason 30s 内只记录一次
+@MainActor
+final class ManualLockThrottleTests: XCTestCase {
+    private var logger: DecisionLogger!
+    private var tempDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ThrottleTests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        logger = DecisionLogger(testLogDirectory: tempDir)
+    }
+
+    override func tearDown() {
+        logger.clear()
+        logger = nil
+        try? FileManager.default.removeItem(at: tempDir)
+        tempDir = nil
+        super.tearDown()
+    }
+
+    func testManualLockActiveThrottled30s() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun, nowProvider: { Date() }, decisionLogger: logger)
+
+        // 通过系统锁屏通知进入手动锁屏状态（state.intent = .manualLock）
+        manager.isSelfLocking = false
+        manager.onSystemScreenLocked()
+        // onSystemScreenLocked 设置了 lastLockTime = now，会先命中 lockBufferActive 分支；
+        // 手动拨回过去，确保走到 manualLockActive 分支
+        manager.lastLockTime = .distantPast
+        fun.presence = true
+
+        // 关闭 DecisionLogger 自身的 3s 同因合并，隔离验证本任务的 30s 节流层
+        // （否则两次毫秒级连续调用会被 3s 合并吞掉，测试无法区分 3s 合并与 30s 节流）
+        logger.coalescingWindow = 0
+
+        // 两次 attemptAutoUnlock：第一次记录，第二次（30s 内）应被节流
+        manager.attemptAutoUnlock()
+        manager.attemptAutoUnlock()
+
+        let count = logger.events.filter { $0.reason == .manualLockActive }.count
+        XCTAssertEqual(count, 1, "30 秒内 manualLockActive 只记录一次")
+    }
+}

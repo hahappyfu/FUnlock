@@ -135,12 +135,25 @@ final class FUnManager: ObservableObject {
 
     // MARK: - 决策记录辅助
 
+    /// 节流：同一 reason 在窗口内只记录一次（防止诊断时间线刷屏）
+    private var lastRecordTime: [DecisionReason: Date] = [:]
+
     private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
         let effDetail = "信号 \(String(format: "%.1f", fun.effectiveRSSI)) dBm（解锁阈值 \(fun.unlockRSSI) dBm）"
         let combinedDetail = detail.isEmpty ? effDetail : "\(detail)（\(effDetail)）"
         decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
                               screen: state.screen.description, detail: combinedDetail)
+    }
+
+    /// 节流版记录：同一 reason 在 throttle 秒内只记录一次，超时或首次记录
+    private func recordUnlockThrottled(_ reason: DecisionReason, detail: String = "", throttle: TimeInterval = 30) {
+        let now = Date()
+        if let last = lastRecordTime[reason], now.timeIntervalSince(last) < throttle {
+            return
+        }
+        lastRecordTime[reason] = now
+        recordUnlock(reason: reason, detail: detail)
     }
 
     private func recordLock(_ reason: DecisionReason, detail: String = "") {
@@ -587,7 +600,7 @@ final class FUnManager: ObservableObject {
         // #5: 手动锁屏后不自动解锁（deadline 语义已含 60s/24h 区分，不依赖键是否缺失）
         if state.intent.isManualLockActive {
             Log.sm.debug("SKIP: manualLock active, waiting for manual unlock")
-            recordUnlock(reason: .manualLockActive)
+            recordUnlockThrottled(.manualLockActive)
             return
         }
         if !axGranted { Log.sm.debug("WARN: ax=false, trying anyway") }
