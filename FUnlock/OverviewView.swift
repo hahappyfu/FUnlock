@@ -9,7 +9,7 @@ struct OverviewView: View {
     @ObservedObject var fun: FUn
     @Binding var showCalibration: Bool
 
-    @AppStorage("enabled") private var enabled = true
+    @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
 
     // 阈值滑块状态（本地草稿，不即时写盘）
     @State private var sliderLock: Double = 0
@@ -48,7 +48,7 @@ struct OverviewView: View {
     }
 
     private func thresholdSettingValue(_ key: String, default dft: Int) -> Int {
-        UserDefaults.standard.object(forKey: key) as? Int ?? dft
+        ConfigStore.shared.object(forKey: key) as? Int ?? dft
     }
 
     private func xPos(_ v: Double, _ width: CGFloat) -> CGFloat {

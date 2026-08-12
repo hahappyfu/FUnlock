@@ -3,8 +3,8 @@ import SwiftUI
 import ServiceManagement
 
 struct BasicSettingsView: View {
-    @AppStorage("enabled") private var enabled = true
-    @AppStorage("launchAtLogin") private var launchAtLogin = false
+    @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
+    @AppStorage("launchAtLogin", store: ConfigStore.shared.defaults) private var launchAtLogin = false
 
     var body: some View {
         ScrollView {

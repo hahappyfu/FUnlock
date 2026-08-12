@@ -2,9 +2,9 @@
 import SwiftUI
 
 struct UnlockSettingsView: View {
-    @AppStorage("wakeOnProximity") private var wakeOnProximity = false
-    @AppStorage("wakeWithoutUnlocking") private var wakeWithoutUnlocking = false
-    @AppStorage("screensaver") private var useScreensaver = false
+    @AppStorage("wakeOnProximity", store: ConfigStore.shared.defaults) private var wakeOnProximity = false
+    @AppStorage("wakeWithoutUnlocking", store: ConfigStore.shared.defaults) private var wakeWithoutUnlocking = false
+    @AppStorage("screensaver", store: ConfigStore.shared.defaults) private var useScreensaver = false
 
     var body: some View {
         ScrollView {

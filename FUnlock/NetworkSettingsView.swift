@@ -3,9 +3,9 @@ import SwiftUI
 
 struct NetworkSettingsView: View {
     @ObservedObject var fun: FUn
-    @AppStorage("pauseOnWiFi") private var pauseOnWiFi = false
-    @AppStorage("pauseOnWiFiSSID") private var pauseOnWiFiSSID = ""
-    @AppStorage("passiveMode") private var passiveMode = false
+    @AppStorage("pauseOnWiFi", store: ConfigStore.shared.defaults) private var pauseOnWiFi = false
+    @AppStorage("pauseOnWiFiSSID", store: ConfigStore.shared.defaults) private var pauseOnWiFiSSID = ""
+    @AppStorage("passiveMode", store: ConfigStore.shared.defaults) private var passiveMode = false
 
     var body: some View {
         ScrollView {

@@ -57,7 +57,7 @@ struct OnboardingView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button(action: {
-                        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                        ConfigStore.shared.defaults.set(true, forKey: "hasCompletedOnboarding")
                         isPresented = false
                     }) {
                         Text(t("onboarding_start"))
@@ -74,7 +74,7 @@ struct OnboardingView: View {
     }
 
     private func finishOnboarding() {
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        ConfigStore.shared.defaults.set(true, forKey: "hasCompletedOnboarding")
         isPresented = false
     }
 

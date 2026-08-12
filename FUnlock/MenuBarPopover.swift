@@ -11,7 +11,7 @@ struct MenuBarPopoverView: View {
     @ObservedObject var fun: FUn
     let onAction: (MenuBarAction) -> Void
 
-    @AppStorage("enabled") private var enabled = true
+    @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
     @State private var updateStatus: UpdateStatus = .idle
     @State private var updateCheckRequested = false
 

@@ -4,8 +4,8 @@
 import SwiftUI
 
 struct IMSettingsCard: View {
-    @AppStorage("iMessageNotify") private var iMessageNotify = false
-    @AppStorage("iMessageNotifyRecipient") private var recipient = ""
+    @AppStorage("iMessageNotify", store: ConfigStore.shared.defaults) private var iMessageNotify = false
+    @AppStorage("iMessageNotifyRecipient", store: ConfigStore.shared.defaults) private var recipient = ""
     @State private var isTesting = false
     @State private var testState: TestState = .idle
 

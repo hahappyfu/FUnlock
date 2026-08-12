@@ -2,9 +2,9 @@
 import SwiftUI
 
 struct LockSettingsView: View {
-    @AppStorage("pauseItunes") private var pauseItunes = false
-    @AppStorage("sleepDisplay") private var sleepDisplay = false
-    @AppStorage("lockOnIdle") private var lockOnIdle = true
+    @AppStorage("pauseItunes", store: ConfigStore.shared.defaults) private var pauseItunes = false
+    @AppStorage("sleepDisplay", store: ConfigStore.shared.defaults) private var sleepDisplay = false
+    @AppStorage("lockOnIdle", store: ConfigStore.shared.defaults) private var lockOnIdle = true
 
     var body: some View {
         ScrollView {

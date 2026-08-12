@@ -98,7 +98,7 @@ struct MainWindowView: View {
         .animation(.easeInOut(duration: 0.3), value: toastMessage)
         .onAppear {
             previousConnected = manager.connected
-            if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+            if !ConfigStore.shared.defaults.bool(forKey: "hasCompletedOnboarding") {
                 showOnboarding = true
             }
         }
