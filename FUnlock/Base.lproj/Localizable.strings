@@ -347,3 +347,12 @@
 "im_go_authorize" = "Authorize";
 "im_send_test" = "Send Test Notification";
 "im_test_success" = "Sent. Check your Apple Watch.";
+
+// 诊断页屏幕状态（DecisionEvent.screen）
+"screen_unlocked" = "Unlocked";
+"screen_locked_away" = "Locked - device away";
+"screen_locked_manual" = "Locked - manually";
+"screen_locked_lost" = "Locked - signal lost";
+"screen_locked_timeout" = "Locked - timeout";
+"screen_display_sleeping" = "Display sleeping";
+"screen_screensaver" = "Screensaver";

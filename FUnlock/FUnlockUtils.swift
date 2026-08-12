@@ -61,4 +61,19 @@ extension DecisionEvent {
         case (.user, _): return ("person.fill", .teal)
         }
     }
+
+    /// 屏幕状态 → 本地化 key（静态，便于测试）
+    static func screenLabel(_ screen: String?) -> String? {
+        guard let screen else { return nil }
+        switch screen {
+        case "unlocked": return "screen_unlocked"
+        case "locked(away)": return "screen_locked_away"
+        case "locked(manual)": return "screen_locked_manual"
+        case "locked(lost)": return "screen_locked_lost"
+        case "locked(timeout)": return "screen_locked_timeout"
+        case "displaySleeping": return "screen_display_sleeping"
+        case "screensaver": return "screen_screensaver"
+        default: return screen
+        }
+    }
 }

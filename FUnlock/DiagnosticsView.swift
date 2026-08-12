@@ -187,6 +187,11 @@ struct DiagnosticsView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(2)
                 }
+                if let screenKey = DecisionEvent.screenLabel(event.screen) {
+                    Text(t(screenKey))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
                 HStack(spacing: 8) {
                     if let rssi = event.rssi {
                         Text("\(rssi) dBm").font(.system(size: 11)).foregroundColor(.secondary)
@@ -257,10 +262,6 @@ struct DiagnosticsView: View {
     // MARK: - 渲染辅助
 
     static func timeString(_ date: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) {
-            return date.formatted(.dateTime.hour().minute())
-        }
-        return date.formatted(.dateTime.month().day().hour().minute())
+        date.formatted(.dateTime.hour().minute())
     }
 }
