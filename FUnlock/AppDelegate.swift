@@ -180,7 +180,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var fun = FUn()
     var manager: FUnManager!
     let inputMonitor = InputActivityMonitor()
-    let prefs = UserDefaults.standard
+    let prefs = ConfigStore.shared.defaults
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - 全局快捷键
@@ -441,6 +441,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - 生命周期
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 启动时把旧 standard 域配置迁移到独立 suite 域（一次性）
+        ConfigStore.shared.migrateIfNeeded(fromKeys: ConfigStore.legacyKeys)
         restoreSettingsToFUn()
         setupManager()
         restoreSavedDevice()
