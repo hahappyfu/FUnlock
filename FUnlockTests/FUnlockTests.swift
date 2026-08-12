@@ -2610,34 +2610,34 @@ class StaircaseThresholdTests: XCTestCase {
     override func setUp() {
         super.setUp()
         // 清理阶梯偏移配置，避免各测试之间 UserDefaults 相互污染
-        UserDefaults.standard.removeObject(forKey: "wakeAdvance")
-        UserDefaults.standard.removeObject(forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.removeObject(forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.removeObject(forKey: "preUnlockTrigger")
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "wakeAdvance")
-        UserDefaults.standard.removeObject(forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.removeObject(forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.removeObject(forKey: "preUnlockTrigger")
         super.tearDown()
     }
 
     func testPreWakeThresholdDerivedFromUnlockRSSI() {
         let fun = FUn()
-        UserDefaults.standard.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
         XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI - 20,
                        "预备唤醒阈值 = 解锁阈值 - 唤醒提前量（默认 20dB）")
     }
 
     func testUnlockStairThresholdUsesPreUnlockTrigger() {
         let fun = FUn()
-        UserDefaults.standard.set(10, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
         XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 10,
                        "阶梯解锁阈值 = 解锁阈值 - 预解锁触发量（默认 10dB）")
     }
 
     func testStaircaseGapIs10dBm() {
         let fun = FUn()
-        UserDefaults.standard.set(20, forKey: "wakeAdvance")
-        UserDefaults.standard.set(10, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
         let gap = fun.unlockStairThreshold - fun.preWakeThreshold
         XCTAssertEqual(gap, 10,
                        "阶梯间距应为 10dB（唤醒提前 20dB、预解锁触发提前 10dB）")
@@ -2645,16 +2645,16 @@ class StaircaseThresholdTests: XCTestCase {
 
     func testPreWakeThresholdIsWeakerThanUnlockThreshold() {
         let fun = FUn()
-        UserDefaults.standard.set(20, forKey: "wakeAdvance")
-        UserDefaults.standard.set(10, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
         XCTAssertLessThan(fun.preWakeThreshold, fun.unlockStairThreshold,
                           "preWakeThreshold 应比 unlockStairThreshold 更远（更负）")
     }
 
     func testCustomOffsetsApply() {
         let fun = FUn()
-        UserDefaults.standard.set(20, forKey: "wakeAdvance")
-        UserDefaults.standard.set(10, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
         XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI - 20, "自定义唤醒提前量生效")
         XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 10, "自定义预解锁触发量生效")
     }
@@ -2669,8 +2669,8 @@ class StaircaseThresholdTests: XCTestCase {
     func testDerivedThresholdUsesClampedValues() {
         let fun = FUn()
         // 越界输入在 getter 层钳制，防止无意义阈值
-        UserDefaults.standard.set(-10, forKey: "wakeAdvance")
-        UserDefaults.standard.set(50, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(-10, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(50, forKey: "preUnlockTrigger")
         XCTAssertEqual(fun.preWakeThreshold, fun.unlockRSSI,
                        "wakeAdvance -10 应钳制为 0（唤醒点=解锁阈值）")
         XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 20,
@@ -2689,18 +2689,18 @@ class PreWakeStaircaseTests: XCTestCase {
         let fun = FUn()
         manager = FUnManager(fun: fun)
         // 设置必要的 UserDefaults 开关（预备唤醒测试需要）
-        UserDefaults.standard.set(true, forKey: "wakeOnProximity")
-        UserDefaults.standard.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "wakeOnProximity")
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
         // 阶梯参数显式固定，保证派生阈值确定性（wake 提前 20dB、预解锁触发 10dB）
-        UserDefaults.standard.set(20, forKey: "wakeAdvance")
-        UserDefaults.standard.set(10, forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "wakeOnProximity")
-        UserDefaults.standard.removeObject(forKey: "enabled")
-        UserDefaults.standard.removeObject(forKey: "wakeAdvance")
-        UserDefaults.standard.removeObject(forKey: "preUnlockTrigger")
+        ConfigStore.shared.defaults.removeObject(forKey: "wakeOnProximity")
+        ConfigStore.shared.defaults.removeObject(forKey: "enabled")
+        ConfigStore.shared.defaults.removeObject(forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.removeObject(forKey: "preUnlockTrigger")
         super.tearDown()
     }
 
@@ -2776,8 +2776,8 @@ class PreWakeStaircaseTests: XCTestCase {
     }
 
     func testOnDeviceApproachedBelowUnlockThresholdDoesNotAttemptUnlock() {
-        UserDefaults.standard.set(true, forKey: "enabled")
-        defer { UserDefaults.standard.removeObject(forKey: "enabled") }
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        defer { ConfigStore.shared.defaults.removeObject(forKey: "enabled") }
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("fut-\(UUID().uuidString)")
         let logger = DecisionLogger(testLogDirectory: tmp)
@@ -3208,11 +3208,11 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
     /// 场景：设备从 BLE 扫描信号逐步增强，经历预备唤醒到最终解锁
     func testFullUnlockFlowScanToUnlock() {
         // onDeviceApproached 需要 enabled 和 wakeOnProximity 为 true
-        UserDefaults.standard.set(true, forKey: "enabled")
-        UserDefaults.standard.set(true, forKey: "wakeOnProximity")
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "wakeOnProximity")
         defer {
-            UserDefaults.standard.removeObject(forKey: "enabled")
-            UserDefaults.standard.removeObject(forKey: "wakeOnProximity")
+            ConfigStore.shared.defaults.removeObject(forKey: "enabled")
+            ConfigStore.shared.defaults.removeObject(forKey: "wakeOnProximity")
         }
 
         // 步骤 1：初始状态 — 系统未锁定
@@ -3279,8 +3279,8 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         manager.fun.lockRSSI = -80
 
         // onDeviceApproached 需要 enabled 和 wakeOnProximity 为 true
-        UserDefaults.standard.set(true, forKey: "enabled")
-        UserDefaults.standard.set(true, forKey: "wakeOnProximity")
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "wakeOnProximity")
 
         // 信号达到预备唤醒阈值但未达到解锁阈值
         manager.fun.effectiveRSSI = -55.0  // > -60 preWake, < -50 unlock
@@ -3299,8 +3299,8 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         XCTAssertTrue(manager.state.isEffectivelyLocked,
                       "信号未达解锁阈值时应保持锁定")
 
-        UserDefaults.standard.removeObject(forKey: "enabled")
-        UserDefaults.standard.removeObject(forKey: "wakeOnProximity")
+        ConfigStore.shared.defaults.removeObject(forKey: "enabled")
+        ConfigStore.shared.defaults.removeObject(forKey: "wakeOnProximity")
     }
 
     /// 场景：系统休眠状态下不触发密码注入
@@ -3479,7 +3479,7 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         XCTAssertEqual(manager.state.system, .sleeping)
 
         // 设备靠近 — 由于 enabled 取决于 UserDefaults，先设置
-        UserDefaults.standard.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
         manager.fun.effectiveRSSI = -45.0
         manager.onDeviceApproached()
 
@@ -3487,7 +3487,7 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         XCTAssertFalse(manager.state.canAutoUnlock,
                        "系统休眠时设备靠近不应允许自动解锁")
 
-        UserDefaults.standard.removeObject(forKey: "enabled")
+        ConfigStore.shared.defaults.removeObject(forKey: "enabled")
     }
 
     /// 场景：蓝牙状态属性验证
@@ -3885,14 +3885,14 @@ class ProfileImportExportTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        UserDefaults.standard.removeObject(forKey: "profiles")
-        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        ConfigStore.shared.defaults.removeObject(forKey: "profiles")
+        ConfigStore.shared.defaults.removeObject(forKey: "activeProfileID")
         manager = ProfileManager()
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: "profiles")
-        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        ConfigStore.shared.defaults.removeObject(forKey: "profiles")
+        ConfigStore.shared.defaults.removeObject(forKey: "activeProfileID")
         super.tearDown()
     }
 
@@ -3906,8 +3906,8 @@ class ProfileImportExportTests: XCTestCase {
         guard let json = manager.exportJSON() else {
             return XCTFail("导出应成功")
         }
-        UserDefaults.standard.removeObject(forKey: "profiles")
-        UserDefaults.standard.removeObject(forKey: "activeProfileID")
+        ConfigStore.shared.defaults.removeObject(forKey: "profiles")
+        ConfigStore.shared.defaults.removeObject(forKey: "activeProfileID")
         let fresh = ProfileManager()
         guard let stats = fresh.importFrom(json: json) else {
             return XCTFail("导入应成功")
@@ -3977,9 +3977,9 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         manager.setUnlockRSSI(-55)
         XCTAssertEqual(manager.lockRSSI, -65, "调解解锁阈值后锁定应自动设为解锁-10")
         XCTAssertEqual(fun.lockRSSI, -65)
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: "lockRSSI"), -65)
-        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
-        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+        XCTAssertEqual(ConfigStore.shared.defaults.integer(forKey: "lockRSSI"), -65)
+        ConfigStore.shared.defaults.removeObject(forKey: "unlockRSSI")
+        ConfigStore.shared.defaults.removeObject(forKey: "lockRSSI")
     }
 
     func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
@@ -3988,8 +3988,8 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         manager.setLockRSSI(-80)
         manager.setUnlockRSSI(FUn().UNLOCK_DISABLED)  // = 1
         XCTAssertEqual(manager.lockRSSI, -80, "解锁禁用时不联动锁定")
-        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
-        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+        ConfigStore.shared.defaults.removeObject(forKey: "unlockRSSI")
+        ConfigStore.shared.defaults.removeObject(forKey: "lockRSSI")
     }
 
     func testSetUnlockRSSIClampToRangeMin() {
@@ -3997,8 +3997,8 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         let manager = FUnManager(fun: fun)
         manager.setUnlockRSSI(-95)
         XCTAssertEqual(manager.lockRSSI, -95, "联动值应钳制到滑杆下界 -95")
-        UserDefaults.standard.removeObject(forKey: "unlockRSSI")
-        UserDefaults.standard.removeObject(forKey: "lockRSSI")
+        ConfigStore.shared.defaults.removeObject(forKey: "unlockRSSI")
+        ConfigStore.shared.defaults.removeObject(forKey: "lockRSSI")
     }
 }
 

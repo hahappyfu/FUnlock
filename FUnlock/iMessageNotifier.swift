@@ -37,10 +37,10 @@ final class iMessageNotifier {
 
     /// 开关 / 收件人读取（复用现有 Keys enum）
     private var enabled: Bool {
-        UserDefaults.standard.bool(forKey: Keys.enabled)
+        ConfigStore.shared.bool(forKey: Keys.enabled)
     }
     private var recipient: String? {
-        UserDefaults.standard.string(forKey: Keys.recipient)
+        ConfigStore.shared.string(forKey: Keys.recipient)
     }
 
     /// 语义化事件发送：锁屏/解锁时由 FUnManager 调用。失败静默丢弃（锁时不打扰用户）。

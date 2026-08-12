@@ -178,7 +178,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     /// 读取偏移设置，越界/缺失时回退默认值
     private static func offsetSetting(_ key: String, default dft: Int) -> Int {
-        let value = UserDefaults.standard.object(forKey: key) as? Int ?? dft
+        let value = ConfigStore.shared.object(forKey: key) as? Int ?? dft
         return clampOffset(value)
     }
     /// 预备唤醒阈值（dBm）：解锁阈值往更远方向提前 wakeAdvance（UI 可填，默认 20）
@@ -334,8 +334,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let shouldLose: Bool = self.lock.withLock {
                 // 输入活动且 lockOnIdle 开启时，不判定信号丢失（与 applyLockTimer 行为一致），
                 // 仅重置超时计数与衰减基准，避免打字/用鼠标时因信号超时误锁
-                let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
-                    || UserDefaults.standard.bool(forKey: "lockOnIdle")
+                let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
+                    || ConfigStore.shared.bool(forKey: "lockOnIdle")
                 if lockOnIdle && self.isUserInputActive {
                     self.signalLostCount = 0
                     self.lastReceiveTime = Date()
@@ -566,8 +566,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let timeout = Self.lockTimeout(slope: slope, base: proximityTimeout)
         let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
-            let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
-                || UserDefaults.standard.bool(forKey: "lockOnIdle")
+            let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
+                || ConfigStore.shared.bool(forKey: "lockOnIdle")
             let nowEff = self.getEffectiveRSSI()
             let nowThreshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let nowPresence = self.lock.withLock { self.presence }
@@ -763,8 +763,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
                     return
                 }
-                let lockOnIdle = UserDefaults.standard.object(forKey: "lockOnIdle") == nil
-                    || UserDefaults.standard.bool(forKey: "lockOnIdle")
+                let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
+                    || ConfigStore.shared.bool(forKey: "lockOnIdle")
                 if lockOnIdle && isUserInputActive {
                     lockLog("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
                     Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")

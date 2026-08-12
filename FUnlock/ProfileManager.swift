@@ -111,13 +111,13 @@ class ProfileManager: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(profiles) {
-            UserDefaults.standard.set(data, forKey: profilesKey)
+            ConfigStore.shared.set(data, forKey: profilesKey)
         }
-        UserDefaults.standard.set(activeProfileID, forKey: activeKey)
+        ConfigStore.shared.set(activeProfileID, forKey: activeKey)
     }
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: profilesKey),
+        if let data = ConfigStore.shared.getData(profilesKey),
            let decoded = try? JSONDecoder().decode([Profile].self, from: data) {
             profiles = decoded
         }
@@ -125,6 +125,6 @@ class ProfileManager: ObservableObject {
         if !profiles.contains(where: { $0.id == "default" }) {
             profiles.insert(.default, at: 0)
         }
-        activeProfileID = UserDefaults.standard.string(forKey: activeKey) ?? "default"
+        activeProfileID = ConfigStore.shared.string(forKey: activeKey) ?? "default"
     }
 }

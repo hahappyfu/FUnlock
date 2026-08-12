@@ -106,10 +106,10 @@ final class FUnManager: ObservableObject {
     let decisionLogger: DecisionLogger
     var inputMonitor: InputActivityMonitor?
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
-    private let updateChecker = UpdateChecker()
+    private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
     private let downloader = UpdateDownloader()
     @Published private(set) var updateState: UpdateDownloader.State = .idle
-    private let prefs = UserDefaults.standard
+    private let prefs = ConfigStore.shared.defaults
     private var wakeTask: Task<Void, Never>?
     private var unlockTask: Task<Void, Never>?
     private var intrudeCheckTask: Task<Void, Never>?
@@ -200,14 +200,14 @@ final class FUnManager: ObservableObject {
     func setLockRSSI(_ value: Int) {
         lockRSSI = value
         fun.lockRSSI = value
-        UserDefaults.standard.set(value, forKey: "lockRSSI")
+        ConfigStore.shared.set(value, forKey: "lockRSSI")
         thresholdVersion += 1
     }
 
     func setUnlockRSSI(_ value: Int) {
         unlockRSSI = value
         fun.unlockRSSI = value
-        UserDefaults.standard.set(value, forKey: "unlockRSSI")
+        ConfigStore.shared.set(value, forKey: "unlockRSSI")
         if value != FUn().UNLOCK_DISABLED {
             setLockRSSI(max(value - lockUnlockDelayGap, Int(OverviewView.RSSIRange.min)))
         }
@@ -215,13 +215,13 @@ final class FUnManager: ObservableObject {
 
     /// 设置唤醒提前量（dB）：解锁阈值往更远方向提前（自动钳制到 0-20）
     func setWakeAdvance(_ value: Int) {
-        UserDefaults.standard.set(FUn.clampOffset(value), forKey: "wakeAdvance")
+        ConfigStore.shared.set(FUn.clampOffset(value), forKey: "wakeAdvance")
         thresholdVersion += 1
     }
 
     /// 设置预解锁触发量（dB）：解锁阈值往更远方向提前进入预解锁准备（自动钳制到 0-20）
     func setPreUnlockTrigger(_ value: Int) {
-        UserDefaults.standard.set(FUn.clampOffset(value), forKey: "preUnlockTrigger")
+        ConfigStore.shared.set(FUn.clampOffset(value), forKey: "preUnlockTrigger")
         thresholdVersion += 1
     }
 

@@ -120,7 +120,7 @@ struct IMSettingsCard: View {
         isTesting = true
         testState = .idle
         // 规范化收件人写回 defaults，保证 AppleScript 使用国际格式
-        UserDefaults.standard.set(normalizedRecipient, forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.set(normalizedRecipient, forKey: "iMessageNotifyRecipient")
         let (title, body) = IMMessageComposer.compose(.test)
         iMessageNotifier.shared.sendTestNotification(title: title, message: body) { result in
             isTesting = false
