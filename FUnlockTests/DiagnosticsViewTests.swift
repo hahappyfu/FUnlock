@@ -17,9 +17,8 @@ final class DiagnosticsViewTests: XCTestCase {
 
     func testTimeStringContainsOnlyTime() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let s = DiagnosticsView.timeString(date)
-        // 不含 "/" 或 "月"（日期分隔符），只含 HH:mm
-        XCTAssertFalse(s.contains("/"))
-        XCTAssertFalse(s.contains("月"))
+        XCTAssertEqual(DiagnosticsView.timeString(date),
+                       date.formatted(.dateTime.hour().minute()),
+                       "timeString 应只显示 HH:mm")
     }
 }

@@ -20,10 +20,10 @@ final class ConfigStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    /// 迁移：standard 有旧值 → 搬到 suite（用 legacyKeys 真实 key 验证）
+    /// 迁移：standard 有旧值 → 搬到 suite（用独立测试 key，不碰真实生产 key）
     func testMigrateMovesLegacyValues() {
         // 准备旧值：备份 standard 原值，结束后恢复，避免破坏真实配置
-        let legacyKey = ConfigStore.legacyKeys[1] // "deviceName"
+        let legacyKey = "testMigrateMovesLegacyValues_key"
         let original = UserDefaults.standard.object(forKey: legacyKey)
         UserDefaults.standard.set("legacy", forKey: legacyKey)
         defer { restore(original, forKey: legacyKey) }
@@ -36,7 +36,7 @@ final class ConfigStoreTests: XCTestCase {
 
     /// 幂等：第二次 migrateIfNeeded 不再覆盖
     func testMigrateIsIdempotent() {
-        let legacyKey = ConfigStore.legacyKeys[5] // "unlockRSSI"
+        let legacyKey = "testMigrateIsIdempotent_key"
         let original = UserDefaults.standard.object(forKey: legacyKey)
         UserDefaults.standard.set("v1", forKey: legacyKey)
         defer { restore(original, forKey: legacyKey) }

@@ -26,6 +26,8 @@ final class ConfigStore {
     func migrateIfNeeded(fromKeys keys: [String]) {
         guard !defaults.bool(forKey: ConfigStore.didMigrateKey) else { return }
         let standard = UserDefaults.standard
+        // cfprefsd 缓存可能未就绪：阻塞同步磁盘，确保 standard 有值时能读到（避免空跑迁移）
+        standard.synchronize()
         for key in keys {
             if let value = standard.object(forKey: key) {
                 defaults.set(value, forKey: key)

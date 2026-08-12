@@ -148,7 +148,7 @@ final class FUnManager: ObservableObject {
 
     /// 节流版记录：同一 reason 在 throttle 秒内只记录一次，超时或首次记录
     private func recordUnlockThrottled(_ reason: DecisionReason, detail: String = "", throttle: TimeInterval = 30) {
-        let now = Date()
+        let now = nowProvider()
         if let last = lastRecordTime[reason], now.timeIntervalSince(last) < throttle {
             return
         }
