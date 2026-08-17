@@ -197,7 +197,11 @@ final class FUnManager: ObservableObject {
         downloader.onStateChange = { [weak self] state in
             self?.updateState = state
             if case .completed(let appPath) = state {
-                try? UpdateInstaller.install(appPath: appPath)
+                do {
+                    try UpdateInstaller.install(appPath: appPath)
+                } catch {
+                    self?.updateState = .failed(error.localizedDescription)
+                }
             }
         }
     }
@@ -723,7 +727,6 @@ final class FUnManager: ObservableObject {
             recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
-            recordUnlockAttempt()
             recordUnlock(.success, reason: .unlockSuccess)
             iMessageNotifier.shared.send(.unlocked(rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
@@ -749,6 +752,7 @@ final class FUnManager: ObservableObject {
                     let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
                     if stillLocked {
                         self.consecutiveUnlockAttempts += 1
+                        self.recordUnlockAttempt()
                         Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
                         logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
