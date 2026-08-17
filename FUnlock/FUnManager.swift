@@ -139,7 +139,8 @@ final class FUnManager: ObservableObject {
     private var lastRecordTime: [DecisionReason: Date] = [:]
 
     private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
-        let effDetail = "信号 \(String(format: "%.1f", fun.effectiveRSSI)) dBm（解锁阈值 \(fun.unlockRSSI) dBm）"
+        let snap = fun.signalSnapshot()
+        let effDetail = "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm（解锁阈值 \(fun.unlockRSSI) dBm）"
         let combinedDetail = detail.isEmpty ? effDetail : "\(detail)（\(effDetail)）"
         decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
@@ -380,11 +381,12 @@ final class FUnManager: ObservableObject {
     // MARK: - FUn 设备事件
 
     func onDeviceApproached() {
+        let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
         guard enabled else { return }
         guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { return }
-        let smoothed = fun.effectiveRSSI
+        let smoothed = snap.effectiveRSSI
         lockLog("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
         timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
 
@@ -407,11 +409,12 @@ final class FUnManager: ObservableObject {
     }
 
     func onDeviceLeft(reason: String) {
+        let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
         let screenState = state.screen
         let lockDisabled = fun.lockRSSI == FUn.LOCK_DISABLED
-        lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", fun.effectiveRSSI))")
+        lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", snap.effectiveRSSI))")
         guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
         guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
         guard !lockDisabled else { lockLog("[LOCK] onDeviceLeft blocked: lock disabled"); return }
@@ -435,16 +438,16 @@ final class FUnManager: ObservableObject {
         ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
         let lockReason: DecisionReason = (reason == "lost") ? .lockedLost : .lockedAway
         recordLock(lockReason)
-        iMessageNotifier.shared.send(.locked(reason: reason, rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
+        iMessageNotifier.shared.send(.locked(reason: reason, rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
         // P3: 形子模式遥测 — 记录自动锁屏事件
         TelemetryLogger.shared.log(
             event: .autoLock,
             deviceModel: monitoredDeviceName,
             rawRSSI: rssi ?? -100,
-            kalmanRSSI: fun.pipeline.kalmanEstimate,
-            effectiveRSSI: fun.effectiveRSSI,
-            slope: fun.pipeline.smoothedSlope,
-            isAnomalous: fun.lastSignalAnomalous
+            kalmanRSSI: snap.kalmanEstimate,
+            effectiveRSSI: snap.effectiveRSSI,
+            slope: snap.smoothedSlope,
+            isAnomalous: snap.lastSignalAnomalous
         )
 
     }
@@ -497,33 +500,22 @@ final class FUnManager: ObservableObject {
     }
 
     func unbindDevice() {
-        // 断开 BLE 连接
-        if let p = fun.monitoredPeripheral {
+        // 先取锁内监控的 peripheral 引用，锁外取消连接
+        let peripheralToCancel = fun.withLockedPeripheral()
+        if let p = peripheralToCancel {
             fun.centralMgr.cancelPeripheralConnection(p)
         }
-        fun.monitoredUUID = nil
-        fun.monitoredUUIDs.removeAll()
-        fun.monitoredPeripheral = nil
-        fun.scanMode = false
         fun.stopScanning()
-
         // 清除所有 timer
         fun.invalidateAllTimers()
-        for (_, device) in fun.devices {
-            device.scanTimer?.invalidate()
-            device.scanTimer = nil
+        fun.withDevices { dict in
+            for (_, device) in dict {
+                device.scanTimer?.invalidate()
+                device.scanTimer = nil
+            }
         }
-
         // 重置状态
-        fun.presence = false
-        fun.signalLostCount = 0
-        fun.stableCount = 0
-        fun.activePollInterval = 2.0
-        fun.lastEstimatedRSSI = 0
-        fun.pipeline.reset()
-        fun.effectiveRSSI = -60.0
-        fun.displayRSSI = -60.0
-        fun.resetSmoothedRSSI()
+        fun.unbindAllState()
 
         // 清除 Manager 层状态
         monitoredDeviceName = nil
@@ -557,19 +549,20 @@ final class FUnManager: ObservableObject {
     // MARK: - 核心：自动解锁
 
     func attemptAutoUnlock() {
+        let snap = fun.signalSnapshot()
         let sys = SystemInteractionService.shared
         let screenLocked = sys.isScreenLocked(screenState: state.screen)
         let axGranted = AXIsProcessTrusted()
-        timingLog("attemptAutoUnlock | presence=\(fun.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", fun.effectiveRSSI)) locked=\(screenLocked)")
-        Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
-        guard fun.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
+        timingLog("attemptAutoUnlock | presence=\(snap.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
+        Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
+        guard snap.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
         guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
         // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
-        guard fun.effectiveRSSI >= Double(fun.unlockRSSI) else {
-            Log.sm.debug("SKIP: signal below unlock threshold (\(String(format: "%.1f", self.fun.effectiveRSSI)))")
-            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", fun.effectiveRSSI)) unlock=\(fun.unlockRSSI)")
-            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", self.fun.effectiveRSSI)) dBm 低于解锁阈值 \(self.fun.unlockRSSI) dBm")
+        guard snap.effectiveRSSI >= Double(fun.unlockRSSI) else {
+            Log.sm.debug("SKIP: signal below unlock threshold (\(String(format: "%.1f", snap.effectiveRSSI)))")
+            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", snap.effectiveRSSI)) unlock=\(fun.unlockRSSI)")
+            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm 低于解锁阈值 \(self.fun.unlockRSSI) dBm")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
@@ -615,10 +608,10 @@ final class FUnManager: ObservableObject {
             && prefs.bool(forKey: "wakeOnProximity")
             && isSystemReadyForUnlock() {
             Log.sm.debug("starting parallel wake + unlock")
-            timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", fun.effectiveRSSI))")
+            timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", snap.effectiveRSSI))")
             startWakeRetry()
             // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
-            if fun.effectiveRSSI >= Double(fun.unlockRSSI) {
+            if snap.effectiveRSSI >= Double(fun.unlockRSSI) {
                 // 并行：等 0.8s 后尝试解锁，不等唤醒完成
                 unlockTask?.cancel()
                 unlockTask = Task { [weak self] in
@@ -630,7 +623,7 @@ final class FUnManager: ObservableObject {
                     self.tryUnlock()
                 }
             } else {
-                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", self.fun.effectiveRSSI)) < unlockRSSI=\(self.fun.unlockRSSI)")
+                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", snap.effectiveRSSI)) < unlockRSSI=\(self.fun.unlockRSSI)")
             }
             return
         }
@@ -707,6 +700,7 @@ final class FUnManager: ObservableObject {
     /// 密码注入 + 乐观确认 + 双保险验证
     private func performInjectionAndVerify(password: String) {
         let sys = SystemInteractionService.shared
+        let snap = fun.signalSnapshot()
         timingLog("performInjectionAndVerify | injecting \(password.count) chars")
         Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
         self.state.unlockedAt = now
@@ -728,7 +722,7 @@ final class FUnManager: ObservableObject {
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
             recordUnlock(.success, reason: .unlockSuccess)
-            iMessageNotifier.shared.send(.unlocked(rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
+            iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
             // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
             let optimisticExtras = unlockEventExtras(result: "success")
@@ -782,10 +776,10 @@ final class FUnManager: ObservableObject {
                 event: .autoUnlock,
                 deviceModel: monitoredDeviceName,
                 rawRSSI: rssi ?? -100,
-                kalmanRSSI: fun.pipeline.kalmanEstimate,
-                effectiveRSSI: fun.effectiveRSSI,
-                slope: fun.pipeline.smoothedSlope,
-                isAnomalous: fun.lastSignalAnomalous
+                kalmanRSSI: snap.kalmanEstimate,
+                effectiveRSSI: snap.effectiveRSSI,
+                slope: snap.smoothedSlope,
+                isAnomalous: snap.lastSignalAnomalous
             )
             Log.sm.debug("unlock complete")
         }
@@ -793,11 +787,12 @@ final class FUnManager: ObservableObject {
 
     /// 解锁事件扩展字段（乐观确认 / 双保险验证共用）
     private func unlockEventExtras(result: String) -> [String: String] {
-        [
+        let snap = fun.signalSnapshot()
+        return [
             "result": result,
             "latencyMs": "0",
             "source": "proximity",
-            "effectiveRSSI": String(format: "%.1f", fun.effectiveRSSI),
+            "effectiveRSSI": String(format: "%.1f", snap.effectiveRSSI),
             "device": monitoredDeviceName ?? "unknown"
         ]
     }
@@ -876,9 +871,11 @@ final class FUnManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.fun.invalidateAllTimers()
-            for (_, device) in self.fun.devices {
-                device.scanTimer?.invalidate()
-                device.scanTimer = nil
+            self.fun.withDevices { dict in
+                for (_, device) in dict {
+                    device.scanTimer?.invalidate()
+                    device.scanTimer = nil
+                }
             }
             funlock_releaseWakeAssertion()
         }
@@ -893,6 +890,7 @@ final class FUnManager: ObservableObject {
     /// 记录一次解锁尝试（失败时调用），滑动窗口检测异常频率
     private func recordUnlockAttempt() {
         let now = Date()
+        let snap = fun.signalSnapshot()
         unlockAttemptTimestamps.append(now)
         // 清理窗口外的记录
         unlockAttemptTimestamps = unlockAttemptTimestamps.filter {
@@ -909,9 +907,9 @@ final class FUnManager: ObservableObject {
                     event: .abnormalAlert,
                     deviceModel: self.monitoredDeviceName,
                     rawRSSI: self.rssi ?? -100,
-                    kalmanRSSI: self.fun.pipeline.kalmanEstimate,
-                    effectiveRSSI: self.fun.effectiveRSSI,
-                    slope: self.fun.pipeline.smoothedSlope,
+                    kalmanRSSI: snap.kalmanEstimate,
+                    effectiveRSSI: snap.effectiveRSSI,
+                    slope: snap.smoothedSlope,
                     isAnomalous: true
                 )
                 lastAbnormalAlertTime = now
