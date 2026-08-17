@@ -455,7 +455,6 @@ final class FUnManager: ObservableObject {
             let smoothed = fun.smoothedRSSI(rssi)
             if smoothed >= Double(fun.preWakeThreshold) {
                 displayWakeRequested = true
-                print("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")
                 startWakeRetry()
             }
         }
@@ -816,9 +815,6 @@ final class FUnManager: ObservableObject {
             }
             for attempt in 0..<10 {
                 guard !Task.isCancelled else { return }
-                if attempt > 0 {
-                    print("[SM] retrying wake #\(attempt)")
-                }
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
                 timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
@@ -831,7 +827,6 @@ final class FUnManager: ObservableObject {
                     return
                 }
             }
-            print("[SM] wake failed after 10 retries")
             state.wake = .failed
             timingLog("wake failed after 10 retries")
             self.attemptAutoUnlock()

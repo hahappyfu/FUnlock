@@ -8,7 +8,6 @@ import AppKit
 
 enum MenuTab: String, CaseIterable {
     case overview   = "overview"
-    case device     = "device"
     case basic      = "basic"
     case unlock     = "unlock"
     case lock       = "lock"
@@ -19,7 +18,6 @@ enum MenuTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .overview:  return "gauge.medium"
-        case .device:    return "antenna.radiowaves.left.and.right"
         case .basic:     return "gearshape"
         case .unlock:    return "lock.open"
         case .lock:      return "lock"
@@ -138,9 +136,6 @@ struct MainWindowView: View {
     private var contentView: some View {
         switch selectedTab {
         case .overview:
-            OverviewView(manager: manager, fun: fun,
-                         showCalibration: $showCalibration)
-        case .device:
             OverviewView(manager: manager, fun: fun,
                          showCalibration: $showCalibration)
         case .basic:

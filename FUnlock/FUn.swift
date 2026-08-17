@@ -382,14 +382,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
-            print("[BLE] Bluetooth powered on - starting scan")
             Log.ble.debug("Bluetooth powered on")
             if activeModeTimer == nil {
                 scanForPeripherals()
             }
             powerWarn = false
         case .poweredOff:
-            print("[BLE] Bluetooth powered off")
             Log.ble.debug("Bluetooth powered off")
             invalidateAllTimers()
             let shouldWarn: Bool = lock.withLock {
@@ -705,7 +703,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let debugInfo: (isMonitored: Bool, presence: Bool, uuidCount: Int) = lock.withLock {
             (monitoredUUID != nil, presence, monitoredUUIDs.count)
         }
-        print("[BLE] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) presence=\(debugInfo.presence)")
         Log.ble.debug("[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
 
         let dispRSSI: Double = lock.withLock {
@@ -860,7 +857,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             (monitoredUUID, monitoredUUIDs.count)
         }
         let isInList = monitoredUUIDs.contains(peripheral.identifier)
-        print("[BLE] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) uuidCount=\(monitorInfo.uuidCount)")
         Log.ble.debug("[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
 
         if monitoredUUIDs.contains(peripheral.identifier) {

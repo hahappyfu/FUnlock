@@ -166,11 +166,6 @@ struct MenuBarPopoverView: View {
         manager.monitoredDeviceName ?? t("mb_no_device")
     }
 
-    private var connectionColor: Color {
-        guard manager.connected || manager.monitoredDeviceName != nil else { return .secondary.opacity(0.4) }
-        return manager.state.screen == .unlocked ? .green : .blue
-    }
-
     private var signalBarsView: some View {
         let level = signalLevel
         let rssi = fun.effectiveRSSI
