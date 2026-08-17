@@ -430,6 +430,58 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         return Self.decayedEffectiveRSSI(effectiveRSSI: effRSSI, elapsedSinceLastReceive: elapsed)
     }
 
+    /// 跨线程共享信号状态的锁内快照（Manager/UI 统一走快照，避免逐字段裸读）
+    struct SignalSnapshot {
+        let effectiveRSSI: Double
+        let presence: Bool
+        let kalmanEstimate: Double
+        let smoothedSlope: Double
+        let lastSignalAnomalous: Bool
+        let activeModeActive: Bool
+    }
+
+    func signalSnapshot() -> SignalSnapshot {
+        lock.withLock {
+            SignalSnapshot(
+                effectiveRSSI: effectiveRSSI,
+                presence: presence,
+                kalmanEstimate: pipeline.kalmanEstimate,
+                smoothedSlope: pipeline.smoothedSlope,
+                lastSignalAnomalous: lastSignalAnomalous,
+                activeModeActive: activeModeTimer != nil
+            )
+        }
+    }
+
+    /// 锁内遍历 devices（Manager 解绑/清理时避免裸读字典）
+    func withDevices(_ body: ([UUID: Device]) -> Void) {
+        lock.withLock { body(devices) }
+    }
+
+    /// 锁内读取监控的 peripheral 引用（锁外取消连接）
+    func withLockedPeripheral() -> CBPeripheral? {
+        lock.withLock { monitoredPeripheral }
+    }
+
+    /// 锁内重置解绑状态（unbindDevice 改用它，替代 Manager 无锁覆写）
+    func unbindAllState() {
+        lock.withLock {
+            monitoredUUID = nil
+            monitoredUUIDs.removeAll()
+            monitoredPeripheral = nil
+            scanMode = false
+            presence = false
+            signalLostCount = 0
+            stableCount = 0
+            activePollInterval = 2.0
+            lastEstimatedRSSI = 0
+            pipeline.reset()
+            effectiveRSSI = -60.0
+            displayRSSI = -60.0
+            smoothedRSSIValue = -100.0
+        }
+    }
+
     // MARK: - Direction 3: Heartbeat — proactive lock check
     private func ensureHeartbeat() {
         let alreadyExists = lock.withLock { heartbeatTimer != nil }
@@ -784,7 +836,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if let p = device.peripheral {
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
-            self?.devices.removeValue(forKey: uuid)
+            self?.lock.withLock { self?.devices.removeValue(forKey: uuid) }
             // 防泄漏：设备过期时清理节流记录
             self?.lastUIUpdateTime.removeValue(forKey: uuid)
         })
@@ -887,7 +939,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     }
                 }
             }
-            let dev = devices[peripheral.identifier]
+            let dev = lock.withLock { devices[peripheral.identifier] }
             var device: Device
             if (dev == nil) {
                 device = Device(uuid: peripheral.identifier)
@@ -904,7 +956,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                         if device.macAddr == nil { device.macAddr = bt.mac }
                         if device.blName == nil { device.blName = bt.name }
                     }
-                    devices[peripheral.identifier] = device
+                    lock.withLock { devices[peripheral.identifier] = device }
                     central.connect(peripheral, options: nil)
                     DispatchQueue.main.async {
                         self.delegate?.newDevice(device: device)
@@ -1096,7 +1148,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         if let value = characteristic.value {
             let str: String? = String(data: value, encoding: .utf8)
             if let s = str {
-                if let device = devices[peripheral.identifier] {
+                if let device = lock.withLock({ devices[peripheral.identifier] }) {
                     if characteristic.uuid == ManufacturerName {
                         device.manufacture = s
                         DispatchQueue.main.async {
