@@ -725,7 +725,6 @@ final class FUnManager: ObservableObject {
             recordUnlockAttempt()
             recordUnlock(.success, reason: .unlockSuccess)
             iMessageNotifier.shared.send(.unlocked(rssi: fun.effectiveRSSI, deviceName: monitoredDeviceName))
-            logDebug(component: "FUnManager", "tryUnlock() - unlock attempt posted, optimistic unlock confirmed")
             Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
             // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
             let optimisticExtras = unlockEventExtras(result: "success")
