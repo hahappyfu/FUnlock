@@ -287,11 +287,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             settingsWindow.orderOut(nil)
             fun.stopScanning()
         } else {
-            // 先激活再前置窗口：菜单栏 app 点击菜单项后必须先 activate，
-            // 否则第一次调用 makeKeyAndOrderFront 不生效（经典"点两次"问题）
-            NSApp.activate(ignoringOtherApps: true)
+            // 先前置窗口再激活：确保窗口先可见，再请求焦点
             settingsWindow.center()
             settingsWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            // macOS Sequoia 上 LSUIElement 应用首次激活可能需要二次请求焦点
+            DispatchQueue.main.async {
+                self.settingsWindow.makeKey()
+            }
             fun.startScanning()
         }
     }

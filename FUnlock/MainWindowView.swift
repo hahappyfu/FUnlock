@@ -36,7 +36,7 @@ struct MainWindowView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
 
-    @State private var selectedTab: MenuTab? = .overview
+    @State private var selectedTab: MenuTab = .overview
     @State private var showCalibration = false
     @State private var showOnboarding = false
     @State private var showAutomation = false
@@ -136,7 +136,7 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        switch selectedTab ?? .overview {
+        switch selectedTab {
         case .overview:
             OverviewView(manager: manager, fun: fun,
                          showCalibration: $showCalibration)

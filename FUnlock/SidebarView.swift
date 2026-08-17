@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @Binding var selectedTab: MenuTab?
+    @Binding var selectedTab: MenuTab
     @ObservedObject var manager: FUnManager
 
     private enum SidebarGroup: String, CaseIterable {
