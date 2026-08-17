@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013.0%2B-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-2.7.0-green.svg)]()
+[![Version](https://img.shields.io/badge/version-2.8.37-green.svg)]()
 [![Swift](https://img.shields.io/badge/Swift-5.7%2B-orange.svg)]()
 
 FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或任意蓝牙低功耗（BLE）设备的 RSSI 信号强度，自动锁定和解锁你的 Mac。无需安装 iPhone App，密码安全存储在 Keychain 中。
@@ -13,7 +13,7 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 
 ---
 
-## ✨ 核心特性
+## ✨ 项目亮点
 
 - **靠近即解锁** — 手机靠近 Mac 自动输入密码解锁，无需手动操作
 - **离开即锁定** — 手机离开范围后自动锁屏，保护隐私
@@ -22,6 +22,7 @@ FUnlock 是一个 macOS 菜单栏工具，通过监测 iPhone / Apple Watch 或�
 - **多设备支持** — 可同时监测多个 BLE 设备，自动扫描 + RSSI 排序 + 增量更新
 - **智能信号处理** — 非对称卡尔曼滤波 + 时间衰减丢包惩罚，靠近解锁干脆、离开锁定可靠
 - **决策时间线（诊断页）** — 每次"为什么没解锁 / 为什么锁屏"都记录为结构化事件，按日期分组的可视化时间轴，附操作建议按钮，可排查问题
+- **iMessage 通知** — 解锁/锁屏事件实时发到 Apple Watch（设置中填写收件人并授权 Messages 后开启）
 - **Wi-Fi 联动** — 连接指定 Wi-Fi 时暂停锁屏（如公司/家庭网络）
 - **多配置文件** — 支持创建多个配置，不同场景一键切换
 - **输入活动保护** — 检测键盘/触控板活动时暂缓锁定，打字不会误锁屏
@@ -54,9 +55,9 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 
 ## 🚀 快速开始
 
-1. 启动 FUnlock，菜单栏出现蓝牙图标
-2. 点击图标打开侧边栏控制中心，进入「设备」Tab
-3. 选择你的 iPhone 或 Apple Watch（或任意 BLE 设备）
+1. 启动 FUnlock，菜单栏出现状态图标
+2. 点击图标打开侧边栏控制中心
+3. 在「总览」页选择你的 iPhone 或 Apple Watch（或任意 BLE 设备）
 4. 输入 Mac 登录密码（安全存储在 Keychain）
 5. 也可以直接使用「总览」页的**自动校准向导**，跟着走两步即可生成合适阈值
 
@@ -66,12 +67,11 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 
 ## 🧭 控制中心
 
-点击菜单栏图标打开侧边栏导航控制中心（毛玻璃风格），共 8 个 Tab：
+点击菜单栏图标打开侧边栏导航控制中心（毛玻璃风格），共 7 个 Tab：
 
 | Tab | 功能 |
 |-----|------|
-| **总览** | 信号仪表盘、RSSI、阈值调节、校准向导、立即锁定、统计/自动化/关于入口 |
-| **设备** | 已绑定设备、自动 BLE 扫描、设备列表（RSSI 排序） |
+| **总览** | 信号仪表盘、RSSI、阈值调节、设备选择/切换、校准向导、立即锁定、统计/自动化/关于入口 |
 | **基础** | 启用/禁用、开机自启 |
 | **解锁** | 靠近唤醒、唤醒不解锁、屏保模式 |
 | **锁定** | 暂停媒体、关闭显示器、输入活动暂缓锁定 |
@@ -93,6 +93,7 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 | **锁定时暂停播放** | 锁定时暂停音乐/视频播放 |
 | **锁定时关闭屏幕** | 锁定时关闭显示器 |
 | **输入活动时暂缓锁定** | 检测到键盘/触控板活动时暂缓锁定，防止误锁 |
+| **iMessage 通知** | 解锁/锁屏事件发到 Apple Watch（需在设置中填写收件人并授权 Messages） |
 | **被动模式** | 被动扫描模式，不主动连接设备 |
 | **Wi-Fi 暂停** | 连接指定 SSID 时暂停锁屏（适用于公司/家庭网络） |
 | **手动锁屏保护** | 内置行为：手动锁屏后不自动解锁，需手动解锁重置 |
@@ -161,6 +162,9 @@ FUnlock/
 │   ├── SystemInteractionService.swift# 锁屏/唤醒/密码输入（与 FUnManager 解耦）
 │   ├── SecurityService.swift         # Keychain 读写 + 密码验证
 │   ├── ScriptRunner.swift            # 脚本事件执行 + 事件日志
+│   ├── iMessageNotifier.swift        # iMessage 通知（解锁/锁屏发到 Apple Watch）
+│   ├── IMMessageComposer.swift       # iMessage 消息组合
+│   ├── IMSettingsCard.swift          # iMessage 通知设置卡片
 │   ├── TelemetryLogger.swift         # 结构化日志 + 关键路径埋点
 │   ├── DebugLog.swift                # 调试日志组件
 │   ├── SignalDataStore.swift         # 信号数据存储
@@ -169,7 +173,7 @@ FUnlock/
 │   ├── UpdateInstaller.swift         # 自动更新安装器
 │   ├── ToastView.swift               # 轻提示组件
 │   └── ...                           # 各设置视图 + 工具类
-├── FUnlockTests/                     # 单元测试与集成测试（308 用例）
+├── FUnlockTests/                     # 单元测试与集成测试（373 用例）
 ├── Launcher/                         # 开机自启动 Helper
 ├── docs/                             # 开发文档与设计 spec
 └── BUGS.md                           # 问题登记
@@ -181,8 +185,8 @@ FUnlock/
 
 ```
 ┌─────────────────────────────────────────────┐
-│       MainWindowView (侧边栏导航，8 Tab)      │
-│          总览/设备/基础/解锁/锁定/网络/配置/诊断 │
+│       MainWindowView (侧边栏导航，7 Tab)      │
+│          总览/基础/解锁/锁定/网络/配置/诊断     │
 └──────────────────┬──────────────────────────┘
                    │ @Published state/rssi/events
 ┌──────────────────▼──────────────────────────┐
