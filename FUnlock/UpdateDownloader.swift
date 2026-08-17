@@ -59,47 +59,49 @@ class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
         let zipPath = tempDir.appendingPathComponent("FUnlock.zip")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                // 移动下载文件到临时目录
+                try FileManager.default.moveItem(at: location, to: zipPath)
 
-        do {
-            // 移动下载文件到临时目录
-            try FileManager.default.moveItem(at: location, to: zipPath)
+                // 解压
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                process.arguments = ["-o", zipPath.path, "-d", tempDir.path]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try process.run()
+                process.waitUntilExit()
 
-            // 解压
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            process.arguments = ["-o", zipPath.path, "-d", tempDir.path]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            try process.run()
-            process.waitUntilExit()
+                guard process.terminationStatus == 0 else {
+                    throw DownloadError.unzipFailed
+                }
 
-            guard process.terminationStatus == 0 else {
-                throw DownloadError.unzipFailed
-            }
+                // 校验 FUnlock.app 存在且 Bundle ID 正确
+                let appPath = tempDir.appendingPathComponent("FUnlock.app")
+                guard FileManager.default.fileExists(atPath: appPath.path) else {
+                    throw DownloadError.appNotFound
+                }
 
-            // 校验 FUnlock.app 存在且 Bundle ID 正确
-            let appPath = tempDir.appendingPathComponent("FUnlock.app")
-            guard FileManager.default.fileExists(atPath: appPath.path) else {
-                throw DownloadError.appNotFound
-            }
+                let plistPath = appPath.appendingPathComponent("Contents/Info.plist")
+                guard let plist = NSDictionary(contentsOf: plistPath),
+                      let bundleId = plist["CFBundleIdentifier"] as? String,
+                      bundleId == "com.fuhahah.FUnlock" else {
+                    throw DownloadError.bundleIdMismatch
+                }
 
-            let plistPath = appPath.appendingPathComponent("Contents/Info.plist")
-            guard let plist = NSDictionary(contentsOf: plistPath),
-                  let bundleId = plist["CFBundleIdentifier"] as? String,
-                  bundleId == "com.fuhahah.FUnlock" else {
-                throw DownloadError.bundleIdMismatch
-            }
+                // 清理 zip 文件
+                try? FileManager.default.removeItem(at: zipPath)
 
-            // 清理 zip 文件
-            try? FileManager.default.removeItem(at: zipPath)
-
-            DispatchQueue.main.async { [weak self] in
-                self?.onStateChange?(.completed(appPath))
-            }
-        } catch {
-            try? FileManager.default.removeItem(at: tempDir)
-            DispatchQueue.main.async { [weak self] in
-                self?.onStateChange?(.failed(error.localizedDescription))
+                DispatchQueue.main.async {
+                    self.onStateChange?(.completed(appPath))
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: self.tempDir)
+                DispatchQueue.main.async {
+                    self.onStateChange?(.failed(error.localizedDescription))
+                }
             }
         }
     }
