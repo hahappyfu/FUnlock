@@ -610,7 +610,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 密码检查 + 辅助功能权限 + 开机自启动同步 + 权限面板 + 快捷键 + 用户干预监听
     @MainActor private func setupPermissionsAndPrivileges() {
         // 密码检查
-        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
+        if fun.unlockRSSI != FUn.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
             let fetchResult = SecurityService.shared.fetchPassword()
             if case .success(nil) = fetchResult {
                 SecurityService.shared.askPassword()
@@ -618,7 +618,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         // Accessibility — 解锁功能需要，每次启动都检查
-        if fun.unlockRSSI != fun.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
+        if fun.unlockRSSI != FUn.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
             if !isAccessibilityGranted {
                 requestAccessibilityIfNeeded()
             }

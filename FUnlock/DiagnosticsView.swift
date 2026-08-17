@@ -217,7 +217,7 @@ struct DiagnosticsView: View {
         switch hint {
         case .lowerUnlockThreshold:
             let current = manager.unlockRSSI
-            let next = current == manager.fun.UNLOCK_DISABLED ? -95 : max(current - 5, -100)
+            let next = current == FUn.UNLOCK_DISABLED ? -95 : max(current - 5, -100)
             manager.setUnlockRSSI(next)
         case .openAccessibilitySettings:
             SystemInteractionService.shared.openAccessibilitySettings()

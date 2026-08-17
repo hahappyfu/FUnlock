@@ -38,7 +38,7 @@ struct OverviewView: View {
 
     /// 禁用解锁时的 UI 回退阈值：以滑块最小值显示
     private var effectiveUnlockRSSI: Int {
-        manager.unlockRSSI == FUn().UNLOCK_DISABLED ? Int(RSSIRange.min) : manager.unlockRSSI
+        manager.unlockRSSI == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : manager.unlockRSSI
     }
 
     var isThresholdApplied: Bool {
@@ -82,7 +82,7 @@ struct OverviewView: View {
             }
         }
         .onReceive(manager.$unlockRSSI) { newValue in
-            let expected = (newValue == FUn().UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
+            let expected = (newValue == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
             if Int(sliderUnlock) != expected && !isSliderDragging {
                 sliderUnlock = Double(expected)
             }

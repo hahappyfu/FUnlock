@@ -129,8 +129,8 @@ protocol FUnDelegate {
 }
 
 class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
-    let UNLOCK_DISABLED = 1
-    let LOCK_DISABLED = -100
+    static let UNLOCK_DISABLED = 1
+    static let LOCK_DISABLED = -100
     let bleQueue = DispatchQueue(label: "com.funlock.ble")
     private let lock = UnfairLock()
     var centralMgr : CBCentralManager!
@@ -183,7 +183,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     /// 预备唤醒阈值（dBm）：解锁阈值往更远方向提前 wakeAdvance（UI 可填，默认 20）
     var preWakeThreshold: Int {
-        guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
+        guard unlockRSSI != Self.UNLOCK_DISABLED else { return unlockRSSI }
         let advance = Self.offsetSetting("wakeAdvance", default: Self.defaultWakeAdvance)
         return unlockRSSI - advance
     }
@@ -191,7 +191,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     /// 信号进入该接近窗口时启用 0.5s 快速轮询（开足马力探测）；不再直接触发解锁，
     /// 真正解锁由信号达到 unlockRSSI 决定
     var unlockStairThreshold: Int {
-        guard unlockRSSI != UNLOCK_DISABLED else { return unlockRSSI }
+        guard unlockRSSI != Self.UNLOCK_DISABLED else { return unlockRSSI }
         let trigger = Self.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
         return unlockRSSI - trigger
     }
@@ -451,7 +451,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private func computeHeartbeatInterval() -> TimeInterval {
         let eff = getEffectiveRSSI()
         let baseTh = Double(unlockRSSI) + 10.0
-        let lockTh = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI) + 10.0
+        let lockTh = Double(lockRSSI == Self.LOCK_DISABLED ? unlockRSSI : lockRSSI) + 10.0
         if eff > baseTh { return 8.0 }
         if eff < lockTh { return 2.0 }
         return 3.0
@@ -470,7 +470,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             guard !shouldStop else { return }
             let eff = self.getEffectiveRSSI()
-            let threshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            let threshold = Double(self.lockRSSI == Self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
             // 冷静期：刚解锁后不立即触发锁定
             let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
@@ -567,7 +567,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
                 || ConfigStore.shared.bool(forKey: "lockOnIdle")
             let nowEff = self.getEffectiveRSSI()
-            let nowThreshold = Double(self.lockRSSI == self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            let nowThreshold = Double(self.lockRSSI == Self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
             let nowPresence = self.lock.withLock { self.presence }
             lockLog("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
             if nowEff >= nowThreshold {
@@ -694,7 +694,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func checkProximity(rssi: Int, effectiveRSSI: Double) {
-        let unlockThreshold = unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI
+        let unlockThreshold = unlockRSSI == Self.UNLOCK_DISABLED ? lockRSSI : unlockRSSI
         // 用 effectiveRSSI（与 applyLockTimer 同源）判断解锁，避免原始 RSSI 尖峰导致振荡
         let signal = effectiveRSSI
         var shouldNotifyClose = false
@@ -742,7 +742,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func applyLockTimer(effectiveRSSI: Double) {
-        let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
+        let threshold = Double(lockRSSI == Self.LOCK_DISABLED ? unlockRSSI : lockRSSI)
         if effectiveRSSI >= threshold {
             lock.withLock {
                 proximityTimer?.invalidate()
@@ -1005,10 +1005,10 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             // 走近方向：解锁爬升区 [stair-window, stair) 也启用快速轮询——用户从远处走回时
             // 若只按锁定阈值触发，爬升区用 8s 慢采样，会出现"走到面前等几十秒"的感知延迟
             var nearClimb = false
-            if unlockRSSI != UNLOCK_DISABLED {
+            if unlockRSSI != Self.UNLOCK_DISABLED {
                 nearClimb = Self.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
             }
-            let threshold = Double(lockRSSI == LOCK_DISABLED ? unlockRSSI : lockRSSI)
+            let threshold = Double(lockRSSI == Self.LOCK_DISABLED ? unlockRSSI : lockRSSI)
             let nearThreshold = nearClimb || Self.isNearThreshold(effectiveRSSI, threshold: threshold)
             if nearThreshold {
                 if activePollInterval != fastPollInterval {

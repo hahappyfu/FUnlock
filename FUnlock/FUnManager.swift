@@ -221,7 +221,7 @@ final class FUnManager: ObservableObject {
         unlockRSSI = value
         fun.unlockRSSI = value
         ConfigStore.shared.set(value, forKey: "unlockRSSI")
-        if value != FUn().UNLOCK_DISABLED {
+        if value != FUn.UNLOCK_DISABLED {
             setLockRSSI(max(value - lockUnlockDelayGap, Int(OverviewView.RSSIRange.min)))
         }
     }
@@ -329,7 +329,7 @@ final class FUnManager: ObservableObject {
             guard !Task.isCancelled else { return }
             guard let self else { return }
             if !wasFUnUnlock {
-                if self.fun.unlockRSSI != self.fun.UNLOCK_DISABLED {
+                if self.fun.unlockRSSI != FUn.UNLOCK_DISABLED {
                     ScriptRunner.shared.runScript("intruded", rssi: self.rssi, deviceName: self.monitoredDeviceName)
                     ScriptRunner.shared.logEvent("intruded", rssi: self.rssi)
                 }
@@ -379,7 +379,7 @@ final class FUnManager: ObservableObject {
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
         guard enabled else { return }
-        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { return }
+        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { return }
         let smoothed = fun.effectiveRSSI
         lockLog("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
         timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
@@ -406,7 +406,7 @@ final class FUnManager: ObservableObject {
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
         let screenState = state.screen
-        let lockDisabled = fun.lockRSSI == fun.LOCK_DISABLED
+        let lockDisabled = fun.lockRSSI == FUn.LOCK_DISABLED
         lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", fun.effectiveRSSI))")
         guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
         guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
@@ -558,7 +558,7 @@ final class FUnManager: ObservableObject {
         timingLog("attemptAutoUnlock | presence=\(fun.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", fun.effectiveRSSI)) locked=\(screenLocked)")
         Log.sm.debug("attemptAutoUnlock presence=\(self.fun.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
         guard fun.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
-        guard fun.unlockRSSI != fun.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
+        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
         // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard fun.effectiveRSSI >= Double(fun.unlockRSSI) else {

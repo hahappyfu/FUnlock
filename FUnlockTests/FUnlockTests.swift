@@ -4015,7 +4015,7 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         let fun = FUn()
         let manager = FUnManager(fun: fun)
         manager.setLockRSSI(-80)
-        manager.setUnlockRSSI(FUn().UNLOCK_DISABLED)  // = 1
+        manager.setUnlockRSSI(FUn.UNLOCK_DISABLED)  // = 1
         XCTAssertEqual(manager.lockRSSI, -80, "解锁禁用时不联动锁定")
         ConfigStore.shared.defaults.removeObject(forKey: "unlockRSSI")
         ConfigStore.shared.defaults.removeObject(forKey: "lockRSSI")
