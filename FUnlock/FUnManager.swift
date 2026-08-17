@@ -455,6 +455,7 @@ final class FUnManager: ObservableObject {
             let smoothed = fun.smoothedRSSI(rssi)
             if smoothed >= Double(fun.preWakeThreshold) {
                 displayWakeRequested = true
+                Log.sm.debug("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")
                 startWakeRetry()
             }
         }
