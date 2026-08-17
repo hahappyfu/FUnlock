@@ -92,7 +92,7 @@ int SACLockScreenImmediate(void)
     return 0;
 
 fallback:
-    // 兜底：CGEvent 不可用时退化为原来的 IORequestIdle 关屏（至少让屏幕熄灭）
+    ; // 空语句：标签必须附着在语句上，不能直接跟声明（旧版 clang 严格报错）
     io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
         IORegistryEntrySetCFProperty(reg, CFSTR("IORequestIdle"), kCFBooleanTrue);
