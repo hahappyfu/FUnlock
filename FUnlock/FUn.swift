@@ -34,23 +34,18 @@ let fastSlopeThreshold = 8.0
 /// 判定「缓降」的斜率阈值（dBm/s），slope ≥ -1 视为接近平稳
 let mildSlopeThreshold = 1.0
 
-func getMACFromUUID(_ uuid: String) -> String? {
-    guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist") else { return nil }
-    guard let cbcache = plist["CoreBluetoothCache"] as? NSDictionary else { return nil }
-    guard let device = cbcache[uuid] as? NSDictionary else { return nil }
-    return device["DeviceAddress"] as? String
-}
-
-func getNameFromMAC(_ mac: String) -> String? {
-    guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist") else { return nil }
-    guard let devcache = plist["DeviceCache"] as? NSDictionary else { return nil }
-    guard let device = devcache[mac] as? NSDictionary else { return nil }
-    if let name = device["Name"] as? String {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        if trimmed == "" { return nil }
-        return trimmed
+func readBluetoothDevice(_ uuid: String) -> (mac: String?, name: String?) {
+    guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist") else { return (nil, nil) }
+    let mac = ((plist["CoreBluetoothCache"] as? NSDictionary)?[uuid] as? NSDictionary)?["DeviceAddress"] as? String
+    let name: String?
+    if let mac = mac, let device = (plist["DeviceCache"] as? NSDictionary)?[mac] as? NSDictionary,
+        let raw = device["Name"] as? String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        name = trimmed == "" ? nil : trimmed
+    } else {
+        name = nil
     }
-    return nil
+    return (mac, name)
 }
 
 class Device: NSObject {
@@ -904,11 +899,10 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                         device.blName = info.name
                         device.macAddr = info.macAddr
                     }
-                    if device.macAddr == nil {
-                        device.macAddr = getMACFromUUID(peripheral.identifier.description)
-                    }
-                    if let mac = device.macAddr, device.blName == nil {
-                        device.blName = getNameFromMAC(mac)
+                    if device.macAddr == nil || device.blName == nil {
+                        let bt = readBluetoothDevice(peripheral.identifier.description)
+                        if device.macAddr == nil { device.macAddr = bt.mac }
+                        if device.blName == nil { device.blName = bt.name }
                     }
                     devices[peripheral.identifier] = device
                     central.connect(peripheral, options: nil)

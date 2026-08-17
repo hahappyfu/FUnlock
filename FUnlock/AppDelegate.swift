@@ -155,11 +155,11 @@ struct PermissionCheckView: View {
     private func requestBT() {
         openSettings("com.apple.preference.security?Privacy_Bluetooth")
     }
+}
 
-    private func openSettings(_ pane: String) {
-        let script = "tell application \"System Settings\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
-        if let s = NSAppleScript(source: script) { var e: NSDictionary?; s.executeAndReturnError(&e) }
-    }
+func openSettings(_ pane: String) {
+    let script = "tell application \"System Settings\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
+    if let s = NSAppleScript(source: script) { var e: NSDictionary?; s.executeAndReturnError(&e) }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
@@ -416,16 +416,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard !isAccessibilityGranted else { return }
         // agent 应用（无 Dock 图标）可能无法弹出系统授权弹窗
         // 直接打开系统设置的辅助功能页面，让用户手动添加
-        let script = """
-        tell application "System Settings"
-            activate
-            reveal pane id "com.apple.preference.security?Privacy_Accessibility"
-        end tell
-        """
-        if let AppleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            AppleScript.executeAndReturnError(&error)
-        }
+        openSettings("com.apple.preference.security?Privacy_Accessibility")
     }
 
     /// 保留向后兼容的启动检查（仅首次运行时弹窗）
