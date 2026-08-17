@@ -438,32 +438,16 @@ final class SystemInteractionService {
         timeout: TimeInterval = 2.0,
         notificationTimeout: TimeInterval = 1.0
     ) async -> UnlockNotification {
-        let result = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
-            // 路径1：系统解锁通知（快速，约100ms）
-            group.addTask { [self] in
-                await self.waitForUnlockNotification(timeout: notificationTimeout)
+        await Self.verifyUnlock(
+            timeout: timeout,
+            notificationTimeout: notificationTimeout,
+            waitForNotification: { [weak self] t in
+                await self?.waitForUnlockNotification(timeout: t) ?? false
+            },
+            checkUnlocked: { [weak self] t in
+                await self?.checkScreenUnlocked(timeout: t) ?? false
             }
-            // 路径2：CGSession 轮询（兜底，最多2秒）
-            group.addTask { [self] in
-                await self.checkScreenUnlocked(timeout: timeout)
-            }
-
-            // 超时兜底：整体 deadline
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return false
-            }
-
-            // 任一路径返回 true 立即获胜
-            for await success in group {
-                if success {
-                    group.cancelAll()
-                    return true
-                }
-            }
-            return false
-        }
-        return UnlockNotification(unlock: result)
+        )
     }
 
     /// 双保险验证（可测试版本）：接受注入的通知监听和屏幕检查闭包
