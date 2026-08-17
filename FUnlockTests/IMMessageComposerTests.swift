@@ -39,9 +39,14 @@ final class IMMessageComposerTests: XCTestCase {
     }
 
     func testComposeTimeHHmm() {
-        let fixed = Date(timeIntervalSince1970: 0) // 1970-01-01 08:00:00 +0800
+        let fixed = Date(timeIntervalSince1970: 0) // 1970-01-01 00:00:00 UTC
         let (_, body) = IMMessageComposer.compose(.unlocked(rssi: -42, deviceName: "iPhone"), now: fixed)
-        XCTAssertTrue(body.contains("08:00"), "时间应为 HH:mm 格式，实际: \(body)")
+        // 检查时间格式是否为 HH:mm（不依赖具体时区）
+        let timePattern = "\\d{2}:\\d{2}"
+        let regex = try! NSRegularExpression(pattern: timePattern)
+        let range = NSRange(body.startIndex..<body.endIndex, in: body)
+        XCTAssertTrue(regex.firstMatch(in: body, options: [], range: range) != nil,
+                      "时间应为 HH:mm 格式，实际: \(body)")
     }
 
     // MARK: - 降级文案
