@@ -32,6 +32,8 @@ jobs:
     runs-on: macos-14
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     - name: Build release
       run: |
         xcodebuild archive \
@@ -62,8 +64,10 @@ jobs:
 
         echo "DMG created: build/FUnlock.dmg"
         ls -lh build/FUnlock.dmg
-    - name: Create Release
+    - name: Upload DMG to Release
       uses: softprops/action-gh-release@v2
       with:
         files: build/FUnlock.dmg
-        generate_release_notes: true
+        fail_on_unmatched_files: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
