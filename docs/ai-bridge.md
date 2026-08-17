@@ -16,16 +16,13 @@
 ## Status（状态区，可更新）
 
 - **当前活跃角色：** opencode（执行方）
-- **正在进行的任务：** 第二轮 ponytail 精简 6 任务全部完成 ✅（feat/2026-08-17 @ a900c1a）
+- **正在进行的任务：** 第二轮代码审查修复全部完成 ✅（feat/2026-08-17 @ 8fd1bf5）
 - **TODO：**
-  - [x] **任务 1：死代码清理** ✅（d4900d9）
-  - [x] **任务 2：阈值常量静态化** ✅（4932d50）
-  - [x] **任务 3：FUnlockResultVerifier 移除** ✅（02c09e6）
-  - [x] **任务 4：verifyUnlock 双版本合并** ✅（3eb00a9）
-  - [x] **任务 5：plist 读取合并 + 系统设置 helper** ✅（e34c15b）
-  - [x] **任务 6：成对双日志收敛** ✅（0822c2b）
+  - [x] **第二轮 ponytail 精简 6 任务** ✅（d4900d9→0822c2b）
   - [x] **最终修复：pre-wake 唯一日志恢复** ✅（a900c1a）
-- **上次更新：** 2026-08-17 21:20 由 opencode
+  - [x] **审查修复：自动化脚本断裂 / 更新链路 / recordUnlockAttempt / 并发快照** ✅（56c09cd→fc7f581）
+  - [x] **README 更新至当前功能状态** ✅（8fd1bf5）
+- **上次更新：** 2026-08-17 23:15 由 opencode
 
 ## Log（发言区，仅追加）
 
@@ -377,3 +374,27 @@ auditor 交接：ponytail 精简审查完成，发现 1 个 P0 解锁回归（c8
 - openSettings 实为 PermissionCheckView private 方法（简报行号有误），任务 5 提升为全局函数满足复用意图。
 
 **遗留建议（非阻塞，后续可排）：** `unlockEventExtras` 生产事件格式零回归覆盖（FUnlockResultVerifier 删除后遗留缺口）；`openSettings` 命名暴露面较大；保留测试名 testLogUnlockResult* 与类名略不一致。等待合并决策或新任务下发。
+
+---
+
+### 2026-08-17 23:15 — opencode（执行方）
+
+**第二轮代码审查修复完成**（分支 feat/2026-08-17 @ 8fd1bf5）。三路子智能体审查（核心逻辑 6.5/10、UI/辅助模块 7/10、README 修完再合）发现的问题已按「全部修复」决策处理。
+
+**commit 列表（本轮 7 个）：**
+| commit | 内容 |
+|--------|------|
+| 56c09cd | 更新安装失败上报 .failed 状态；recordUnlockAttempt 移到验证失败分支（异常解锁告警不再骚扰正常用户） |
+| 9d40625 | 更新下载解压移至后台队列，避免阻塞主线程 |
+| dd8467d | 自动化脚本面板对齐 ScriptRunner 路径（Application Scripts/<bundleId>/event 单一文件 + 事件名参数），消除「配置永不生效」 |
+| 75588ee | FUn 新增信号快照 SignalSnapshot + devices 锁内访问 + unbindAllState，消除跨线程数据竞争 |
+| fc7f581 | Manager 统一走 signalSnapshot()（7 函数 11 处读取点）；unbindDevice 状态重置移入锁内 |
+| 8fd1bf5 | README 更新（版本 2.8.37、7 Tab、补回多设备/权限检查亮点、iMessage 表述准确化） |
+
+**测试：** 373/373 全绿（TEST SUCCEEDED）。
+
+**审查遗留待排（Minor 级，未阻塞）：**
+- SystemInteractionService 注入链主线程 Thread.sleep 异步化 → **判定不改**：P0 注入流程同步返回语义依赖 posted 判定，异步化回归风险远大于 0.3s 阻塞收益，且验证已有 CGSession 竞速兜底
+- 自动化脚本/更新链路的 Minor 项（错误与"已是最新"混淆、iMessage 换行转义、授权状态字符串匹配、Toast 竞态、ForEach id 冲突、强制解包、CSV 转义、版本比较预发布段、全局监听器未移除、导入配置未应用、DebugLog 静默丢弃等）→ 留待后续
+
+**遗留架构项（非本轮范围）：** FUn 依赖 UnfairLock 而非 actor，UI 层（MenuBarPopover/OverviewView）仍直读 fun.effectiveRSSI（只读展示、无决策影响）；FUnlockStateMachine 死代码（activeTask/isLockBufferActive/displayAsleep 等）。等待合并决策或新任务下发。
