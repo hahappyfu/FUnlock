@@ -170,7 +170,7 @@ git commit -m "feat: iMessageNotifier 支持手动测试（返回错误描述 + 
 
     func testTestNotificationFailsFastWhenDisabled() {
         UserDefaults.standard.set(false, forKey: "iMessageNotify")
-        UserDefaults.standard.set("15167104090", forKey: "iMessageNotifyRecipient")
+        UserDefaults.standard.set("13800138000", forKey: "iMessageNotifyRecipient")
         let exp = expectation(description: "disabled")
         iMessageNotifier.shared.sendTestNotification(title: "🔒 测试", message: "锁定") { result in
             switch result {
@@ -198,7 +198,7 @@ git commit -m "feat: iMessageNotifier 支持手动测试（返回错误描述 + 
 
     func testTestNotificationSuccess() {
         UserDefaults.standard.set(true, forKey: "iMessageNotify")
-        UserDefaults.standard.set("15167104090", forKey: "iMessageNotifyRecipient")
+        UserDefaults.standard.set("13800138000", forKey: "iMessageNotifyRecipient")
         iMessageNotifier.shared.scriptRunner = { _, _ in nil } // 模拟发送成功
         let exp = expectation(description: "success")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
@@ -210,7 +210,7 @@ git commit -m "feat: iMessageNotifier 支持手动测试（返回错误描述 + 
 
     func testSendTestNotificationFailurePropagates() {
         UserDefaults.standard.set(true, forKey: "iMessageNotify")
-        UserDefaults.standard.set("13812304090", forKey: "iMessageNotifyRecipient")
+        UserDefaults.standard.set("13800138001", forKey: "iMessageNotifyRecipient")
         iMessageNotifier.shared.scriptRunner = { _, _ in "Messages 未授权" }
         let exp = expectation(description: "failure")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
@@ -225,7 +225,7 @@ git commit -m "feat: iMessageNotifier 支持手动测试（返回错误描述 + 
 
     func testTestNotificationBypassDebounce() {
         UserDefaults.standard.set(true, forKey: "iMessageNotify")
-        UserDefaults.standard.set("13812304090", forKey: "iMessageNotifyRecipient")
+        UserDefaults.standard.set("13800138001", forKey: "iMessageNotifyRecipient")
         var calls = 0
         iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
         let exp = expectation(description: "twice")

@@ -88,7 +88,7 @@ final class IMMessageComposerTests: XCTestCase {
     }
 
     func testNormalizePlusPrefixKept() {
-        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+8615167104090"), "+8615167104090", "国际格式加号必须保留，否则 buddy 匹配失败")
+        XCTAssertEqual(IMMessageComposer.normalizeRecipient("+8613800138000"), "+8613800138000", "国际格式加号必须保留，否则 buddy 匹配失败")
     }
 
     func testNormalizePhoneWith86Space() {

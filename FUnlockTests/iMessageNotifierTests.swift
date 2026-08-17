@@ -71,7 +71,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testLockedEventDebouncedByType() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         var calls = 0
         iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
         // 连续两次同类型事件：30s 防抖只放行一次
@@ -88,7 +88,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testLockedEventDisabledNotSent() {
         ConfigStore.shared.defaults.set(false, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         var calls = 0
         iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
@@ -100,7 +100,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testLockedEventSilentFailure() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         iMessageNotifier.shared.scriptRunner = { _, _ in "Messages 未授权：请授权" }
         // 真实路径失败应静默：不崩溃、不抛异常
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
@@ -111,7 +111,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testLockedEventComposesLocalizedText() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         var received = ""
         iMessageNotifier.shared.scriptRunner = { _, text in received = text; return nil }
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
@@ -128,7 +128,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testTestNotificationFailsFastWhenDisabled() {
         ConfigStore.shared.defaults.set(false, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         let exp = expectation(description: "disabled")
         iMessageNotifier.shared.sendTestNotification(title: "🔒 测试", message: "锁定") { result in
             switch result {
@@ -156,7 +156,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testTestNotificationSuccess() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         iMessageNotifier.shared.scriptRunner = { _, _ in nil } // 模拟发送成功
         let exp = expectation(description: "success")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
@@ -169,7 +169,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testSendTestNotificationFailurePropagates() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("13812304090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138001", forKey: "iMessageNotifyRecipient")
         iMessageNotifier.shared.scriptRunner = { _, _ in "Messages 未授权" }
         let exp = expectation(description: "failure")
         iMessageNotifier.shared.sendTestNotification(title: "t", message: "m") { result in
@@ -185,7 +185,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     func testTestNotificationBypassDebounce() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
-        ConfigStore.shared.defaults.set("15167104090", forKey: "iMessageNotifyRecipient")
+        ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         var calls = 0
         iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
         let exp = expectation(description: "twice")
