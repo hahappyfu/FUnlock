@@ -8,9 +8,9 @@ struct AutomationView: View {
     @Binding var isPresented: Bool
 
     private static let eventScriptDir: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.fuhahah.FUnlock"
-        return appSupport.appendingPathComponent("\(bundleId)/event")
+        let dir = try? FileManager.default.url(for: .applicationScriptsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        return dir ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("FUnlock")
     }()
 
     private struct EventItem {
@@ -20,10 +20,10 @@ struct AutomationView: View {
     }
 
     private let events: [EventItem] = [
-        EventItem(name: "away",   icon: "lock.fill",        fileName: "away"),
-        EventItem(name: "lost",   icon: "wifi.slash",       fileName: "lost"),
-        EventItem(name: "unlocked", icon: "lock.open.fill", fileName: "unlocked"),
-        EventItem(name: "intruded", icon: "hand.raised.fill", fileName: "intruded")
+        EventItem(name: "away",     icon: "lock.fill",         fileName: "event"),
+        EventItem(name: "lost",     icon: "wifi.slash",        fileName: "event"),
+        EventItem(name: "unlocked", icon: "lock.open.fill",    fileName: "event"),
+        EventItem(name: "intruded", icon: "hand.raised.fill",  fileName: "event")
     ]
 
     var body: some View {
@@ -96,10 +96,15 @@ struct AutomationView: View {
         let dir = Self.eventScriptDir
         // 确保目录存在
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let fileURL = dir.appendingPathComponent(eventName)
-        // 如果脚本文件不存在，创建一个空的示例文件提示用户
+        let fileURL = dir.appendingPathComponent("event")
+        // 如果脚本文件不存在，创建一个示例文件提示用户
         if !FileManager.default.fileExists(atPath: fileURL.path) {
-            let example = "#!/bin/bash\n# \(eventName) event script\n# Add your commands here\n\n"
+            let example = """
+            #!/bin/bash
+            # FUnlock event script
+            # 参数：$1 = 事件名（away / lost / unlocked / intruded），$2 = RSSI，$3 = 设备名，$4 = 时间戳
+            echo "event=$1 rssi=$2 device=$3 time=$4"
+            """
             try? example.write(to: fileURL, atomically: true, encoding: .utf8)
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fileURL.path)
         }
