@@ -23,6 +23,14 @@ final class SystemInteractionService {
         return false
     }
 
+    /// 判断 CGSession 字典是否表示屏幕已解锁。
+    /// macOS 解锁时 CGSSessionScreenIsLocked key 缺失（nil）或为 0，锁定时为 1。
+    /// 因此"非锁定"（key 缺失或 0）即视为已解锁；nil 字典（无会话信息）保守判未解锁。
+    static func sessionDictIndicatesUnlocked(_ dict: [String: Any]?) -> Bool {
+        guard let dict else { return false }
+        return (dict["CGSSessionScreenIsLocked"] as? Int ?? 0) == 0
+    }
+
     /// Double safety check: screen locked + frontmost app is loginwindow
     func isSecureToInject(screenState: ScreenState?) -> Bool {
         let locked = isScreenLocked(screenState: screenState)
@@ -384,7 +392,7 @@ final class SystemInteractionService {
         while Date() < deadline {
             // 检查 CGSession
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-                if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
+                if Self.sessionDictIndicatesUnlocked(dict) {
                     logDebug(component: "SystemInteraction", "waitForUnlockNotification: unlocked via CGSession")
                     return true
                 }
@@ -409,7 +417,7 @@ final class SystemInteractionService {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-                if dict["CGSSessionScreenIsLocked"] as? Int == 0 {
+                if Self.sessionDictIndicatesUnlocked(dict) {
                     logDebug(component: "SystemInteraction", "checkScreenUnlocked: screen unlocked via CGSession")
                     return true
                 }

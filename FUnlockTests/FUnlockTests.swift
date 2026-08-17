@@ -2328,6 +2328,35 @@ class FUnManagerStateMachineIntegrationTests: XCTestCase {
 @MainActor
 class DualVerificationTests: XCTestCase {
 
+    // MARK: - CGSession 字典解析（解锁判断）
+
+    /// 解锁时 CGSSessionScreenIsLocked key 缺失（实测 nil），应判已解锁
+    func testSessionDictMissingLockedKeyMeansUnlocked() {
+        let dict: [String: Any] = ["kCGSSessionUserIDKey": 501]
+        XCTAssertTrue(SystemInteractionService.sessionDictIndicatesUnlocked(dict),
+                      "解锁状态下 CGSSessionScreenIsLocked 缺失，应判已解锁")
+    }
+
+    /// 锁定时 key = 1，应判未解锁
+    func testSessionDictLockedValueMeansLocked() {
+        let dict: [String: Any] = ["CGSSessionScreenIsLocked": 1]
+        XCTAssertFalse(SystemInteractionService.sessionDictIndicatesUnlocked(dict),
+                       "锁定时 CGSSessionScreenIsLocked=1，应判未解锁")
+    }
+
+    /// key = 0 时也应判已解锁
+    func testSessionDictZeroMeansUnlocked() {
+        let dict: [String: Any] = ["CGSSessionScreenIsLocked": 0]
+        XCTAssertTrue(SystemInteractionService.sessionDictIndicatesUnlocked(dict),
+                      "CGSSessionScreenIsLocked=0 表示已解锁")
+    }
+
+    /// 字典为 nil（无会话信息）时保守判未解锁（沿用当前语义）
+    func testNilSessionDictMeansNotUnlocked() {
+        XCTAssertFalse(SystemInteractionService.sessionDictIndicatesUnlocked(nil),
+                       "无会话信息时不视为解锁")
+    }
+
     // MARK: - UnlockNotification 结构体
 
     func testUnlockNotificationSuccess() {
