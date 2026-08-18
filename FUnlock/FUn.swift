@@ -138,20 +138,20 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         inputMonitor?.isActive == true
     }
 
-    var scanMode = false
+    private var scanMode = false
     var monitoredUUID: UUID?
-    var monitoredUUIDs: Set<UUID> = []
-    var monitoredPeripheral: CBPeripheral?
-    var proximityTimer : Timer?
-    var signalTimer: Timer?
+    private var monitoredUUIDs: Set<UUID> = []
+    private var monitoredPeripheral: CBPeripheral?
+    private var proximityTimer : Timer?
+    private var signalTimer: Timer?
     var presence = false
     @Published var lockRSSI = -80
     @Published var unlockRSSI = -60
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
-    var lastReadAt = 0.0
-    var powerWarn = true
-    var passiveMode = false
+    private var lastReadAt = 0.0
+    private var powerWarn = true
+    private var passiveMode = false
     var thresholdRSSI = -90
     // 管道状态 (替代旧的散装字段)
     var pipeline = SignalPipeline()
