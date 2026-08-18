@@ -101,8 +101,13 @@ struct MenuBarPopoverView: View {
         signalLevel(for: rssi).bars(for: rssi)
     }
 
+    /// 信号展示统一走快照，避免跨线程直读 fun.effectiveRSSI
+    private var rssiSnapshot: Double {
+        fun.signalSnapshot().effectiveRSSI
+    }
+
     private var signalLevel: SignalLevel {
-        MenuBarPopoverView.signalLevel(for: fun.effectiveRSSI)
+        MenuBarPopoverView.signalLevel(for: rssiSnapshot)
     }
 
     /// 与总览「无信号」同源判据：manager.rssi 在失联 3 次超时后被置 nil
@@ -168,7 +173,7 @@ struct MenuBarPopoverView: View {
 
     private var signalBarsView: some View {
         let level = signalLevel
-        let rssi = fun.effectiveRSSI
+        let rssi = rssiSnapshot
         return HStack(alignment: .bottom, spacing: 2.5) {
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 2)
@@ -188,7 +193,7 @@ struct MenuBarPopoverView: View {
     }
 
     private var signalText: String {
-        MenuBarPopoverView.signalText(effectiveRSSI: fun.effectiveRSSI, hasSignal: hasSignal)
+        MenuBarPopoverView.signalText(effectiveRSSI: rssiSnapshot, hasSignal: hasSignal)
     }
 
     private var screenStateText: String {
