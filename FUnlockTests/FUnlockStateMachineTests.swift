@@ -33,26 +33,13 @@ class FUnlockStateMachineTests: XCTestCase {
 
     // MARK: - 状态转换
 
-    func testTransitionActiveToDisplayAsleep() {
-        sm.transition(to: .displayAsleep)
-        XCTAssertEqual(sm.currentState, .displayAsleep, "active → displayAsleep 应成功")
-    }
-
-    func testTransitionDisplayAsleepToPreWaking() {
-        sm.transition(to: .displayAsleep)
-        sm.transition(to: .preWaking)
-        XCTAssertEqual(sm.currentState, .preWaking, "displayAsleep → preWaking 应成功")
-    }
-
     func testTransitionPreWakingToReadyToUnlock() {
-        sm.transition(to: .displayAsleep)
         sm.transition(to: .preWaking)
         sm.transition(to: .readyToUnlock)
         XCTAssertEqual(sm.currentState, .readyToUnlock, "preWaking → readyToUnlock 应成功")
     }
 
     func testTransitionReadyToUnlockToUnlocking() {
-        sm.transition(to: .displayAsleep)
         sm.transition(to: .preWaking)
         sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
@@ -60,7 +47,6 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testTransitionUnlockingToActive() {
-        sm.transition(to: .displayAsleep)
         sm.transition(to: .preWaking)
         sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
@@ -69,7 +55,6 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testTransitionUnlockingToCooldown() {
-        sm.transition(to: .displayAsleep)
         sm.transition(to: .preWaking)
         sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
@@ -78,7 +63,6 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testTransitionCooldownToActive() {
-        sm.transition(to: .displayAsleep)
         sm.transition(to: .preWaking)
         sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
@@ -99,22 +83,22 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testAnyStateCanTransitionToDegraded() {
-        sm.transition(to: .displayAsleep)
+        sm.transition(to: .preWaking)
         sm.transition(to: .degraded)
         XCTAssertEqual(sm.currentState, .degraded, "任意状态 → degraded 应成功")
     }
 
     func testAnyStateCanTransitionToActive() {
-        sm.transition(to: .displayAsleep)
+        sm.transition(to: .preWaking)
         sm.transition(to: .degraded)
         sm.transition(to: .active)
         XCTAssertEqual(sm.currentState, .active, "degraded → active 应成功（用户干预）")
     }
 
     func testInvalidTransitionIsRejected() {
-        sm.transition(to: .displayAsleep)
+        sm.transition(to: .preWaking)
         sm.transition(to: .unlocking)
-        XCTAssertEqual(sm.currentState, .displayAsleep, "displayAsleep → unlocking 应被拒绝")
+        XCTAssertEqual(sm.currentState, .preWaking, "preWaking → unlocking 应被拒绝")
     }
 
     // MARK: - attemptUnlock

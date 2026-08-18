@@ -882,7 +882,6 @@ final class FUnManager: ObservableObject {
         wakeTask?.cancel()
         unlockTask?.cancel()
         intrudeCheckTask?.cancel()
-        Task { stateMachine.cancelActiveTask() }
     }
 
     // MARK: - UI 辅助

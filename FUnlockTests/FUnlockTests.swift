@@ -1988,15 +1988,6 @@ class FUnManagerStateMachineIntegrationTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
     }
-
-    func testStateMachineTaskCancelledInCleanup() {
-        // 直接测试状态机的任务取消，不依赖 FUn 的 BLE 初始化
-        let stateMachine = FUnlockStateMachine()
-        let task = Task<Void, Never>.detached { try? await Task.sleep(nanoseconds: 60_000_000_000) }
-        stateMachine.setActiveTask(task)
-        stateMachine.cancelActiveTask()
-        // cancelActiveTask 应取消任务且不崩溃（无崩溃即通过）
-    }
 }
 
 // MARK: - 双保险验证测试

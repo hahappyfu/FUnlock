@@ -9,7 +9,6 @@ final class FUnlockStateMachine {
 
     enum State: Equatable, Hashable {
         case active              // 正常使用中
-        case displayAsleep       // 屏幕息屏，但系统未休眠
         case preWaking           // 触发预备唤醒
         case readyToUnlock       // 屏幕已亮，等待信号达到阈值
         case unlocking           // 正在注入密码
@@ -23,7 +22,6 @@ final class FUnlockStateMachine {
     private var lastUnlockAttempt: Date = .distantPast
     private(set) var consecutiveFailures: Int = 0
     private var failureCooldownDeadline: Date = .distantPast
-    private var activeTask: Task<Void, Never>?
 
     /// 可测试时间源（默认使用系统时间）
     private let nowProvider: () -> Date
@@ -65,9 +63,7 @@ final class FUnlockStateMachine {
 
     private func canTransition(from: State, to: State) -> Bool {
         switch (from, to) {
-        case (.active, .displayAsleep),
-             (.displayAsleep, .preWaking),
-             (.preWaking, .readyToUnlock),
+        case (.preWaking, .readyToUnlock),
              (.readyToUnlock, .unlocking),
              (.active, .unlocking),
              (.unlocking, .active),
@@ -141,8 +137,6 @@ final class FUnlockStateMachine {
             consecutiveFailures = 0
             failureCooldownDeadline = .distantPast  // 清除失败冷却
         }
-        activeTask?.cancel()
-        activeTask = nil
     }
 
     // MARK: - 降级通知
@@ -160,17 +154,5 @@ final class FUnlockStateMachine {
             trigger: nil  // 立即投递
         )
         UNUserNotificationCenter.current().add(request)
-    }
-
-    // MARK: - 任务管理
-
-    func setActiveTask(_ task: Task<Void, Never>?) {
-        activeTask?.cancel()
-        activeTask = task
-    }
-
-    func cancelActiveTask() {
-        activeTask?.cancel()
-        activeTask = nil
     }
 }
