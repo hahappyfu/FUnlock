@@ -16,14 +16,13 @@ struct AutomationView: View {
     private struct EventItem {
         let name: String
         let icon: String
-        let fileName: String
     }
 
     private let events: [EventItem] = [
-        EventItem(name: "away",     icon: "lock.fill",         fileName: "event"),
-        EventItem(name: "lost",     icon: "wifi.slash",        fileName: "event"),
-        EventItem(name: "unlocked", icon: "lock.open.fill",    fileName: "event"),
-        EventItem(name: "intruded", icon: "hand.raised.fill",  fileName: "event")
+        EventItem(name: "away",     icon: "lock.fill"),
+        EventItem(name: "lost",     icon: "wifi.slash"),
+        EventItem(name: "unlocked", icon: "lock.open.fill"),
+        EventItem(name: "intruded", icon: "hand.raised.fill")
     ]
 
     var body: some View {
@@ -60,7 +59,7 @@ struct AutomationView: View {
     }
 
     private func eventRow(_ event: EventItem) -> some View {
-        let configured = isScriptConfigured(event.fileName)
+        let configured = isScriptConfigured()
         return HStack(spacing: 10) {
             Image(systemName: event.icon)
                 .font(.body)
@@ -77,7 +76,7 @@ struct AutomationView: View {
 
             Spacer()
 
-            Button(action: { openEventDirectory(event.fileName) }) {
+            Button(action: { openEventDirectory() }) {
                 Text(t("automation_setup"))
                     .font(.caption)
             }
@@ -86,13 +85,13 @@ struct AutomationView: View {
         }
     }
 
-    private func isScriptConfigured(_ fileName: String) -> Bool {
-        let fileURL = Self.eventScriptDir.appendingPathComponent(fileName)
+    private func isScriptConfigured() -> Bool {
+        let fileURL = Self.eventScriptDir.appendingPathComponent("event")
         var isDir: ObjCBool = false
         return FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir) && !isDir.boolValue
     }
 
-    private func openEventDirectory(_ eventName: String) {
+    private func openEventDirectory() {
         let dir = Self.eventScriptDir
         // 确保目录存在
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
