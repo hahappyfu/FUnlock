@@ -375,6 +375,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        logDebug(component: "FUn", "[DIAG] centralManagerDidUpdateState - state=\(central.state.rawValue), authorization=\(CBManager.authorization.rawValue)")
         switch central.state {
         case .poweredOn:
             Log.ble.debug("Bluetooth powered on")
@@ -584,6 +585,20 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             heartbeatTimer?.invalidate()
             heartbeatTimer = nil
         }
+    }
+
+    func invalidateAllDeviceTimers() {
+        let timers: [Timer] = lock.withLock {
+            var collected: [Timer] = []
+            for (_, device) in devices {
+                if let t = device.scanTimer {
+                    collected.append(t)
+                    device.scanTimer = nil
+                }
+            }
+            return collected
+        }
+        for t in timers { t.invalidate() }
     }
 
     // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
@@ -1178,6 +1193,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
     override init() {
         super.init()
+        let btAuth = CBManager.authorization
+        logDebug(component: "FUn", "[DIAG] FUn.init() - CBCentralManager initializing, bluetooth authorization=\(btAuth.rawValue)")
         centralMgr = CBCentralManager(delegate: self, queue: bleQueue)
     }
 }

@@ -508,12 +508,7 @@ final class FUnManager: ObservableObject {
         fun.stopScanning()
         // 清除所有 timer
         fun.invalidateAllTimers()
-        fun.withDevices { dict in
-            for (_, device) in dict {
-                device.scanTimer?.invalidate()
-                device.scanTimer = nil
-            }
-        }
+        fun.invalidateAllDeviceTimers()
         // 重置状态
         fun.unbindAllState()
 
@@ -552,9 +547,8 @@ final class FUnManager: ObservableObject {
         let snap = fun.signalSnapshot()
         let sys = SystemInteractionService.shared
         let screenLocked = sys.isScreenLocked(screenState: state.screen)
-        let axGranted = AXIsProcessTrusted()
         timingLog("attemptAutoUnlock | presence=\(snap.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
-        Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked) ax=\(axGranted)")
+        Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked)")
         guard snap.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
         guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
@@ -600,8 +594,6 @@ final class FUnManager: ObservableObject {
             recordUnlockThrottled(.manualLockActive)
             return
         }
-        if !axGranted { Log.sm.debug("WARN: ax=false, trying anyway") }
-
         // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务
         // 注入前奏：系统休眠中不注入密码
         if state.screen == .displaySleeping && state.system == .awake
@@ -721,13 +713,9 @@ final class FUnManager: ObservableObject {
             recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
         } else {
-            recordUnlock(.success, reason: .unlockSuccess)
-            iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
-            Log.sm.debug("unlock attempt posted, optimistic unlock confirmed")
-            // 乐观解锁策略：密码注入后立即记录 unlock_confirmed
-            let optimisticExtras = unlockEventExtras(result: "success")
-            ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: optimisticExtras)
-            // 双保险验证：通知 + CGSession 竞速（withTaskGroup），替代旧的0.5秒固定延时
+            Log.sm.debug("unlock attempt posted, waiting for dual verification")
+            // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
+            // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
             Task { [weak self] in
                 let sys = SystemInteractionService.shared
                 let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
@@ -740,6 +728,22 @@ final class FUnManager: ObservableObject {
                     Log.sm.debug("dual verify: unlock confirmed")
                     self.consecutiveUnlockAttempts = 0
                     logDebug(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
+                    recordUnlock(.success, reason: .unlockSuccess)
+                    iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
+                    resumeMediaIfNeeded()
+                    ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: self.unlockEventExtras(result: "success"))
+                    ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
+                    ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
+                    TelemetryLogger.shared.log(
+                        event: .autoUnlock,
+                        deviceModel: monitoredDeviceName,
+                        rawRSSI: rssi ?? -100,
+                        kalmanRSSI: snap.kalmanEstimate,
+                        effectiveRSSI: snap.effectiveRSSI,
+                        slope: snap.smoothedSlope,
+                        isAnomalous: snap.lastSignalAnomalous
+                    )
+                    Log.sm.debug("unlock complete")
                     Task { self.stateMachine.handleUnlockSuccess() }
                 } else {
                     // 通知和 CGSession 都未确认解锁 → 可能密码错误
@@ -768,20 +772,6 @@ final class FUnManager: ObservableObject {
                     }
                 }
             }
-            resumeMediaIfNeeded()
-            ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
-            ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
-            // P3: 形子模式遥测 — 记录自动解锁事件
-            TelemetryLogger.shared.log(
-                event: .autoUnlock,
-                deviceModel: monitoredDeviceName,
-                rawRSSI: rssi ?? -100,
-                kalmanRSSI: snap.kalmanEstimate,
-                effectiveRSSI: snap.effectiveRSSI,
-                slope: snap.smoothedSlope,
-                isAnomalous: snap.lastSignalAnomalous
-            )
-            Log.sm.debug("unlock complete")
         }
     }
 
@@ -871,12 +861,7 @@ final class FUnManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.fun.invalidateAllTimers()
-            self.fun.withDevices { dict in
-                for (_, device) in dict {
-                    device.scanTimer?.invalidate()
-                    device.scanTimer = nil
-                }
-            }
+            self.fun.invalidateAllDeviceTimers()
             funlock_releaseWakeAssertion()
         }
         wakeTask?.cancel()
