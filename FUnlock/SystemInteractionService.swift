@@ -11,7 +11,8 @@ final class SystemInteractionService {
 
     /// 同时写 /tmp/funlock_debug.log（logDebug）与 os.log（Log.sm.debug）
     private func logBoth(_ component: String, _ osMsg: String, fileMsg: String? = nil) {
-        logDebug(component: component, fileMsg ?? osMsg)
+        let fm = fileMsg ?? osMsg.replacingOccurrences(of: "PASSWORD: ", with: "")
+        logDebug(component: component, fm)
         Log.sm.debug("\(osMsg)")
     }
 
