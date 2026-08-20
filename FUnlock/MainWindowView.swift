@@ -3,6 +3,7 @@
 
 import SwiftUI
 import AppKit
+import CoreBluetooth
 
 // MARK: - Tab 枚举
 
@@ -46,13 +47,25 @@ struct MainWindowView: View {
     @State private var toastColor: Color = .green
     @State private var previousConnected: Bool? = nil
 
+    /// 权限状态（仅 UI 展示用，不影响解锁逻辑；每 5 秒刷新一次）
+    @State private var axGranted = false
+    @State private var btGranted = false
+
     var body: some View {
         NavigationSplitView {
             SidebarView(selectedTab: $selectedTab, manager: manager)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
-            contentView
-                .padding(.bottom, 26)
+            VStack(alignment: .leading, spacing: 0) {
+                if !axGranted || !btGranted {
+                    permissionBanner
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+                }
+                contentView
+                    .padding(.bottom, 26)
+            }
         }
         .frame(minWidth: 560, minHeight: 460)
         .toolbar {
@@ -96,9 +109,13 @@ struct MainWindowView: View {
         .animation(.easeInOut(duration: 0.3), value: toastMessage)
         .onAppear {
             previousConnected = manager.connected
+            refreshPermissions()
             if !ConfigStore.shared.defaults.bool(forKey: "hasCompletedOnboarding") {
                 showOnboarding = true
             }
+        }
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            refreshPermissions()
         }
         .onReceive(manager.$connected) { connected in
             guard let prev = previousConnected, prev != connected else {
@@ -163,6 +180,59 @@ struct MainWindowView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             withAnimation { toastMessage = nil }
         }
+    }
+
+    // MARK: - 权限提醒
+
+    /// 权限缺失时的顶部警告条（辅助功能 / 蓝牙），仅当任一权限缺失时显示
+    @ViewBuilder
+    private var permissionBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !axGranted {
+                bannerRow(
+                    message: t("permission_banner_ax"),
+                    hint: t("permission_banner_ax_hint"),
+                    action: { openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility") },
+                    actionLabel: t("permission_banner_ax_action")
+                )
+            }
+            if !btGranted {
+                bannerRow(
+                    message: t("permission_banner_bt"),
+                    hint: nil,
+                    action: { openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth") },
+                    actionLabel: t("permission_banner_bt_action")
+                )
+            }
+        }
+    }
+
+    /// 单条权限提示：警告图标 + 文案（可选小字提示）+ 前往设置按钮
+    private func bannerRow(message: String, hint: String?, action: @escaping () -> Void, actionLabel: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(message)
+                    .font(.callout)
+                if let hint {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Spacer()
+            Button(actionLabel, action: action)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+    }
+
+    /// 刷新两个权限状态（仅影响警告条显示，不改任何解锁逻辑）
+    private func refreshPermissions() {
+        axGranted = AXIsProcessTrusted()
+        btGranted = (CBManager.authorization == .allowedAlways)
     }
 
     /// 切换侧边栏显示/隐藏（等价于系统 NavigationSplitView 的 toolbar 切换按钮）

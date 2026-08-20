@@ -144,20 +144,21 @@ struct PermissionCheckView: View {
     private func refresh() {
         accessibilityGranted = AXIsProcessTrusted()
         bluetoothGranted = (CBManager.authorization == .allowedAlways)
+        logDebug(component: "PermissionCheck", "[DIAG] refresh() called - accessibility=\(accessibilityGranted), bluetooth=\(bluetoothGranted)")
     }
 
     private func requestAX() {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
-        openSettings("com.apple.preference.security?Privacy_Accessibility")
+        openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
     }
 
     private func requestBT() {
-        openSettings("com.apple.preference.security?Privacy_Bluetooth")
+        openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
     }
 }
 
-func openSettings(_ pane: String) {
+func openSystemSettingsPane(_ pane: String) {
     let script = "tell application \"System Settings\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
     if let s = NSAppleScript(source: script) { var e: NSDictionary?; s.executeAndReturnError(&e) }
 }
@@ -416,25 +417,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard !isAccessibilityGranted else { return }
         // agent 应用（无 Dock 图标）可能无法弹出系统授权弹窗
         // 直接打开系统设置的辅助功能页面，让用户手动添加
-        openSettings("com.apple.preference.security?Privacy_Accessibility")
-    }
-
-    /// 保留向后兼容的启动检查（仅首次运行时弹窗）
-    func checkAccessibility() {
-        if !isAccessibilityGranted {
-            // 首次运行才弹窗，后续启动只静默检查
-            let isFirstRun = !prefs.bool(forKey: "hasCheckedAccessibility")
-            if isFirstRun {
-                prefs.set(true, forKey: "hasCheckedAccessibility")
-                let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-                AXIsProcessTrustedWithOptions(opts)
-            }
-        }
+        openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
     }
 
     // MARK: - 生命周期
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 启动时记录蓝牙权限状态
+        logDebug(component: "AppDelegate", "[DIAG] applicationDidFinishLaunching - bluetooth authorization=\(CBManager.authorization.rawValue)")
+
         // 启动时把旧 standard 域配置迁移到独立 suite 域（一次性）
         ConfigStore.shared.migrateIfNeeded(fromKeys: ConfigStore.legacyKeys)
         restoreSettingsToFUn()
@@ -610,15 +601,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // Accessibility — 解锁功能需要，每次启动都检查
         if fun.unlockRSSI != FUn.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
-            if !isAccessibilityGranted {
-                requestAccessibilityIfNeeded()
-            }
+            requestAccessibilityIfNeeded()
             // InputActivityMonitor 延迟到权限确认后启动（macOS Sequoia TCC 兼容）
             if isAccessibilityGranted {
                 inputMonitor.start()
             }
         }
-        checkAccessibility()
         // UpdateChecker 已注入到 FUnManager，由 manager.onUnlock() 触发
 
         // 启动时同步开机自启动状态
@@ -657,22 +645,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func showPermissionCheck() {
         let ax = AXIsProcessTrusted()
         let bt = (CBManager.authorization == .allowedAlways)
-        guard !ax || !bt else {
-            // 权限已全部授予，暂不启动输入监控（macOS Sequoia TCC 兼容）
-            return
+        logDebug(component: "PermissionCheck", "showPermissionCheck - accessibility=\(ax), bluetooth=\(bt)")
+        if !ax || !bt {
+            // 权限缺失：仅首次引导弹窗，之后转由设置窗口内的常驻提醒承担（避免每次启动打扰）
+            guard !prefs.bool(forKey: "permissionOnboarded") else {
+                logDebug(component: "PermissionCheck", "permissions missing but onboarded - skip popup")
+                return
+            }
+            prefs.set(true, forKey: "permissionOnboarded")
+            logDebug(component: "PermissionCheck", "first-run permission guide - showing window")
+            let view = PermissionCheckView()
+            let hosting = NSHostingController(rootView: view)
+            let win = NSWindow(contentViewController: hosting)
+            win.title = t("permission_check_window_title")
+            win.styleMask = [.titled, .closable]
+            win.contentMinSize = NSSize(width: 420, height: 320)
+            win.isReleasedWhenClosed = false
+            win.center()
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            permissionWindow = win
         }
-
-        let view = PermissionCheckView()
-        let hosting = NSHostingController(rootView: view)
-        let win = NSWindow(contentViewController: hosting)
-        win.title = t("permission_check_window_title")
-        win.styleMask = [.titled, .closable]
-        win.contentMinSize = NSSize(width: 420, height: 320)
-        win.isReleasedWhenClosed = false
-        win.center()
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        permissionWindow = win
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
