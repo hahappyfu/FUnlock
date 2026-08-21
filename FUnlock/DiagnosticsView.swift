@@ -2,6 +2,8 @@
 // 「诊断」Tab：解锁/锁屏决策时间线，基于 DecisionLogger 渲染原因与操作按钮
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 extension DecisionCategory {
     /// 过滤器 chip 的本地化 key
@@ -251,11 +253,82 @@ struct DiagnosticsView: View {
 
     private var clearFooter: some View {
         HStack {
+            Button(t("export_diagnostics")) { exportDiagnostics() }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             Spacer()
             Button(t("diagnostics_clear")) { logger.clear() }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
                 .foregroundColor(.secondary)
+        }
+    }
+
+    private func exportDiagnostics() {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let logDir = home.appendingPathComponent("Library/Logs/FUnlock")
+        let candidates: [URL] = [
+            logDir.appendingPathComponent("debug.log"),
+            logDir.appendingPathComponent("timing.log"),
+            logDir.appendingPathComponent("decisions.jsonl"),
+            logDir.appendingPathComponent("shadow_telemetry.csv"),
+            (try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false))?
+                .appendingPathComponent("FUnlock/events.log"),
+        ].compactMap { $0 }.filter { fm.fileExists(atPath: $0.path) }
+
+        guard !candidates.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = t("export_diagnostics")
+            alert.informativeText = t("diagnostics_empty")
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: t("ok"))
+            alert.runModal()
+            return
+        }
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyyMMdd-HHmmss"
+        let defaultName = "FUnlock-diagnostics-\(df.string(from: Date())).zip"
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = defaultName
+        panel.allowedContentTypes = [.zip]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+
+        let tmpDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+            for src in candidates {
+                let dst = tmpDir.appendingPathComponent(src.lastPathComponent)
+                try? fm.copyItem(at: src, to: dst)
+            }
+            if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+            let fileNames = try fm.contentsOfDirectory(atPath: tmpDir.path)
+            task.arguments = ["-j", dest.path] + fileNames
+            task.currentDirectoryURL = tmpDir
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { throw NSError(domain: "zip", code: Int(task.terminationStatus)) }
+            try? fm.removeItem(at: tmpDir)
+            let alert = NSAlert()
+            alert.messageText = t("export_diagnostics")
+            alert.informativeText = dest.path
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: t("ok"))
+            alert.runModal()
+        } catch {
+            try? fm.removeItem(at: tmpDir)
+            let alert = NSAlert()
+            alert.messageText = t("export_diagnostics")
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: t("ok"))
+            alert.runModal()
         }
     }
 

@@ -12,6 +12,20 @@ final class ScriptRunner {
     private var lastLogTime: [String: Date] = [:]
     private let lock = NSLock()
 
+    private static let eventFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return f
+    }()
+
+    private static let scriptArgFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }()
+
     /// 便利初始化器，用于测试或自定义去重窗口
     init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date) {
         self.dedupWindow = dedupWindow
@@ -37,10 +51,8 @@ final class ScriptRunner {
 
     /// 构建日志行，格式：timestamp | event | RSSI: value [| key=value ...]
     func buildEventLine(_ event: String, rssi: Int?, extraFields: [String: String]) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let rssiStr = rssi.map { String($0) } ?? "N/A"
-        var line = "\(formatter.string(from: now)) | \(event) | RSSI: \(rssiStr)"
+        var line = "\(Self.eventFormatter.string(from: now)) | \(event) | RSSI: \(rssiStr)"
         let sorted = extraFields.sorted { $0.key < $1.key }
         for (key, value) in sorted {
             line += " | \(key)=\(value)"
@@ -85,9 +97,7 @@ final class ScriptRunner {
         var args = [arg]
         if let r = rssi { args.append(String(r)) }
         if let name = deviceName { args.append(name) }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        args.append(formatter.string(from: Date()))
+        args.append(Self.scriptArgFormatter.string(from: Date()))
         process.arguments = args
         try? process.run()
     }

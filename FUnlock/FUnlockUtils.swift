@@ -20,6 +20,13 @@ private var timingLogFileURL: URL {
     timingLogDirectory.appendingPathComponent("timing.log")
 }
 
+private let timingDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+    return f
+}()
+
 /// 时序埋点：按完整消息限流，同文案 1 秒最多写 1 条；
 /// 文件句柄缓存复用，避免高频开/关文件拖慢主线程。
 /// 写入 ~/Library/Logs/FUnlock/timing.log
@@ -31,7 +38,8 @@ func timingLog(_ msg: String) {
         return
     }
     lastTimingWriteByType[msg] = now
-    let line = "[\(now.formatted(date: .omitted, time: .standard))] \(msg)\n"
+    let ts = timingDateFormatter.string(from: now)
+    let line = "[\(ts)] \(msg)\n"
     let url = timingLogFileURL
     try? FileManager.default.createDirectory(at: timingLogDirectory, withIntermediateDirectories: true)
     if timingFileHandle == nil || !FileManager.default.fileExists(atPath: url.path) {

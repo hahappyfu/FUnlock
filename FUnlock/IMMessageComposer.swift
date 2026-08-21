@@ -13,6 +13,13 @@ enum IMEvent {
 
 enum IMMessageComposer {
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     /// 事件 → (标题, 正文)。正文示例：`今天 23:45 · iPhone 信号 -88 dBm`
     /// - Parameter now: 注入当前时间，便于测试昨天分支（默认 .now）
     static func compose(_ event: IMEvent, now: Date = .now) -> (title: String, body: String) {
@@ -65,10 +72,7 @@ enum IMMessageComposer {
 
     /// 时间词 + HH:mm（今天/昨天）
     private static func timePart(now: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        let time = formatter.string(from: now)
+        let time = timeFormatter.string(from: now)
         let key = Calendar.current.isDateInToday(now) ? "im_body_time_today" : "im_body_time_yesterday"
         return String(format: t(key), time)
     }
