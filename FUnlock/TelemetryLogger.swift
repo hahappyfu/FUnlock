@@ -59,27 +59,23 @@ final class TelemetryLogger {
                  durationMs: Double? = nil,
                  injectTime: Date? = nil,
                  confirmTime: Date? = nil) {
-        let record = TelemetryRecord(
-            timestamp: Date(),
-            eventType: event,
-            deviceModel: deviceModel,
-            rawRSSI: rawRSSI,
-            kalmanRSSI: kalmanRSSI,
-            effectiveRSSI: effectiveRSSI,
-            slope: slope,
-            isAnomalous: isAnomalous,
-            result: result,
-            durationMs: durationMs,
-            injectTime: injectTime,
-            confirmTime: confirmTime
-        )
-        writeRecord(record)
+        writeRecord(makeRecord(event: event, deviceModel: deviceModel, rawRSSI: rawRSSI,
+                               kalmanRSSI: kalmanRSSI, effectiveRSSI: effectiveRSSI,
+                               slope: slope, isAnomalous: isAnomalous, result: result,
+                               durationMs: durationMs, injectTime: injectTime, confirmTime: confirmTime))
     }
 
     // MARK: - 配置
 
     private let maxFileSize: UInt64 = 5 * 1024 * 1024  // 5MB 熔断
     private let queue = DispatchQueue(label: "com.funlock.telemetry", qos: .utility)
+
+    private static let csvFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return f
+    }()
 
     // MARK: - 文件路径
 
@@ -107,26 +103,31 @@ final class TelemetryLogger {
              durationMs: Double? = nil,
              injectTime: Date? = nil,
              confirmTime: Date? = nil) {
-        let record = TelemetryRecord(
-            timestamp: Date(),
-            eventType: event,
-            deviceModel: deviceModel,
-            rawRSSI: rawRSSI,
-            kalmanRSSI: kalmanRSSI,
-            effectiveRSSI: effectiveRSSI,
-            slope: slope,
-            isAnomalous: isAnomalous,
-            result: result,
-            durationMs: durationMs,
-            injectTime: injectTime,
-            confirmTime: confirmTime
-        )
+        let record = makeRecord(event: event, deviceModel: deviceModel, rawRSSI: rawRSSI,
+                                kalmanRSSI: kalmanRSSI, effectiveRSSI: effectiveRSSI,
+                                slope: slope, isAnomalous: isAnomalous, result: result,
+                                durationMs: durationMs, injectTime: injectTime, confirmTime: confirmTime)
         queue.async { [weak self] in
             self?.writeRecord(record)
         }
     }
 
     // MARK: - 内部实现
+
+    private func makeRecord(event: TelemetryEvent, deviceModel: String?, rawRSSI: Int,
+                            kalmanRSSI: Double, effectiveRSSI: Double, slope: Double,
+                            isAnomalous: Bool, result: String, durationMs: Double?,
+                            injectTime: Date?, confirmTime: Date?) -> TelemetryRecord {
+        TelemetryRecord(timestamp: Date(), eventType: event, deviceModel: deviceModel,
+                        rawRSSI: rawRSSI, kalmanRSSI: kalmanRSSI, effectiveRSSI: effectiveRSSI,
+                        slope: slope, isAnomalous: isAnomalous, result: result,
+                        durationMs: durationMs, injectTime: injectTime, confirmTime: confirmTime)
+    }
+
+    private static func escapeCSV(_ field: String) -> String {
+        guard field.contains(",") || field.contains("\"") || field.contains("\n") else { return field }
+        return "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
+    }
 
     private func ensureDirectory() {
         try? FileManager.default.createDirectory(
@@ -150,10 +151,9 @@ final class TelemetryLogger {
         writeHeaderIfNeeded()
 
         // 格式化数据行
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let formatter = Self.csvFormatter
         let ts = formatter.string(from: record.timestamp)
-        let model = record.deviceModel ?? "unknown"
+        let model = Self.escapeCSV(record.deviceModel ?? "unknown")
         let durationStr: String
         if let d = record.durationMs {
             durationStr = String(format: "%.2f", d)

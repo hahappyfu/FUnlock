@@ -41,7 +41,7 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_paired else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address, ResolvedAddress FROM PairedDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        Log.dev.debug("failed to prepare")
+        Log.dev.error("failed to prepare PairedDevices: \(String(cString: sqlite3_errmsg(db)))")
         return nil
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
@@ -68,7 +68,7 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_other else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address FROM OtherDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        Log.dev.debug("failed to prepare")
+        Log.dev.error("failed to prepare OtherDevices: \(String(cString: sqlite3_errmsg(db)))")
         return nil
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏

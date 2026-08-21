@@ -261,7 +261,8 @@ final class DecisionLogger: ObservableObject {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         var result: [DecisionEvent] = []
-        for line in content.components(separatedBy: .newlines).suffix(max) {
+        let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        for line in lines.suffix(max) {
             guard let lineData = line.data(using: .utf8),
                   let event = try? decoder.decode(DecisionEvent.self, from: lineData) else { continue }
             result.append(event)

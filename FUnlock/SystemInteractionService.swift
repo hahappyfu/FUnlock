@@ -9,7 +9,7 @@ final class SystemInteractionService {
     static let shared = SystemInteractionService()
     private init() {}
 
-    /// 同时写 /tmp/funlock_debug.log（logDebug）与 os.log（Log.sm.debug）
+    /// 同时写 ~/Library/Logs/FUnlock/debug.log（logDebug）与 os.log（Log.sm.debug）
     private func logBoth(_ component: String, _ osMsg: String, fileMsg: String? = nil) {
         let fm = fileMsg ?? osMsg.replacingOccurrences(of: "PASSWORD: ", with: "")
         logDebug(component: component, fm)
@@ -108,7 +108,7 @@ final class SystemInteractionService {
     /// isSecureCheck is called before each batch to verify screen is still locked.
     /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
-        logBoth("SystemInteraction", "PASSWORD: attempting keystroke injection for \(string.count) chars", fileMsg: "fakeKeyStrokes() START - \(string.count) chars")
+        logBoth("SystemInteraction", "PASSWORD: attempting keystroke injection", fileMsg: "fakeKeyStrokes() START")
 
         // 检查屏幕是否可见，如果不可见则唤醒
         if !isDisplayPoweredOn() {
@@ -164,7 +164,7 @@ final class SystemInteractionService {
 
         for offset in stride(from: 0, to: uniCharCount, by: 20) {
             guard isSecureCheck() else {
-                Log.sm.debug("PASSWORD: ABORT - screen no longer secure during keystroke injection")
+                Log.sm.error("PASSWORD: ABORT - screen no longer secure during keystroke injection")
                 return anyEventPosted
             }
             let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: virtualKey, keyDown: true)
@@ -182,7 +182,7 @@ final class SystemInteractionService {
         }
 
         guard isSecureCheck() else {
-            Log.sm.debug("PASSWORD: ABORT - screen no longer secure before Return key")
+            Log.sm.error("PASSWORD: ABORT - screen no longer secure before Return key")
             return anyEventPosted
         }
         let returnDown = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
@@ -283,7 +283,7 @@ final class SystemInteractionService {
     /// The Shift key activates the login window text field before password injection.
     /// Returns true if at least one password event was posted.
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) -> Bool {
-        logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + 300ms delay", fileMsg: "injectPasswordWithPrelude() START - \(string.count) chars")
+        logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + 300ms delay", fileMsg: "injectPasswordWithPrelude() START")
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         if shiftSent {

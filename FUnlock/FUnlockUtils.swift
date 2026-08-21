@@ -11,21 +11,30 @@ private let timingLock = NSLock()
 private var timingFileHandle: FileHandle?
 private var lastTimingWriteByType: [String: Date] = [:]
 
-/// 时序埋点：按消息类型（首个空格前 token）限流，同类型 1 秒最多写 1 条；
+private var timingLogDirectory: URL {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    return home.appendingPathComponent("Library/Logs/FUnlock")
+}
+
+private var timingLogFileURL: URL {
+    timingLogDirectory.appendingPathComponent("timing.log")
+}
+
+/// 时序埋点：按完整消息限流，同文案 1 秒最多写 1 条；
 /// 文件句柄缓存复用，避免高频开/关文件拖慢主线程。
-/// 写入 /tmp/funlock_timing.log
+/// 写入 ~/Library/Logs/FUnlock/timing.log
 func timingLog(_ msg: String) {
     timingLock.lock()
     defer { timingLock.unlock() }
     let now = Date()
-    let type = msg.split(separator: " ").first.map(String.init) ?? msg
-    if let last = lastTimingWriteByType[type], now.timeIntervalSince(last) < 1.0 {
+    if let last = lastTimingWriteByType[msg], now.timeIntervalSince(last) < 1.0 {
         return
     }
-    lastTimingWriteByType[type] = now
+    lastTimingWriteByType[msg] = now
     let line = "[\(now.formatted(date: .omitted, time: .standard))] \(msg)\n"
-    let url = URL(fileURLWithPath: "/tmp/funlock_timing.log")
-    if timingFileHandle == nil {
+    let url = timingLogFileURL
+    try? FileManager.default.createDirectory(at: timingLogDirectory, withIntermediateDirectories: true)
+    if timingFileHandle == nil || !FileManager.default.fileExists(atPath: url.path) {
         timingFileHandle = try? FileHandle(forWritingTo: url)
     }
     if let fh = timingFileHandle {
@@ -33,6 +42,7 @@ func timingLog(_ msg: String) {
         fh.write(line.data(using: .utf8)!)
     } else {
         try? line.write(to: url, atomically: true, encoding: .utf8)
+        timingFileHandle = try? FileHandle(forWritingTo: url)
     }
 }
 

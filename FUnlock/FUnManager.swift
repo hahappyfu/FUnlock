@@ -549,8 +549,8 @@ final class FUnManager: ObservableObject {
         let screenLocked = sys.isScreenLocked(screenState: state.screen)
         timingLog("attemptAutoUnlock | presence=\(snap.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
         Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked)")
-        guard snap.presence else { Log.sm.debug("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
-        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.debug("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
+        guard snap.presence else { Log.sm.info("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
+        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.info("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
         // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard snap.effectiveRSSI >= Double(fun.unlockRSSI) else {
@@ -560,7 +560,7 @@ final class FUnManager: ObservableObject {
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard stateMachine.canAttemptUnlock else { Log.sm.debug("SKIP: state machine not ready (degraded/cooldown)"); timingLog("SKIP stateMachineBlocked"); recordUnlock(reason: .stateMachineBlocked); return }
+        guard stateMachine.canAttemptUnlock else { Log.sm.info("SKIP: state machine not ready (degraded/cooldown)"); timingLog("SKIP stateMachineBlocked"); recordUnlock(reason: .stateMachineBlocked); return }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(lastLockTime)
@@ -661,7 +661,7 @@ final class FUnManager: ObservableObject {
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = stateMachine.attemptUnlock()
-        guard smAllowed else { Log.sm.debug("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return nil }
+        guard smAllowed else { Log.sm.info("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return nil }
 
         let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
         guard sinceUnlock > 3 else {
@@ -680,7 +680,7 @@ final class FUnManager: ObservableObject {
             }
             return nil
         }
-        logDebug(component: "FUnManager", "tryUnlock() password fetched - length=\(password.count)")
+        logDebug(component: "FUnManager", "tryUnlock() password fetched")
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: state.screen)
@@ -693,13 +693,13 @@ final class FUnManager: ObservableObject {
     private func performInjectionAndVerify(password: String) {
         let sys = SystemInteractionService.shared
         let snap = fun.signalSnapshot()
-        timingLog("performInjectionAndVerify | injecting \(password.count) chars")
-        Log.sm.debug("typing password (\(password.count) chars) with Shift prelude")
+        timingLog("performInjectionAndVerify | injecting password")
+        Log.sm.debug("typing password with Shift prelude")
         self.state.unlockedAt = now
         self.lastUnlockTime = now
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         self.isAutoUnlocking = true
-        logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude(\(password.count) chars)")
+        logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude")
         let posted = sys.injectPasswordWithPrelude(password) {
             self.state.screen != .unlocked
             && sys.isSecureToInject(screenState: self.state.screen)
@@ -707,7 +707,7 @@ final class FUnManager: ObservableObject {
         logDebug(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         if !posted {
-            Log.sm.debug("WARN: CGEvent post failed — Accessibility permission likely revoked")
+            Log.sm.error("WARN: CGEvent post failed — Accessibility permission likely revoked")
             // 注入失败，本次不算自动解锁，立即复位标记
             self.isAutoUnlocking = false
             recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")

@@ -77,7 +77,7 @@ final class iMessageNotifier {
                 err = self.runAppleScript(recipient: recipient, text: text)
             }
             if let err = err {
-                Log.ble.debug("[iMessage] 发送失败（静默丢弃）: \(err)")
+                Log.ble.error("[iMessage] 发送失败（静默丢弃）: \(err)")
             }
         }
     }

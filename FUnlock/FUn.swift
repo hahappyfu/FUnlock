@@ -3,17 +3,19 @@ import CoreBluetooth
 import Combine
 import os
 
-/// 锁屏调试日志：写入文件（GUI 应用 print 被丢弃）
 func lockLog(_ msg: String) {
-    let path = "/tmp/funlock_lock.log"
-    let line = "\(Date()): \(msg)\n"
-    if let handle = FileHandle(forWritingAtPath: path) {
-        handle.seekToEndOfFile()
-        handle.write(line.data(using: .utf8)!)
-        handle.closeFile()
-    } else {
-        try? line.write(toFile: path, atomically: true, encoding: .utf8)
-    }
+    logDebug(component: "Lock", msg)
+}
+
+private let bleLogThrottleLock = NSLock()
+private var bleLogLastTime: [String: Date] = [:]
+private func throttledBleLog(_ key: String, interval: TimeInterval = 1.0, _ msg: String) {
+    bleLogThrottleLock.lock()
+    defer { bleLogThrottleLock.unlock() }
+    let now = Date()
+    if let last = bleLogLastTime[key], now.timeIntervalSince(last) < interval { return }
+    bleLogLastTime[key] = now
+    Log.ble.debug("\(msg)")
 }
 
 let DeviceInformation = CBUUID(string:"180A")
@@ -238,7 +240,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             ? [CBCentralManagerScanOptionAllowDuplicatesKey: true]
             : [:]
         centralMgr.scanForPeripherals(withServices: nil, options: options)
-        //Log.sm.debug("Start scanning (allowDuplicates=\(allowDuplicates))")
     }
 
     func startScanning() {
@@ -678,7 +679,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
         // 调试日志：追踪 effectiveRSSI 计算
         let isActive = lock.withLock { activeModeTimer != nil }
-        Log.ble.debug("[DEBUG] updateMonitored rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", decision.effectiveRSSI)) kalman=\(String(format: "%.1f", decision.kalmanEstimate)) source=\(source == .connected ? "connected" : "scanning") activeMode=\(isActive)")
+        throttledBleLog("updateMonitored", interval: 1.0, "[DEBUG] updateMonitored rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", decision.effectiveRSSI)) kalman=\(String(format: "%.1f", decision.kalmanEstimate)) source=\(source == .connected ? "connected" : "scanning") activeMode=\(isActive)")
 
         // 2. 更新 displayRSSI
         updateDisplayRSSI(rssi: rssi)
@@ -765,7 +766,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         let debugInfo: (isMonitored: Bool, presence: Bool, uuidCount: Int) = lock.withLock {
             (monitoredUUID != nil, presence, monitoredUUIDs.count)
         }
-        Log.ble.debug("[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
+        throttledBleLog("checkProximity", interval: 1.0, "[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
 
         let dispRSSI: Double = lock.withLock {
             let disp = displayRSSI
@@ -872,7 +873,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         connectionTimer?.invalidate()
         let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] _ in
             if p.state == .connecting {
-                Log.ble.debug("Connection timeout")
+                Log.ble.error("Connection timeout")
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
         })
@@ -890,7 +891,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             guard let self = self else { return }
             let lastRead = self.lock.withLock { self.lastReadAt }
             if Date().timeIntervalSince1970 > lastRead + 10 {
-                Log.ble.debug("Falling back to passive mode")
+                Log.ble.info("Falling back to passive mode")
                 self.centralMgr.cancelPeripheralConnection(peripheral)
                 self.lock.withLock {
                     self.activeModeTimer?.invalidate()
@@ -919,7 +920,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             (monitoredUUID, monitoredUUIDs.count)
         }
         let isInList = monitoredUUIDs.contains(peripheral.identifier)
-        Log.ble.debug("[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
+        throttledBleLog("didDiscover", interval: 1.0, "[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
 
         if monitoredUUIDs.contains(peripheral.identifier) {
             let isMonitored: Bool = lock.withLock {
@@ -949,7 +950,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if let uuids = advertisementData["kCBAdvDataServiceUUIDs"] as? [CBUUID] {
                 for uuid in uuids {
                     if uuid == ExposureNotification {
-                        //Log.sm.debug("Device \(peripheral.identifier) Exposure Notification")
                         return
                     }
                 }
@@ -1114,7 +1114,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 guard let self = self else { return }
                 let lastRead = self.lock.withLock { self.lastReadAt }
                 if Date().timeIntervalSince1970 > lastRead + 10 {
-                    Log.ble.debug("Falling back to passive mode")
+                    Log.ble.info("Falling back to passive mode")
                     self.centralMgr.cancelPeripheralConnection(peripheral)
                     self.lock.withLock {
                         self.activeModeTimer?.invalidate()
