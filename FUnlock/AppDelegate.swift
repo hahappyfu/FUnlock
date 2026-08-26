@@ -423,6 +423,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - 生命周期
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        // 测试隔离：XCTest 宿主进程跳过全部启动副作用（蓝牙扫描/菜单栏/锁屏监听/
+        // 配置迁移），宿主只是承载单测的空壳，绝不干扰正在运行的正式版。
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
         // 启动时记录蓝牙权限状态
         logDebug(component: "AppDelegate", "[DIAG] applicationDidFinishLaunching - bluetooth authorization=\(CBManager.authorization.rawValue)")
 

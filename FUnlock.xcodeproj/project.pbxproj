@@ -772,7 +772,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock-dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "FUnlock/FUnlock-Bridging-Header.h";
