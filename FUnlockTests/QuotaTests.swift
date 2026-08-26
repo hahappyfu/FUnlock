@@ -1,6 +1,12 @@
 // FUnlockTests/QuotaTests.swift
 import XCTest
+import SwiftUI
 @testable import FUnlock
+
+// 与规格 §4.3 一致的阈值色基准值（#34C759 / #FF9F0A / #FF3B30）
+private let quotaGreen = Color(red: 0.204, green: 0.780, blue: 0.349)
+private let quotaAmber = Color(red: 1.0, green: 0.624, blue: 0.039)
+private let quotaRed = Color(red: 1.0, green: 0.231, blue: 0.188)
 
 final class QuotaTests: XCTestCase {
 
@@ -105,5 +111,42 @@ final class QuotaTests: XCTestCase {
         let snap = QuotaService().publish(validJSON, previous: .empty)!
         XCTAssertTrue(snap.available)
         XCTAssertEqual(snap.windows.count, 3)
+    }
+
+    // MARK: 展示纯函数
+
+    func testQuotaColorThresholdBoundaries() {
+        XCTAssertEqual(quotaColor(percent: 0), quotaGreen)
+        XCTAssertEqual(quotaColor(percent: 49.9), quotaGreen)
+        XCTAssertEqual(quotaColor(percent: 50), quotaAmber)
+        XCTAssertEqual(quotaColor(percent: 80), quotaAmber)
+        XCTAssertEqual(quotaColor(percent: 80.1), quotaRed)
+        XCTAssertEqual(quotaColor(percent: 100), quotaRed)
+    }
+
+    func testFormatNumScalesLargeNumbers() {
+        XCTAssertEqual(formatNum(1_200_000_000), "12 亿")
+        XCTAssertEqual(formatNum(6_100_000_000), "61 亿")
+        XCTAssertEqual(formatNum(12_340), "1.2 万")
+        XCTAssertEqual(formatNum(9999), "9999")
+        XCTAssertEqual(formatNum(2.8), "2.8")
+        XCTAssertEqual(formatNum(10), "10")
+        XCTAssertEqual(formatNum(.nan), "--")
+    }
+
+    func testHumanizeResetThreeTiersFromSeconds() {
+        XCTAssertEqual(humanizeReset(8931), "2 小时 29 分后重置")
+        XCTAssertEqual(humanizeReset(5059), "1 小时 24 分后重置")
+        XCTAssertEqual(humanizeReset(3600), "1 小时后重置")
+        XCTAssertEqual(humanizeReset(431_995), "5 天后重置")
+        XCTAssertEqual(humanizeReset(40), "1 分钟内重置")
+        XCTAssertEqual(humanizeReset(-1), "1 分钟内重置")
+    }
+
+    func testTimeAgoTextFreshnessWording() {
+        XCTAssertEqual(timeAgoText(baseDate.addingTimeInterval(-20), now: baseDate), "刚刚更新")
+        XCTAssertEqual(timeAgoText(baseDate.addingTimeInterval(-90), now: baseDate), "更新于 1 分钟前")
+        XCTAssertEqual(timeAgoText(baseDate.addingTimeInterval(-11 * 60), now: baseDate), "更新于 11 分钟前")
+        XCTAssertEqual(timeAgoText(nil, now: baseDate), "暂无更新")
     }
 }
