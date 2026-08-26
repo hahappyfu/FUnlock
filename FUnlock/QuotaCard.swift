@@ -32,9 +32,9 @@ func humanizeReset(_ seconds: TimeInterval) -> String {
         return String(format: t("quota_reset_days"), Int((seconds / 86_400).rounded()))
     }
     if seconds >= 3_600 {
-        let h = Int(seconds / 3_600)
-        let m = Int((seconds.truncatingRemainder(dividingBy: 3_600) / 60).rounded())
-        // 余数秒 < 1800 时 m ≤ 30，不可能进位溢出
+        var h = Int(seconds / 3_600)
+        var m = Int((seconds.truncatingRemainder(dividingBy: 3_600) / 60).rounded())
+        if m == 60 { h += 1; m = 0 }   // 余数秒 ≥3570 时 rounded() 进到 60（如 1:59:59），须向小时进位
         return m == 0 ? String(format: t("quota_reset_hours"), h)
                       : String(format: t("quota_reset_hours_min"), h, m)
     }

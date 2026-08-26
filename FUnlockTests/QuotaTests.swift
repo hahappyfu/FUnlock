@@ -143,6 +143,12 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(humanizeReset(-1), "1 分钟内重置")
     }
 
+    /// 小时分支的分钟进位边界：余数秒 ≥3570 时 rounded() 得 60，必须向小时进位而非渲染「60 分」
+    func testHumanizeResetMinuteCarryOverflow() {
+        XCTAssertEqual(humanizeReset(7199), "2 小时后重置")     // 1:59:59 → 进位成 2 小时
+        XCTAssertEqual(humanizeReset(86399), "24 小时后重置")   // 23:59:59 → 进位成 24 小时（仍走 hours key）
+    }
+
     func testTimeAgoTextFreshnessWording() {
         XCTAssertEqual(timeAgoText(baseDate.addingTimeInterval(-20), now: baseDate), "刚刚更新")
         XCTAssertEqual(timeAgoText(baseDate.addingTimeInterval(-90), now: baseDate), "更新于 1 分钟前")
