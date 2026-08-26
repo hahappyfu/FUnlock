@@ -94,21 +94,17 @@ final class QuotaTests: XCTestCase {
 
     /// 读失败（data == nil，对应文件暂不可读/bridge 重写间隙）→ 决策为 nil 即「跳过发布」，refresh 据此保留旧快照不清空
     func testPublishReadFailureKeepsPrevious() {
-        let old = QuotaSnapshot(
-            fetchedAt: baseDate, expired: false, available: true,
-            windows: [QuotaWindow(key: "5h", used: 600, limit: 1200, percent: 50,
-                                  resetAt: baseDate.addingTimeInterval(8931))])
-        XCTAssertNil(QuotaService().publish(nil, previous: old))
+        XCTAssertNil(QuotaService().publish(nil))
     }
 
     /// 读到数据但内容无效 → 照常发布 .empty 进无数据态
     func testPublishUnreadableContentStillGoesEmpty() {
-        XCTAssertEqual(QuotaService().publish("{broken".data(using: .utf8), previous: .empty), .empty)
+        XCTAssertEqual(QuotaService().publish("{broken".data(using: .utf8)), .empty)
     }
 
     /// 读到合法内容 → 归一化结果正常发布
     func testPublishReadableContentNormalizesNormally() {
-        let snap = QuotaService().publish(validJSON, previous: .empty)!
+        let snap = QuotaService().publish(validJSON)!
         XCTAssertTrue(snap.available)
         XCTAssertEqual(snap.windows.count, 3)
     }

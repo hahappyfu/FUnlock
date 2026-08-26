@@ -78,8 +78,8 @@ struct QuotaWindow {
 
 ### 容错清单
 
-- JSON 截断/脏读 → try/catch 保上次成功快照 + logDebug
-- ENOENT 文件缺失 → `.empty` 空态，绝不抛未捕获异常
+- 任何读取失败（含 ENOENT 文件缺失与 JSON 解析失败且 data 为 nil）→ 保留上次成功快照不发布
+- 读到数据但内容无效/全空 → 发布 `.empty` 进无数据态，绝不抛未捕获异常
 - RPC/网络不存在（纯文件读取），无网络错误面
 
 ## 4. UI 层：QuotaCard 组件

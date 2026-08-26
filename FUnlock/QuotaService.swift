@@ -67,7 +67,7 @@ extension QuotaSnapshot {
 // MARK: - 轮询服务
 
 /// AppDelegate 创建持有；start() 后每 30s 读一次缓存。
-/// 读文件与解码在后台 utility 队列，仅在回主线程时触碰 @Published。
+/// 读文件在后台 utility 队列，解码与快照发布在主线程。
 final class QuotaService: ObservableObject {
     @Published private(set) var snapshot: QuotaSnapshot = .empty
 
@@ -98,7 +98,7 @@ final class QuotaService: ObservableObject {
 
     /// 发布决策（纯函数，可单测）：data 为 nil 即读失败 → 返回 nil 表示保留旧快照不发布；
     /// 读到数据则照常归一化发布（内容无效/全空时归一化自身会给出 .empty）。
-    func publish(_ data: Data?, previous: QuotaSnapshot) -> QuotaSnapshot? {
+    func publish(_ data: Data?) -> QuotaSnapshot? {
         guard let data else { return nil }
         return QuotaSnapshot.normalize(data, now: Date())
     }
@@ -109,7 +109,7 @@ final class QuotaService: ObservableObject {
             let data = try? Data(contentsOf: Self.cachePath)
             DispatchQueue.main.async { [weak self] in
                 guard let self,
-                      let next = self.publish(data, previous: self.snapshot) else { return }
+                      let next = self.publish(data) else { return }
                 self.snapshot = next
             }
         }
