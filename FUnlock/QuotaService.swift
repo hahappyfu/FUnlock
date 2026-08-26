@@ -96,13 +96,21 @@ final class QuotaService: ObservableObject {
         timer = nil
     }
 
-    /// 单次刷新：后台读 + 解析，主线程发布。失败静默保留旧快照。
+    /// 发布决策（纯函数，可单测）：data 为 nil 即读失败 → 返回 nil 表示保留旧快照不发布；
+    /// 读到数据则照常归一化发布（内容无效/全空时归一化自身会给出 .empty）。
+    func publish(_ data: Data?, previous: QuotaSnapshot) -> QuotaSnapshot? {
+        guard let data else { return nil }
+        return QuotaSnapshot.normalize(data, now: Date())
+    }
+
+    /// 单次刷新：后台读 + 解析，主线程发布。读失败静默保留旧快照。
     func refresh() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let data = try? Data(contentsOf: Self.cachePath)
-            let snap = QuotaSnapshot.normalize(data)
             DispatchQueue.main.async { [weak self] in
-                self?.snapshot = snap
+                guard let self,
+                      let next = self.publish(data, previous: self.snapshot) else { return }
+                self.snapshot = next
             }
         }
     }
