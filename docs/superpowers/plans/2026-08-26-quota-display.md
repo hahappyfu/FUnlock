@@ -43,6 +43,56 @@ FUnlock/
 
 ---
 
+### 任务 0：测试隔离改造（环境守卫 + 独立 Bundle ID）
+
+> **背景：** `FUnlockTests` 的 `TEST_HOST` 指向构建目录的 `FUnlock.app`，每次
+> `xcodebuild test` 都会启动一个带完整副作用（蓝牙扫描/菜单栏/锁屏监听/真实配置）的
+> Debug 版应用，会顶掉用户正在运行的正式版。本任务加两道防线让测试宿主变成无副作用空壳。
+
+**文件：**
+- 修改：`FUnlock/AppDelegate.swift`（applicationDidFinishLaunching 开头加守卫）
+- 修改：`FUnlock.xcodeproj/project.pbxproj`（Debug 配置的 PRODUCT_BUNDLE_IDENTIFIER）
+
+- [ ] **步骤 0.1：AppDelegate 加 XCTest 环境守卫**
+
+在 `applicationDidFinishLaunching`（:425）函数体第一行前插入：
+
+```swift
+        // 测试隔离：XCTest 宿主进程跳过全部启动副作用（蓝牙扫描/菜单栏/锁屏监听/
+        // 配置迁移），宿主只是承载单测的空壳，绝不干扰正在运行的正式版。
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+```
+
+- [ ] **步骤 0.2：Debug 配置改独立 Bundle ID**
+
+pbxproj 中 FUnlock 主 target 有两段 XCBuildConfiguration（:775 与 :806 附近的
+`PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock;`）。先 grep 确认各属于哪个配置块
+（向上找最近的 `name = Debug;` / `name = Release;`），把 **Debug 段**的那处改为：
+
+```
+PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock-dev;
+```
+
+Release 段保持 `com.fuhahah.FUnlock` 不动——正式打包不受影响。
+
+- [ ] **步骤 0.3：验证隔离生效**
+
+```bash
+cd /Users/fupingguo/fuhaha_workspace/FUnlock && xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' test CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "error:|TEST SUCCEEDED|TEST FAILED" | tail -5
+ps aux | grep "FUnlock-dev" | grep -v grep || echo "(无 dev 进程残留)"
+```
+
+预期：全量测试 PASS；测试期间出现的宿主进程 bundle ID 为 `com.fuhahah.FUnlock-dev`，
+与 `/Applications/FUnlock.app`（`com.fuhahah.FUnlock`）互不顶替，正式版全程不受影响。
+
+- [ ] **步骤 0.4：Commit**
+
+```bash
+cd /Users/fupingguo/fuhaha_workspace/FUnlock && git add FUnlock/AppDelegate.swift FUnlock.xcodeproj/project.pbxproj && git commit -m "chore(test): 测试宿主隔离——XCTest 环境守卫 + Debug 独立 Bundle ID"
+```
+
+---
+
 ### 任务 1：数据内核（模型 + 归一化 + 轮询服务，TDD）
 
 **文件：**
