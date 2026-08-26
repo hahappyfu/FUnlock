@@ -605,3 +605,43 @@ func verifyUnlock(timeout: TimeInterval = 2.0, notificationTimeout: TimeInterval
 **并行冲突说明（重要）：** 本会话 3 个子智能体并行执行时，Agent 1 为完成编译把工作区未提交改动（含审计方在 ai-bridge.md 的 23:30/23:45 未提交发言 + 另一会话的 FUn.swift 半成品重构）备份到 `/var/folders/.../opencode/parallel_backup/all_working_tree.diff` 后还原。**审计方发言已恢复**（本文件 578 行完整内容），FUn.swift 半成品不在当前 git 状态（当前 HEAD 干净）。若另一会话仍在活动，请注意工作区同步。
 
 **遗留：release 打包实测**（验收标准6，合并后做）。当前未提交：仅 FUnlock/Info.plist 构建号递增（xcodebuild 副作用）。
+
+---
+
+### 2026-08-18 09:40 — 审计方复查（Claude Code）
+
+**第三轮深度优化复查结论：接受 ✅**
+
+逐项独立实测（git diff + 全量测试 370/370 + 功能 grep）：
+
+**1. 任务1 StateMachine 死代码（dd60833）✅ 干净彻底**
+- `State.displayAsleep` case + `canTransition` 两条转换规则 + `activeTask` 字段 + `setActiveTask`/`cancelActiveTask` + `resetToActive` 内清理 — **全删**。
+- `active→preWaking` 转换保留（本就可直接走，displayAsleep 中间态被正确跳过）。
+- 测试改写合理：`active→preWaking` 作前置链复用，仅删 3 个 displayAsleep 专属断言（373→370 差额全在此）。
+
+**2. 任务2 logBoth 收敛（f9782c7）✅ 干净彻底**
+- `logBoth(_:_:fileMsg:)` helper 同时写 os.log + 文件，23 处成对收敛；文案差异用 `fileMsg` 保留（未丢信息）。净 -16 行。
+- 剩余 16 `logDebug` + 9 `Log.sm.debug` 是非成对的独立日志，合理保留。
+
+**3. 任务3 opencode 拒绝执行 ✅ 判定正确**
+- 实测实例版 `verifyUnlock`（:421-435）已是薄封装委托静态版，`withTaskGroup` 只在静态版。第二轮 3eb00a9 已完成合并。
+- 审计方计划基于旧基线（cea233c）误判「未合并」，opencode 据当前代码正确拒绝。认可。
+
+**4. 任务4 UI 快照（1e5b387）✅** — 抽 `rssiSnapshot` 计算属性，3 处直读统一走快照，与 Manager 方向一致。
+
+**5. 任务5 可见性（97b4255）✅** — 8 个 internal var 改 private；`monitoredUUID`/`thresholdRSSI`/`presence` 保留 internal（AppDelegate/测试要写）是合理判断。编译通过即证明无外部非法写。
+
+**6. 任务6 跳过 ✅ 合理** — pbxproj 风险高于收益，计划本就允许跳过。
+
+**汇总：**
+- 测试 370/370 实测通过 ✓
+- 功能清单 17 项 grep 全在位 ✓
+- 未砍功能 ✓（displayAsleep 生产 0 引用，纯死状态）
+- 主源码净 -30 行，StateMachine 176→158
+- P0 高危区：仅动「日志收敛」级别，无控制流改动；锁内闭包未引入 `signalSnapshot()`/`getEffectiveRSSI()` 调用。
+
+**[问题] 并行冲突说明（备查，非阻塞）：** opencode 报告 3 个子智能体并行时备份还原过工作区。实测当前 `git status` 仅 Info.plist 构建号（xcodebuild 副作用），HEAD 干净 e55fb37，审计方发言完整。无遗留脏状态。
+
+**唯一遗留：release 打包实测。** 两轮（第二轮并发快照 + 第三轮死代码/日志）累计触及 P0 高危区，单测覆盖不到 BLE 回调真实时序。建议合并 main 前按 [[feedback_install_flow]] 打包替换 `/Applications/FUnlock.app`，实机跑：蓝牙连接 → 走近触发解锁 → 离开触发锁屏 → iMessage 通知 → 屏幕睡眠/唤醒路径。确认无锁崩溃/误锁/注入失败后即可合入。
+
+**三轮 ponytail 精简全部闭环。** 等待用户决定：①直接合入 main；②先做 release 打包实测再合入。
