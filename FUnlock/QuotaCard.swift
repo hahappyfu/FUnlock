@@ -11,18 +11,10 @@ func quotaColor(percent: Double) -> Color {
     return Color(red: 0.204, green: 0.780, blue: 0.349)                     // #34C759
 }
 
-/// 至多一位小数的紧凑数字（12.0 → "12"，1.234 → "1.2"）
-private func oneDecimal(_ v: Double) -> String {
-    let r = (v * 10).rounded() / 10
-    return r == r.rounded() ? String(Int(r)) : String(r)
-}
-
-/** 大数缩写：≥1e8 → x.x 亿；≥1e4 → x.x 万；否则至多一位小数；非法 → "--"。 */
-func formatNum(_ n: Double) -> String {
-    guard n.isFinite else { return "--" }
-    if n >= 1e8 { return oneDecimal(n / 1e8) + " 亿" }
-    if n >= 1e4 { return oneDecimal(n / 1e4) + " 万" }
-    return oneDecimal(n)
+/// 百分比文案：0 → "0%"，其余保留 1 位小数
+private func percentText(_ p: Double) -> String {
+    if p == 0 { return "0%" }
+    return String(format: "%.1f%%", p)
 }
 
 /** 重置倒计时文案（入参为剩余秒数，与缓存 resetInSec 同单位）。 */
@@ -106,7 +98,7 @@ struct QuotaCard: View {
                     .monospacedDigit()
                     .foregroundColor(hasData ? .primary : .secondary)
             }
-            bar(percent: hasData ? fiveHour?.percent : nil, height: 4)
+            bar(percent: hasData ? weeklyWindow?.percent : nil, height: 4)
             HStack(spacing: 4) {
                 Circle().fill(badgeColor).frame(width: 5, height: 5)
                 Text(badgeText).font(.system(size: 9)).foregroundColor(.secondary)
@@ -115,7 +107,7 @@ struct QuotaCard: View {
         }
     }
 
-    // 展开行：标签 + 倒计时 / 6px 条 + used/limit 数值
+    // 展开行：标签 + 倒计时 / 6px 条 + 百分比
     private func windowRow(_ win: QuotaWindow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -129,7 +121,7 @@ struct QuotaCard: View {
             HStack(spacing: 8) {
                 bar(percent: win.percent, height: 6)
                     .frame(maxWidth: .infinity)
-                Text("\(formatNum(win.used)) / \(formatNum(win.limit))")
+                Text(percentText(win.percent))
                     .font(.system(size: 9, design: .monospaced))
                     .monospacedDigit()
                     .foregroundColor(.secondary)
@@ -155,11 +147,11 @@ struct QuotaCard: View {
 
     // ---- 派生展示值 ----
 
-    private var fiveHour: QuotaWindow? { snap.windows.first { $0.key == "5h" } }
+    private var weeklyWindow: QuotaWindow? { snap.windows.first { $0.key == "weekly" } }
 
     private var displayPercent: String {
-        guard hasData, let p = fiveHour?.percent else { return "--" }
-        return "\(Int(p.rounded()))%"
+        guard hasData, let p = weeklyWindow?.percent else { return "--" }
+        return percentText(p)
     }
 
     // 四态徽标：正常绿 / 过期琥珀 / 无数据与加载中红

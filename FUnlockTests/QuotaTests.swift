@@ -120,16 +120,6 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(quotaColor(percent: 100), quotaRed)
     }
 
-    func testFormatNumScalesLargeNumbers() {
-        XCTAssertEqual(formatNum(1_200_000_000), "12 亿")
-        XCTAssertEqual(formatNum(6_100_000_000), "61 亿")
-        XCTAssertEqual(formatNum(12_340), "1.2 万")
-        XCTAssertEqual(formatNum(9999), "9999")
-        XCTAssertEqual(formatNum(2.8), "2.8")
-        XCTAssertEqual(formatNum(10), "10")
-        XCTAssertEqual(formatNum(.nan), "--")
-    }
-
     func testHumanizeResetThreeTiersFromSeconds() {
         XCTAssertEqual(humanizeReset(8931), "2 小时 29 分后重置")
         XCTAssertEqual(humanizeReset(5059), "1 小时 24 分后重置")
