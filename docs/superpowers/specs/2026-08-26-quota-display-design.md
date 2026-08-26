@@ -34,9 +34,21 @@ opencode 中转套餐的用量数据由既有 bridge（Node 脚本，LaunchAgent
 final class QuotaService: ObservableObject {
     @Published private(set) var snapshot: QuotaSnapshot = .empty
     // init 即读一次 + Timer(30s, main RunLoop common 模式) 续读
+    // Timer 触发后派发后台队列（utility QoS）读文件+解析，
+    // 完成后切回主线程更新 @Published（主线程零同步 I/O）
     // 解析失败 → logDebug + 保上次成功快照
 }
 ```
+
+### 缓存时间字段语义（2026-08-26 实证）
+
+| 字段 | 实际类型 | 换算 |
+|---|---|---|
+| `at` | Unix 毫秒数（如 1787713741779） | `fetchedAt = Date(timeIntervalSince1970: at / 1000)` |
+| `quota.*.resetInSec` | 相对剩余秒数（如 8931） | `resetAt = Date().addingTimeInterval(resetInSec)` |
+
+实现约定：**不使用 JSONDecoder 的 dateDecodingStrategy**——`at` 用 `Double` 直接接毫秒再显式换算，
+`resetAt` 由相对秒数计算得出（它不是绝对时间戳，strategy 无从表达）。
 
 ### 快照模型
 
@@ -134,7 +146,10 @@ MainWindowView(manager:..., fun:..., quota: quotaService)
 1. 弹窗：`actionRows` 与 `quitRow` 之间的 Divider 分隔区。
 2. 总览页：设备状态卡之后新增「套餐余量」Section。
 
-生命周期：应用全程 30s 轮询（Timer 主 RunLoop common 模式）；bridge 停了自然进过期/无数据态。
+生命周期：应用全程 30s 轮询（Timer 主 RunLoop common 模式，读取在后台队列执行）；bridge 停了自然进过期/无数据态。
+
+前提备注：FUnlock 当前未开启 App Sandbox（entitlements 已核实无 app-sandbox 键），
+读 `~/.clawd/` 无障碍；若未来开沙盒需重新评估该路径的访问方案。
 
 ## 6. 测试策略
 
