@@ -356,3 +356,10 @@
 "screen_locked_timeout" = "Locked - timeout";
 "screen_display_sleeping" = "Display sleeping";
 "screen_screensaver" = "Screensaver";
+
+// 设置页顶部权限提醒条
+"permission_banner_ax" = "Accessibility permission is off; Funlock cannot type the password automatically";
+"permission_banner_ax_action" = "Open Settings";
+"permission_banner_ax_hint" = "If you've already granted it but still see this, toggle the switch off and on in System Settings after updating";
+"permission_banner_bt" = "Bluetooth permission is off; nearby devices cannot be detected";
+"permission_banner_bt_action" = "Open Settings";

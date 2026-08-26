@@ -356,3 +356,10 @@
 "screen_locked_timeout" = "已锁定 — 超时";
 "screen_display_sleeping" = "显示器休眠";
 "screen_screensaver" = "屏幕保护";
+
+// 设置页顶部权限提醒条
+"permission_banner_ax" = "辅助功能权限未开启，自动解锁无法注入密码";
+"permission_banner_ax_action" = "前往设置";
+"permission_banner_ax_hint" = "如已授权仍提示，请在系统设置中关闭该权限后再重新开启";
+"permission_banner_bt" = "未授予蓝牙权限，无法检测附近设备";
+"permission_banner_bt_action" = "前往设置";
