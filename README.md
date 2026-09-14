@@ -1,5 +1,9 @@
 # FUnlock
 
+> ⚠️ **项目已归档与功能合并公告**：
+> FUnlock 的核心蓝牙守护与自动解锁/锁屏能力已完整合并进 [NotchEvery](https://github.com/hahappyfu/NotchEvery) 单进程（刘海面板 + 诊断分区）。
+> 本独立仓库现已归档，不再维护。请迁移至 NotchEvery 使用全新形态。
+
 > 靠近自动解锁，离开自动锁屏 —— 用蓝牙信号守护你的 Mac，全程无需掏出手机
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
