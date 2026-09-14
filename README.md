@@ -1,5 +1,9 @@
 # FUnlock
 
+> ⚠️ **项目已归档与功能合并公告**：
+> FUnlock 的核心蓝牙守护与自动解锁/锁屏能力已完整合并进 [NotchEvery](https://github.com/hahappyfu/NotchEvery) 单进程（刘海面板 + 诊断分区）。
+> 本独立仓库现已归档，不再维护。请迁移至 NotchEvery 使用全新形态。
+
 > 靠近自动解锁，离开自动锁屏 —— 用蓝牙信号守护你的 Mac，全程无需掏出手机
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -231,6 +235,7 @@ FUnlock/
 ### 构建
 
 ```bash
+# Release 必须走团队签名，不要加 CODE_SIGNING_ALLOWED=NO
 xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Release
 ```
 
@@ -240,14 +245,37 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' test
 ```
 
-### 安装（DMG 覆盖安装）
+> 测试宿主为隔离进程：`AppDelegate` 检测到 `XCTestConfigurationFilePath` 时跳过蓝牙扫描与菜单栏初始化，不会顶掉正在运行的正式版。Debug 构建的 Bundle ID 为 `com.fuhahah.FUnlock-dev`，与 Release 的 `com.fuhahah.FUnlock` 隔离。
+
+### 安装（覆盖安装）
 
 ```bash
-pkill FUnlock
+pkill -x FUnlock; sleep 1; pgrep -x FUnlock || echo "已退出"
 rm -rf /Applications/FUnlock.app
-cp -R build/Build/Products/Release/FUnlock.app /Applications/
+# Release 产物在 DerivedData，示例路径按本机实际调整
+cp -R ~/Library/Developer/Xcode/DerivedData/FUnlock-*/Build/Products/Release/FUnlock.app /Applications/
 open /Applications/FUnlock.app
 ```
+
+### 签名与辅助功能权限持久化
+
+**现象**：若 Release 用 `CODE_SIGNING_ALLOWED=NO` 构建，会产生 `Signature=adhoc / Identifier=FUnlock / TeamIdentifier=not set / Info.plist=not bound` 的临时签名。macOS 的 TCC（Transparency, Consent, and Control）会将每次构建识别为不同应用，`AXIsProcessTrusted()` 始终返回 `false`，表现为“重启后辅助功能权限被重置”。
+
+**正确做法**：Release 走 Automatic 签名，团队 `JJYCS98SHK`（`Apple Development: jinfuaa@gmail.com`），产物为：
+
+```
+Identifier=com.fuhahah.FUnlock
+TeamIdentifier=JJYCS98SHK
+Signature=Apple Development
+```
+
+此时授权一次后重启仍保持。验证方式：
+
+```bash
+codesign -dv /Applications/FUnlock.app 2>&1 | grep -E "Identifier|TeamIdentifier|Signature"
+```
+
+若需排查，可在「系统设置 → 隐私与安全 → 辅助功能」中删除旧的 `FUnlock`（ad-hoc）条目，只保留团队签名版后重新勾选。
 
 ### 要求
 

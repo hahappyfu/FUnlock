@@ -34,6 +34,7 @@ enum MenuTab: String, CaseIterable {
 struct MainWindowView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
+    @ObservedObject var quota: QuotaService
 
     @State private var selectedTab: MenuTab = .overview
     @State private var showCalibration = false
@@ -153,7 +154,7 @@ struct MainWindowView: View {
     private var contentView: some View {
         switch selectedTab {
         case .overview:
-            OverviewView(manager: manager, fun: fun,
+            OverviewView(manager: manager, fun: fun, quota: quota,
                          showCalibration: $showCalibration)
         case .basic:
             BasicSettingsView()

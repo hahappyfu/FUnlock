@@ -363,3 +363,20 @@
 "permission_banner_ax_hint" = "If you've already granted it but still see this, toggle the switch off and on in System Settings after updating";
 "permission_banner_bt" = "Bluetooth permission is off; nearby devices cannot be detected";
 "permission_banner_bt_action" = "Open Settings";
+
+// OpenCode 套餐余量
+"quota_title" = "OpenCode Plan";
+"quota_5h" = "5-hour";
+"quota_weekly" = "This week";
+"quota_monthly" = "This month";
+"quota_reset_days" = "Resets in %d d";
+"quota_reset_hours_min" = "Resets in %dh %dm";
+"quota_reset_hours" = "Resets in %dh";
+"quota_reset_minutes" = "Resets in %d min";
+"quota_reset_soon" = "Resets soon";
+"quota_updated_just_now" = "Just updated";
+"quota_updated_ago" = "Updated %d min ago";
+"quota_expired" = "Data stale";
+"quota_no_data" = "No data";
+"quota_no_time" = "No timestamp";
+"quota_footer_hint" = "Auto-refreshes every 30 s · from local bridge cache";
