@@ -9,7 +9,6 @@ import Combine
 struct MenuBarPopoverView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
-    @ObservedObject var quota: QuotaService
     let onAction: (MenuBarAction) -> Void
 
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
@@ -32,10 +31,6 @@ struct MenuBarPopoverView: View {
             enableRow
             Divider()
             actionRows
-            Divider()
-            QuotaCard(quota: quota)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
             Divider()
             quitRow
         }
