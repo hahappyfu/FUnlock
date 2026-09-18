@@ -363,20 +363,3 @@
 "permission_banner_ax_hint" = "如已授权仍提示，请在系统设置中关闭该权限后再重新开启";
 "permission_banner_bt" = "未授予蓝牙权限，无法检测附近设备";
 "permission_banner_bt_action" = "前往设置";
-
-// OpenCode 套餐余量
-"quota_title" = "OpenCode 套餐";
-"quota_5h" = "5 小时";
-"quota_weekly" = "本周";
-"quota_monthly" = "本月";
-"quota_reset_days" = "%d 天后重置";
-"quota_reset_hours_min" = "%d 小时 %d 分后重置";
-"quota_reset_hours" = "%d 小时后重置";
-"quota_reset_minutes" = "%d 分钟后重置";
-"quota_reset_soon" = "1 分钟内重置";
-"quota_updated_just_now" = "刚刚更新";
-"quota_updated_ago" = "更新于 %d 分钟前";
-"quota_expired" = "数据过期";
-"quota_no_data" = "无数据";
-"quota_no_time" = "暂无更新";
-"quota_footer_hint" = "缓存每 30 秒自动刷新 · 数据来自本机 bridge 缓存";

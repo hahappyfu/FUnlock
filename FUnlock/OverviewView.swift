@@ -7,7 +7,6 @@ import Combine
 struct OverviewView: View {
     @ObservedObject var manager: FUnManager
     @ObservedObject var fun: FUn
-    @ObservedObject var quota: QuotaService
     @Binding var showCalibration: Bool
 
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
@@ -67,7 +66,6 @@ struct OverviewView: View {
                     thresholdSection
                     quickActionsSection
                 }
-                quotaSection
             }
             .formStyle(.grouped)
         }
@@ -287,14 +285,6 @@ struct OverviewView: View {
             } label: {
                 Label(t("lock_now"), systemImage: "lock.fill")
             }
-        }
-    }
-
-    // MARK: 套餐余量
-
-    private var quotaSection: some View {
-        Section(t("quota_title")) {
-            QuotaCard(quota: quota)
         }
     }
 

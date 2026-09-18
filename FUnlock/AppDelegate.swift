@@ -180,7 +180,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     lazy var fun = FUn()
     var manager: FUnManager!
-    let quotaService = QuotaService()
     let inputMonitor = InputActivityMonitor()
     let prefs = ConfigStore.shared.defaults
     private var cancellables = Set<AnyCancellable>()
@@ -438,7 +437,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         setupStatusBarAndMenu()
         setupNotificationSubscriptions()
         setupPermissionsAndPrivileges()
-        quotaService.start()
     }
 
     /// 从 UserDefaults 恢复 BLE 设置到 fun（manager init 会再同步一次）
@@ -487,7 +485,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.toolTip = "Funlock"
         }
 
-        let hosting = NSHostingController(rootView: MenuBarPopoverView(manager: manager, fun: fun, quota: quotaService) { [weak self] action in
+        let hosting = NSHostingController(rootView: MenuBarPopoverView(manager: manager, fun: fun) { [weak self] action in
             self?.handleMenuBarAction(action)
         })
         if #available(macOS 13.0, *) { hosting.sizingOptions = .preferredContentSize }
@@ -634,7 +632,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func setupSettingsWindow() {
-        let dashboard = MainWindowView(manager: manager, fun: fun, quota: quotaService)
+        let dashboard = MainWindowView(manager: manager, fun: fun)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "Funlock"

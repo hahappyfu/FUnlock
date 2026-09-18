@@ -23,8 +23,6 @@
 		3DD4B664226C1CF000451B7B /* lowlevel.c in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B663226C1CF000451B7B /* lowlevel.c */; };
 		3DD4B666226C1DF200451B7B /* FUn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DD4B665226C1DF200451B7B /* FUn.swift */; };
 		DDGP00000000000000000001 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDGP00000000000000000002 /* DebugLog.swift */; };
-		QUOTA00000000000000000001 /* QuotaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = QUOTA00000000000000000002 /* QuotaService.swift */; };
-		QUOTA00000000000000000003 /* QuotaCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = QUOTA00000000000000000004 /* QuotaCard.swift */; };
 		DDGP00000000000000000003 /* SignalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDGP00000000000000000004 /* SignalPipeline.swift */; };
 		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
@@ -68,7 +66,6 @@
 		AA0000DD0000000B /* IMSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001B /* IMSettingsCard.swift */; };
 		5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB83070CD04DF366146E88B /* ConfigStore.swift */; };
 		7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E695C91A38887907EE91F891 /* ConfigStoreTests.swift */; };
-		QUOTA00000000000000000005 /* QuotaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = QUOTA00000000000000000006 /* QuotaTests.swift */; };
 		IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000002 /* IMMessageComposerTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -125,8 +122,6 @@
 		3DD4B663226C1CF000451B7B /* lowlevel.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = lowlevel.c; sourceTree = "<group>"; };
 		3DD4B665226C1DF200451B7B /* FUn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUn.swift; sourceTree = "<group>"; };
 		DDGP00000000000000000002 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
-		QUOTA00000000000000000002 /* QuotaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaService.swift; sourceTree = "<group>"; };
-		QUOTA00000000000000000004 /* QuotaCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaCard.swift; sourceTree = "<group>"; };
 		DDGP00000000000000000004 /* SignalPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalPipeline.swift; sourceTree = "<group>"; };
 		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
 		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
@@ -174,7 +169,6 @@
 		AA0000DD0000001B /* IMSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMSettingsCard.swift; sourceTree = "<group>"; };
 		3FB83070CD04DF366146E88B /* ConfigStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
 		E695C91A38887907EE91F891 /* ConfigStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStoreTests.swift; sourceTree = "<group>"; };
-		QUOTA00000000000000000006 /* QuotaTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuotaTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000002 /* IMMessageComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -254,8 +248,6 @@
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
 				3DD4B665226C1DF200451B7B /* FUn.swift */,
 				DDGP00000000000000000002 /* DebugLog.swift */,
-				QUOTA00000000000000000002 /* QuotaService.swift */,
-				QUOTA00000000000000000004 /* QuotaCard.swift */,
 				DDGP00000000000000000004 /* SignalPipeline.swift */,
 				AA000002226C1DF200000001 /* FUnManager.swift */,
 				CC000002226C1DF200000001 /* ProfileManager.swift */,
@@ -313,7 +305,6 @@
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
 				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
 				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
-				QUOTA00000000000000000006 /* QuotaTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -500,8 +491,6 @@
 				3DD4B654226C1C3200451B7B /* AppDelegate.swift in Sources */,
 				3DD4B666226C1DF200451B7B /* FUn.swift in Sources */,
 				DDGP00000000000000000001 /* DebugLog.swift in Sources */,
-				QUOTA00000000000000000001 /* QuotaService.swift in Sources */,
-				QUOTA00000000000000000003 /* QuotaCard.swift in Sources */,
 				DDGP00000000000000000003 /* SignalPipeline.swift in Sources */,
 				AA000001226C1DF200000001 /* FUnManager.swift in Sources */,
 				CC000001226C1DF200000001 /* ProfileManager.swift in Sources */,
@@ -552,7 +541,6 @@
 			files = (
 				AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */,
 				AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */,
-				QUOTA00000000000000000005 /* QuotaTests.swift in Sources */,
 				DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */,
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
 				DV0000020000000100000002 /* DiagnosticsViewTests.swift in Sources */,
