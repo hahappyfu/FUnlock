@@ -19,7 +19,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>2.8.37</string>
 	<key>CFBundleVersion</key>
-	<string>1343</string>
+	<string>1348</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -32,6 +32,10 @@
 	<string>Copyright © 2019-2026 Takeshi Sone. 二次开发维护 by fuhahah.</string>
 	<key>NSInputMonitoringUsageDescription</key>
 	<string>Funlock monitors keyboard and trackpad input to defer locking while you're working.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Funlock needs location access to read the current Wi-Fi network name (SSID).</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Funlock needs location access to read the current Wi-Fi network name (SSID).</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

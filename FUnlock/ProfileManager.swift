@@ -116,7 +116,7 @@ class ProfileManager: ObservableObject {
         ConfigStore.shared.set(activeProfileID, forKey: activeKey)
     }
 
-    private func load() {
+    func load() {
         if let data = ConfigStore.shared.getData(profilesKey),
            let decoded = try? JSONDecoder().decode([Profile].self, from: data) {
             profiles = decoded

@@ -203,6 +203,8 @@
 "wifi_ssid" = "Wi-Fi Name";
 "wifi_ssid_placeholder" = "e.g. Office-WiFi";
 "current_wifi" = "Use Current";
+"wifi_need_location" = "Location access is required to read the Wi-Fi name. Allow Funlock in System Settings → Privacy & Security → Location Services, then try again.";
+"wifi_unavailable" = "Wi-Fi name unavailable (not connected to Wi-Fi?). You can type it manually.";
 
 /* Abnormal Unlock Detection */
 "abnormal_unlock_title" = "Abnormal Unlock Activity";
@@ -324,6 +326,18 @@
 "profile_export_failed" = "Export failed";
 "profile_import_failed" = "Import failed";
 "profile_export_filename" = "Funlock-profiles.json";
+
+// Full settings backup
+"settings_backup_title" = "Full Settings Backup";
+"settings_backup_desc" = "Export/import all settings (device, thresholds, Wi-Fi, notifications). Restore in one click after reinstall.";
+"settings_export_all" = "Export All Settings";
+"settings_import_all" = "Import All Settings";
+"settings_export_filename" = "Funlock-settings.json";
+"settings_export_done" = "All settings exported";
+"settings_import_all_confirm" = "Import will replace all current settings";
+"settings_import_all_confirm_desc" = "Values in the file overwrite existing ones; old settings not in the file are removed. Some options require a restart to take effect. Continue?";
+"settings_import_done" = "Imported %d settings; some options need a restart";
+"settings_import_failed" = "Import failed: invalid file format";
 "wake_advance" = "Wake Advance";
 "pre_unlock_trigger" = "Pre-Unlock Trigger";
 "subtitle_pre" = "When signal reaches ";

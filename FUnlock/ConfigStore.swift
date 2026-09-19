@@ -58,6 +58,85 @@ final class ConfigStore {
     func object(forKey key: String) -> Any? { defaults.object(forKey: key) }
     func bool(forKey key: String) -> Bool { defaults.bool(forKey: key) }
     func string(forKey key: String) -> String? { defaults.string(forKey: key) }
+
+    // MARK: - 全量设置导出/导入
+
+    /// 可导出的业务 key（legacyKeys + 后续新增 key；不含 didMigrate 等内部标记）
+    static let exportableKeys = legacyKeys + [
+        "permissionOnboarded",
+    ]
+
+    private static let exportedKeysKey = "_exportedKeys"
+    private static let dataPrefix = "_b64:"
+
+    /// 导出全部业务设置为 JSON：值统一转字符串，Data 走 base64 前缀编码；
+    /// 附带 _exportedKeys 清单，导入时按清单删除旧 key（支持多设备配置完全替换）。
+    func exportAllSettings() -> String? {
+        var dict: [String: String] = [:]
+        for key in ConfigStore.exportableKeys {
+            guard let value = defaults.object(forKey: key) else { continue }
+            if let data = value as? Data {
+                dict[key] = ConfigStore.dataPrefix + data.base64EncodedString()
+            } else {
+                dict[key] = "\(value)"
+            }
+        }
+        dict[ConfigStore.exportedKeysKey] = ConfigStore.exportableKeys.joined(separator: ",")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(dict) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// 导入结果统计
+    struct SettingsImportStats {
+        let applied: Int
+        let removed: Int
+    }
+
+    /// 从 JSON 恢复全部设置：先删清单内的旧 key，再逐 key 写回。
+    /// 兼容读取：Int/Bool/String/Data(base64) 按原类型还原。解析失败返回 nil（不落盘）。
+    func importAllSettings(json: String) -> SettingsImportStats? {
+        guard let data = json.data(using: .utf8),
+              let dict = try? JSONDecoder().decode([String: String].self, from: data),
+              !dict.isEmpty else {
+            return nil
+        }
+        // 至少命中一个已知业务 key 才视为合法设置文件，避免误吃任意 JSON
+        let knownKeys = Set(ConfigStore.exportableKeys)
+        guard dict.keys.contains(where: { knownKeys.contains($0) }) else { return nil }
+
+        let keysToRemove = (dict[ConfigStore.exportedKeysKey]?
+            .split(separator: ",").map(String.init)) ?? []
+        var removed = 0
+        for key in keysToRemove where key != ConfigStore.exportedKeysKey {
+            if defaults.object(forKey: key) != nil {
+                defaults.removeObject(forKey: key)
+                removed += 1
+            }
+        }
+
+        var applied = 0
+        for (key, raw) in dict where key != ConfigStore.exportedKeysKey {
+            guard knownKeys.contains(key) else { continue }
+            let value = ConfigStore.decodeSettingValue(raw)
+            defaults.set(value, forKey: key)
+            applied += 1
+        }
+        return SettingsImportStats(applied: applied, removed: removed)
+    }
+
+    /// 字符串 → 原类型还原：base64 Data / Int / Bool / String
+    private static func decodeSettingValue(_ raw: String) -> Any {
+        if raw.hasPrefix(dataPrefix),
+           let d = Data(base64Encoded: String(raw.dropFirst(dataPrefix.count))) {
+            return d
+        }
+        if raw == "true" { return true }
+        if raw == "false" { return false }
+        if let i = Int(raw) { return i }
+        return raw
+    }
 }
 
 extension ConfigStore {

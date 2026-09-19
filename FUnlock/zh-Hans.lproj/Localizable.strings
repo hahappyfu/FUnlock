@@ -201,6 +201,8 @@
 "wifi_ssid" = "Wi-Fi名称";
 "wifi_ssid_placeholder" = "如 Office-WiFi";
 "current_wifi" = "使用当前Wi-Fi";
+"wifi_need_location" = "需要定位权限才能读取 Wi-Fi 名称：请在「系统设置 → 隐私与安全性 → 定位服务」中允许 Funlock，然后重试。";
+"wifi_unavailable" = "未获取到 Wi-Fi 名称（可能未连接 Wi-Fi），可手动输入。";
 
 /* Abnormal Unlock Detection */
 "abnormal_unlock_title" = "异常解锁检测";
@@ -322,6 +324,18 @@
 "profile_export_failed" = "导出失败";
 "profile_import_failed" = "导入失败";
 "profile_export_filename" = "Funlock-配置.json";
+
+// 全量设置备份
+"settings_backup_title" = "全部设置备份";
+"settings_backup_desc" = "导出/导入所有配置（设备绑定、阈值、Wi-Fi、通知等），重装后可一键恢复。";
+"settings_export_all" = "导出全部设置";
+"settings_import_all" = "导入全部设置";
+"settings_export_filename" = "Funlock-全部设置.json";
+"settings_export_done" = "全部设置已导出";
+"settings_import_all_confirm" = "导入将替换当前全部设置";
+"settings_import_all_confirm_desc" = "文件中的设置将覆盖现有值，清单外的旧设置会被清除。导入后部分选项需重启应用生效。确定继续？";
+"settings_import_done" = "已导入 %d 项设置，部分选项需重启生效";
+"settings_import_failed" = "导入失败：文件格式不正确";
 
 // 高级距离阈值配置（总览）
 "wake_advance" = "唤醒提前量";
