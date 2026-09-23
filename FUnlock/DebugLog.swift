@@ -8,7 +8,13 @@ func logDebug(component: String, _ message: String) {
 enum DebugLog {
     static var path: String { logFileURL.path }
 
+    /// 测试覆盖：非 nil 时写该目录，避免污染用户真实日志
+    static var testLogDirectory: URL?
+    /// 单文件滚动上限（测试可调小）
+    static var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
+
     static var logDirectory: URL {
+        if let testDir = testLogDirectory { return testDir }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock")
     }
@@ -26,12 +32,18 @@ enum DebugLog {
     }()
 
     static func log(component: String, _ message: String) {
+        // 入队前捕获路径与阈值，避免后续配置变更影响已排队的写入
+        let url = logFileURL
+        let maxSize = maxFileSize
         queue.async {
             let ts = dateFormatter.string(from: Date())
             let line = "[\(ts)] [\(component)] \(message)\n"
             guard let data = line.data(using: .utf8) else { return }
-            try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
-            let url = logFileURL
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+            // 滚动：在串行队列内执行，天然与写入互斥
+            LogRotator.rotateIfNeeded(url: url, maxBytes: maxSize)
+
             if !FileManager.default.fileExists(atPath: url.path) {
                 FileManager.default.createFile(atPath: url.path, contents: nil)
             }

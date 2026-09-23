@@ -67,7 +67,8 @@ final class TelemetryLogger {
 
     // MARK: - 配置
 
-    private let maxFileSize: UInt64 = 5 * 1024 * 1024  // 5MB 熔断
+    /// 单文件滚动上限（测试可调小）
+    var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
     private let queue = DispatchQueue(label: "com.funlock.telemetry", qos: .utility)
 
     private static let csvFormatter: DateFormatter = {
@@ -138,14 +139,8 @@ final class TelemetryLogger {
 
     /// 同步写入单条记录（在 utility 队列上调用）
     private func writeRecord(_ record: TelemetryRecord) {
-        // 容量熔断：超过 5MB 清空重写
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: logFile.path),
-           let size = attrs[.size] as? UInt64,
-           size > maxFileSize {
-            // 保留表头，清空数据
-            try? FileManager.default.removeItem(at: logFile)
-            writeHeaderIfNeeded()
-        }
+        // 容量滚动：超过 5MB 时把当前 CSV 归档为 .old（覆盖旧备份），新文件重写表头
+        LogRotator.rotateIfNeeded(url: logFile, maxBytes: maxFileSize)
 
         // 首次写入：创建文件并写 CSV 表头
         writeHeaderIfNeeded()
@@ -177,9 +172,10 @@ final class TelemetryLogger {
         }
     }
 
-    /// 写入 CSV 表头（仅当文件不存在时）
+    /// 写入 CSV 表头（文件不存在或为空时，含滚动后的新文件）
     private func writeHeaderIfNeeded() {
-        guard !FileManager.default.fileExists(atPath: logFile.path) else { return }
+        let size = (try? FileManager.default.attributesOfItem(atPath: logFile.path))?[.size] as? UInt64 ?? 0
+        guard size == 0 else { return }
         let header = "Timestamp,Event_Type,Device_Model,Raw_RSSI,Kalman_RSSI,Effective_RSSI,Slope,Is_Anomalous,Result,Duration_ms,InjectTime,ConfirmTime\n"
         try? header.data(using: .utf8)?.write(to: logFile)
     }

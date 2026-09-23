@@ -12,6 +12,11 @@ final class ScriptRunner {
     private var lastLogTime: [String: Date] = [:]
     private let lock = NSLock()
 
+    /// 测试覆盖：非 nil 时写该目录下的 events.log，避免污染真实日志
+    var testLogDirectory: URL?
+    /// 事件日志单文件滚动上限（测试可调小）
+    var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
+
     private static let eventFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -61,10 +66,22 @@ final class ScriptRunner {
     }
 
     private func writeLine(_ line: String) {
-        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
-        let logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
+        lock.lock()
+        defer { lock.unlock() }
+
+        let logDir: URL
+        if let testDir = testLogDirectory {
+            logDir = testDir
+        } else {
+            guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
+            logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
+        }
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         let logFile = logDir.appendingPathComponent("events.log")
+
+        // 滚动：在锁内执行，保证轮转与写入互斥
+        LogRotator.rotateIfNeeded(url: logFile, maxBytes: maxFileSize)
+
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logFile.path) {
                 if let handle = try? FileHandle(forWritingTo: logFile) {

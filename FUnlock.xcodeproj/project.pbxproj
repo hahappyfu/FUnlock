@@ -51,6 +51,7 @@
 		RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RM0000010000000100000001 /* ReasonActionMappingTests.swift */; };
 		DV0000020000000100000002 /* DiagnosticsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000002 /* DiagnosticsViewTests.swift */; };
 		IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000001 /* iMessageNotifierTests.swift */; };
+		LR0000020000000100000001 /* LogRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LR0000010000000100000001 /* LogRotationTests.swift */; };
 		DV0000020000000100000001 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000001 /* DiagnosticsView.swift */; };
 		MB0000020000000100000001 /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000001 /* MenuBarPopover.swift */; };
 		AA0000DD00000001 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000011 /* MainWindowView.swift */; };
@@ -156,6 +157,7 @@
 		RM0000010000000100000001 /* ReasonActionMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasonActionMappingTests.swift; sourceTree = "<group>"; };
 		DV0000010000000100000002 /* DiagnosticsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsViewTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000001 /* iMessageNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifierTests.swift; sourceTree = "<group>"; };
+		LR0000010000000100000001 /* LogRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogRotationTests.swift; sourceTree = "<group>"; };
 		AA0000DD00000011 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		AA0000DD00000012 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		AA0000DD00000013 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
@@ -303,6 +305,7 @@
 				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
 				DV0000010000000100000002 /* DiagnosticsViewTests.swift */,
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
+				LR0000010000000100000001 /* LogRotationTests.swift */,
 				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
 				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
 			);
@@ -545,6 +548,7 @@
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
 				DV0000020000000100000002 /* DiagnosticsViewTests.swift in Sources */,
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
+				LR0000020000000100000001 /* LogRotationTests.swift in Sources */,
 				IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */,
 				7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */,
 			);
