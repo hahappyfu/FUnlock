@@ -36,20 +36,6 @@ let fastSlopeThreshold = 8.0
 /// 判定「缓降」的斜率阈值（dBm/s），slope ≥ -1 视为接近平稳
 let mildSlopeThreshold = 1.0
 
-func readBluetoothDevice(_ uuid: String) -> (mac: String?, name: String?) {
-    guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist") else { return (nil, nil) }
-    let mac = ((plist["CoreBluetoothCache"] as? NSDictionary)?[uuid] as? NSDictionary)?["DeviceAddress"] as? String
-    let name: String?
-    if let mac = mac, let device = (plist["DeviceCache"] as? NSDictionary)?[mac] as? NSDictionary,
-        let raw = device["Name"] as? String {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        name = trimmed == "" ? nil : trimmed
-    } else {
-        name = nil
-    }
-    return (mac, name)
-}
-
 class Device: NSObject {
     let uuid : UUID!
     var peripheral : CBPeripheral?
@@ -966,11 +952,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                         device.blName = info.name
                         device.macAddr = info.macAddr
                     }
-                    if device.macAddr == nil || device.blName == nil {
-                        let bt = readBluetoothDevice(peripheral.identifier.description)
-                        if device.macAddr == nil { device.macAddr = bt.mac }
-                        if device.blName == nil { device.blName = bt.name }
-                    }
                     lock.withLock { devices[peripheral.identifier] = device }
                     central.connect(peripheral, options: nil)
                     DispatchQueue.main.async {
@@ -1109,26 +1090,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             if !scanMode {
                 centralMgr.stopScan()
             }
-            let pollInterval = lock.withLock { activePollInterval }
-            let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] _ in
-                guard let self = self else { return }
-                let lastRead = self.lock.withLock { self.lastReadAt }
-                if Date().timeIntervalSince1970 > lastRead + 10 {
-                    Log.ble.info("Falling back to passive mode")
-                    self.centralMgr.cancelPeripheralConnection(peripheral)
-                    self.lock.withLock {
-                        self.activeModeTimer?.invalidate()
-                        self.activeModeTimer = nil
-                    }
-                    self.scanForPeripherals()
-                } else if peripheral.state == .connected {
-                    peripheral.readRSSI()
-                } else {
-                    self.connectMonitoredPeripheral()
-                }
-            })
-            RunLoop.main.add(timer, forMode: .common)
-            lock.withLock { activeModeTimer = timer }
+            restartActiveModeTimer(peripheral: peripheral)
         }
     }
 
