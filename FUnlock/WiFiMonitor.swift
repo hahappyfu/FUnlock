@@ -3,6 +3,10 @@ import Foundation
 import CoreWLAN
 import CoreLocation
 
+/// Wi-Fi SSID 读取与定位授权管理。
+/// 标注 @MainActor：locationManager 在主线程创建（CoreLocation 期望的线程），
+/// `pendingCompletions` 与代理回调状态统一受主线程隔离保护，避免 CoreLocation 回调线程与主线程竞态。
+@MainActor
 class WiFiMonitor: NSObject, CLLocationManagerDelegate {
     static let shared = WiFiMonitor()
 
@@ -41,10 +45,15 @@ class WiFiMonitor: NSObject, CLLocationManagerDelegate {
 
     private var pendingCompletions: [(Bool) -> Void] = []
 
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    /// CLLocationManagerDelegate 回调不保证在主线程到达（协议为 nonisolated，回调线程由 CoreLocation 决定）：
+    /// 读取授权状态后统一收敛到主线程修改 `pendingCompletions` 并派发回调，
+    /// 与 `requestLocationIfNeeded` 对同一数组的读写在 @MainActor 上串行。
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let granted = manager.authorizationStatus == .authorizedAlways
-        let callbacks = pendingCompletions
-        pendingCompletions = []
-        Task { @MainActor in callbacks.forEach { $0(granted) } }
+        Task { @MainActor in
+            let callbacks = self.pendingCompletions
+            self.pendingCompletions = []
+            callbacks.forEach { $0(granted) }
+        }
     }
 }

@@ -85,6 +85,9 @@ struct LockScreenState: Equatable {
 
 // MARK: - FUnManager
 
+/// 全类 @MainActor 隔离：所有状态变更、`stateMachine`（@MainActor）交互与解锁注入
+/// 都在主线程串行执行。解锁路径上的延迟/并行 `Task` 闭包显式标注 `@MainActor`，
+/// 不依赖 `Task` 隐式继承 actor 上下文的实现细节，杜绝后台 Task 裸调主线程状态机。
 @MainActor
 final class FUnManager: ObservableObject {
 
@@ -286,7 +289,7 @@ final class FUnManager: ObservableObject {
         Log.sm.debug("[SM] systemWake")
         recordSystem(.systemWake)
         // 延迟 1 秒等待蓝牙栈恢复
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard !Task.isCancelled else { return }
             guard let self else { return }
@@ -322,7 +325,8 @@ final class FUnManager: ObservableObject {
         }
         recordUnlockSuccess()
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
-        Task { stateMachine.resetToActive() }
+        // 本方法已在 @MainActor 上执行，同步调用即可，无需再包一层 Task
+        stateMachine.resetToActive()
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         // Task 是逃逸闭包，内部再读 self.isAutoUnlocking 会拿到 2 秒后的值，
@@ -606,7 +610,7 @@ final class FUnManager: ObservableObject {
             if snap.effectiveRSSI >= Double(fun.unlockRSSI) {
                 // 并行：等 0.8s 后尝试解锁，不等唤醒完成
                 unlockTask?.cancel()
-                unlockTask = Task { [weak self] in
+                unlockTask = Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
@@ -630,7 +634,7 @@ final class FUnManager: ObservableObject {
         // 屏幕已锁定等 0.3s
         let delay: UInt64 = 300_000_000
         unlockTask?.cancel()
-        unlockTask = Task {
+        unlockTask = Task { @MainActor in
             Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
             timingLog("delayed unlock task started | sleep 0.3s")
             try? await Task.sleep(nanoseconds: UInt64(delay))
@@ -716,7 +720,7 @@ final class FUnManager: ObservableObject {
             Log.sm.debug("unlock attempt posted, waiting for dual verification")
             // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
             // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
-            Task { [weak self] in
+            Task { @MainActor [weak self] in
                 let sys = SystemInteractionService.shared
                 let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
                 guard let self else { return }
@@ -744,7 +748,8 @@ final class FUnManager: ObservableObject {
                         isAnomalous: snap.lastSignalAnomalous
                     )
                     Log.sm.debug("unlock complete")
-                    Task { self.stateMachine.handleUnlockSuccess() }
+                    // 状态机在 @MainActor 上串行更新（本 Task 已标注 @MainActor），无需再包 Task
+                    self.stateMachine.handleUnlockSuccess()
                 } else {
                     // 通知和 CGSession 都未确认解锁 → 可能密码错误
                     let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
@@ -754,7 +759,7 @@ final class FUnManager: ObservableObject {
                         Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                         recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
                         logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        Task { self.stateMachine.handleUnlockFailure() }
+                        self.stateMachine.handleUnlockFailure()
                         let failExtras = self.unlockEventExtras(result: "fail")
                         ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
                         logDebug(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
@@ -768,7 +773,7 @@ final class FUnManager: ObservableObject {
                         Log.sm.debug("dual verify: timeout but CGSession says unlocked")
                         self.consecutiveUnlockAttempts = 0
                         logDebug(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
-                        Task { self.stateMachine.handleUnlockSuccess() }
+                        self.stateMachine.handleUnlockSuccess()
                     }
                 }
             }
@@ -795,7 +800,7 @@ final class FUnManager: ObservableObject {
         timingLog("startWakeRetry begin")
 
         wakeTask?.cancel()
-        wakeTask = Task {
+        wakeTask = Task { @MainActor in
             // defer 兜底：无论取消/成功/失败，都释放 wake assertion 并复位唤醒请求标记，
             // 防止 assertion 泄漏（显示器无法自动熄屏）与 displayWakeRequested 卡死（唤醒功能失效）
             defer {
