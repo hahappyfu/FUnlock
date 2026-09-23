@@ -9,10 +9,7 @@
 /* Begin PBXBuildFile section */
 		3D2CF85B255102B300157996 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3D2CF85A255102B300157996 /* MediaRemote.framework */; };
 		3D2FCF08226C99CB007A06E7 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D2FCF07226C99CB007A06E7 /* Images.xcassets */; };
-		3D4EE4112279E55A00AF9E93 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 3D4EE4102279E55A00AF9E93 /* AppDelegate.m */; };
-		3D4EE4132279E56900AF9E93 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 3D4EE4122279E56900AF9E93 /* main.m */; };
 		3D600A37226CC1A40068FB7B /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 3D600A35226CC1A40068FB7B /* Localizable.strings */; };
-		3D600A5A22701E740068FB7B /* Launcher.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = 3D600A4022701A5A0068FB7B /* Launcher.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */; };
 		3D79FD7D226C335100A373C0 /* appleDeviceNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */; };
 		3DCAAA7D22ADE9830011A2DA /* checkUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCAAA7C22ADE9830011A2DA /* checkUpdate.swift */; };
@@ -80,19 +77,6 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		3D600A5922701E5D0068FB7B /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = Contents/Library/LoginItems;
-			dstSubfolderSpec = 1;
-			files = (
-				3D600A5A22701E740068FB7B /* Launcher.app in CopyFiles */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		3D2CF85A255102B300157996 /* MediaRemote.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemote.framework; path = ../../../../System/Library/PrivateFrameworks/MediaRemote.framework; sourceTree = "<group>"; };
 		3D2FCF07226C99CB007A06E7 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
@@ -100,14 +84,8 @@
 		3D43D0142765FCFD00D15991 /* da */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = da; path = da.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3D43D0162765FD1600D15991 /* nb */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = nb; path = nb.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3D43D0182765FD2800D15991 /* sv */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = sv; path = sv.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3D4EE40F2279E55A00AF9E93 /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
-		3D4EE4102279E55A00AF9E93 /* AppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
-		3D4EE4122279E56900AF9E93 /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		3D600A36226CC1A40068FB7B /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Base; path = Base.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3D600A38226CC1AA0068FB7B /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
-		3D600A4022701A5A0068FB7B /* Launcher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Launcher.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3D600A4922701A5C0068FB7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3D600A4A22701A5C0068FB7B /* Launcher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Launcher.entitlements; sourceTree = "<group>"; };
 		3D6070E126DBC68E00EE4E48 /* LEDeviceInfo.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LEDeviceInfo.swift; sourceTree = "<group>"; };
 		3D79FD7C226C335100A373C0 /* appleDeviceNames.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = appleDeviceNames.swift; sourceTree = "<group>"; };
 		3DC0BC6922728FF1001145EC /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -175,13 +153,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		3D600A3D22701A5A0068FB7B /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3DD4B64D226C1C3200451B7B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -194,25 +165,11 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		3D600A4122701A5B0068FB7B /* Launcher */ = {
-			isa = PBXGroup;
-			children = (
-				3D4EE4122279E56900AF9E93 /* main.m */,
-				3D4EE40F2279E55A00AF9E93 /* AppDelegate.h */,
-				3D4EE4102279E55A00AF9E93 /* AppDelegate.m */,
-				3D600A4922701A5C0068FB7B /* Info.plist */,
-				3D600A4A22701A5C0068FB7B /* Launcher.entitlements */,
-			);
-			path = Launcher;
-			sourceTree = "<group>";
-			usesTabs = 0;
-		};
 		3DD4B647226C1C3200451B7B = {
 			isa = PBXGroup;
 			children = (
 				3DD4B652226C1C3200451B7B /* FUnlock */,
 				AA000010226C1DF200000014 /* FUnlockTests */,
-				3D600A4122701A5B0068FB7B /* Launcher */,
 				3DD4B651226C1C3200451B7B /* Products */,
 				3DD4B667226C1E3700451B7B /* Frameworks */,
 			);
@@ -223,7 +180,6 @@
 			children = (
 				3DD4B650226C1C3200451B7B /* FUnlock.app */,
 				AA000010226C1DF200000013 /* FUnlockTests.xctest */,
-				3D600A4022701A5A0068FB7B /* Launcher.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -315,23 +271,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3D600A3F22701A5A0068FB7B /* Launcher */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3D600A4B22701A5C0068FB7B /* Build configuration list for PBXNativeTarget "Launcher" */;
-			buildPhases = (
-				3D600A3C22701A5A0068FB7B /* Sources */,
-				3D600A3D22701A5A0068FB7B /* Frameworks */,
-				3D600A3E22701A5A0068FB7B /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = Launcher;
-			productName = Launcher;
-			productReference = 3D600A4022701A5A0068FB7B /* Launcher.app */;
-			productType = "com.apple.product-type.application";
-		};
 		3DD4B64F226C1C3200451B7B /* FUnlock */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3DD4B65E226C1C3400451B7B /* Build configuration list for PBXNativeTarget "FUnlock" */;
@@ -339,7 +278,6 @@
 				3DD4B64C226C1C3200451B7B /* Sources */,
 				3DD4B64D226C1C3200451B7B /* Frameworks */,
 				3DD4B64E226C1C3200451B7B /* Resources */,
-				3D600A5922701E5D0068FB7B /* CopyFiles */,
 				3D7C0F8022769F1F005A4C43 /* ShellScript */,
 			);
 			buildRules = (
@@ -377,21 +315,6 @@
 				LastUpgradeCheck = 1200;
 				ORGANIZATIONNAME = "Takeshi Sone";
 				TargetAttributes = {
-					3D600A3F22701A5A0068FB7B = {
-						CreatedOnToolsVersion = 10.2.1;
-						LastSwiftMigration = 1020;
-						SystemCapabilities = {
-							com.apple.GameCenter.Mac = {
-								enabled = 0;
-							};
-							com.apple.HardenedRuntime = {
-								enabled = 1;
-							};
-							com.apple.Sandbox = {
-								enabled = 0;
-							};
-						};
-					};
 					3DD4B64F226C1C3200451B7B = {
 						CreatedOnToolsVersion = 10.2.1;
 						LastSwiftMigration = 1020;
@@ -431,20 +354,12 @@
 			projectRoot = "";
 			targets = (
 				3DD4B64F226C1C3200451B7B /* FUnlock */,
-				3D600A3F22701A5A0068FB7B /* Launcher */,
 				AA000010226C1DF200000010 /* FUnlockTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		3D600A3E22701A5A0068FB7B /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3DD4B64E226C1C3200451B7B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -478,15 +393,6 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		3D600A3C22701A5A0068FB7B /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				3D4EE4112279E55A00AF9E93 /* AppDelegate.m in Sources */,
-				3D4EE4132279E56900AF9E93 /* main.m in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3DD4B64C226C1C3200451B7B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -591,54 +497,6 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		3D600A4C22701A5C0068FB7B /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = JJYCS98SHK;
-				ENABLE_HARDENED_RUNTIME = YES;
-				INFOPLIST_FILE = Launcher/Info.plist;
-				INSTALL_PATH = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock.Launcher;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		3D600A4D22701A5C0068FB7B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				COPY_PHASE_STRIP = NO;
-				DEVELOPMENT_TEAM = JJYCS98SHK;
-				ENABLE_HARDENED_RUNTIME = YES;
-				INFOPLIST_FILE = Launcher/Info.plist;
-				INSTALL_PATH = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.fuhahah.FUnlock.Launcher;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
 		3DD4B65C226C1C3400451B7B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -876,15 +734,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3D600A4B22701A5C0068FB7B /* Build configuration list for PBXNativeTarget "Launcher" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3D600A4C22701A5C0068FB7B /* Debug */,
-				3D600A4D22701A5C0068FB7B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		3DD4B64B226C1C3200451B7B /* Build configuration list for PBXProject "FUnlock" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
