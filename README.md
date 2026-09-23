@@ -178,7 +178,6 @@ FUnlock/
 │   ├── ToastView.swift               # 轻提示组件
 │   └── ...                           # 各设置视图 + 工具类
 ├── FUnlockTests/                     # 单元测试与集成测试（373 用例）
-├── Launcher/                         # 开机自启动 Helper
 ├── docs/                             # 开发文档与设计 spec
 └── BUGS.md                           # 问题登记
 ```

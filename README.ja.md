@@ -118,7 +118,6 @@ FUnlock/
 │   ├── UpdateDownloader.swift         # 自動更新ダウンローダー
 │   ├── UpdateInstaller.swift          # 自動更新インストーラー
 │   └── ...（他多数）
-├── Launcher/                           # ログイン時自動起動 Helper
 └── docs/                               # 開発ドキュメント
 ```
 
