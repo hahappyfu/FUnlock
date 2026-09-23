@@ -196,13 +196,15 @@ final class SystemInteractionService {
     /// Inject password using AppleScript System Events (only for ASCII passwords).
     /// Returns true if injection was initiated successfully.
     /// 执行前与结束后均调用 isSecureCheck 确认屏幕仍处于锁定状态（防密码泄露给非锁定会话）
+    /// 使用进程内 NSAppleScript 执行（而非外部 /usr/bin/osascript 进程），
+    /// 避免密码以命令行参数形式暴露给 ps/sysctl 等进程检查工具
     private func injectWithAppleScript(_ string: String, isSecureCheck: () -> Bool) -> Bool {
         guard string.canBeConverted(to: .ascii) else {
             Log.sm.debug("PASSWORD: AppleScript rejected - non-ASCII characters")
             return false
         }
 
-        // osascript 执行前再次确认屏幕仍锁定，防止密码泄露给非锁定会话
+        // AppleScript 执行前再次确认屏幕仍锁定，防止密码泄露给非锁定会话
         guard isSecureCheck() else {
             logBoth("SystemInteraction", "PASSWORD: ABORT - screen no longer secure before AppleScript injection", fileMsg: "Level 3: ABORT - screen no longer secure before AppleScript")
             return false
@@ -222,30 +224,26 @@ final class SystemInteractionService {
         end tell
         """
 
-        Log.sm.debug("PASSWORD: executing AppleScript keystroke injection")
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let status = task.terminationStatus
-            // osascript 为同步 waitUntilExit，此处检查只能用于结果判定：
-            // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
-            if !isSecureCheck() {
-                logBoth("SystemInteraction", "PASSWORD: screen no longer locked after AppleScript, treating as failure", fileMsg: "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
-                return false
-            }
-            if status == 0 {
-                Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
-                return true
-            } else {
-                Log.sm.debug("PASSWORD: AppleScript failed with status \(status)")
-                return false
-            }
-        } catch {
-            Log.sm.debug("PASSWORD: AppleScript error - \(error.localizedDescription)")
+        Log.sm.debug("PASSWORD: executing AppleScript keystroke injection (in-process NSAppleScript)")
+        guard let appleScript = NSAppleScript(source: script) else {
+            Log.sm.debug("PASSWORD: AppleScript compilation failed")
+            return false
+        }
+        var errorInfo: NSDictionary?
+        let result = appleScript.executeAndReturnError(&errorInfo)
+        // NSAppleScript 为同步执行，此处检查只能用于结果判定：
+        // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
+        if !isSecureCheck() {
+            logBoth("SystemInteraction", "PASSWORD: screen no longer locked after AppleScript, treating as failure", fileMsg: "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
+            return false
+        }
+        if result != nil {
+            Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
+            return true
+        } else {
+            let number = errorInfo?["NSAppleScriptErrorNumber"] as? Int ?? -1
+            let message = errorInfo?["NSAppleScriptErrorMessage"] as? String ?? "unknown"
+            Log.sm.debug("PASSWORD: AppleScript failed - error \(number): \(message)")
             return false
         }
     }
