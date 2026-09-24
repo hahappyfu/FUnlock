@@ -74,7 +74,8 @@ final class SignalDataStore: ObservableObject, @unchecked Sendable {
         lock.unlock()
     }
 
-    /// 清空所有数据
+    /// 清空所有数据（UI @Published 更新在主线程执行）
+    @MainActor
     func clear() {
         lock.lock()
         ring.clear()

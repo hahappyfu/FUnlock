@@ -142,7 +142,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private let lock = UnfairLock()
     var centralMgr : CBCentralManager!
     var devices : [UUID : Device] = [:]
-    var delegate: FUnDelegate?
+    weak var delegate: FUnDelegate?
     var inputMonitor: InputActivityMonitor?
 
     /// 用户是否有输入活动（nil-safe，线程安全）
@@ -874,8 +874,10 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     self?.delegate?.removeDevice(device: device)
                 }
             }
-            // 防泄漏：设备过期时清理节流记录
-            self.lastUIUpdateTime.removeValue(forKey: uuid)
+            // 防泄漏：设备过期时清理节流记录（派发到 bleQueue 串行队列保证线程安全）
+            self.bleQueue.async { [weak self] in
+                self?.lastUIUpdateTime.removeValue(forKey: uuid)
+            }
         })
         RunLoop.main.add(timer, forMode: .common)
         device.scanTimer = timer
