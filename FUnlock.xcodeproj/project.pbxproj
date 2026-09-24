@@ -68,6 +68,7 @@
 		DB0000020000000100000001 /* Device.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0000010000000100000001 /* Device.swift */; };
 		DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS0000010000000100000001 /* DeviceSnapshot.swift */; };
 		SH0000020000000100000001 /* SignalHysteresisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = SH0000010000000100000001 /* SignalHysteresisEngine.swift */; };
+		BS0000020000000100000001 /* BLEScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BS0000010000000100000001 /* BLEScanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -156,6 +157,7 @@
 		DB0000010000000100000001 /* Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Device.swift; sourceTree = "<group>"; };
 		DS0000010000000100000001 /* DeviceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSnapshot.swift; sourceTree = "<group>"; };
 		SH0000010000000100000001 /* SignalHysteresisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalHysteresisEngine.swift; sourceTree = "<group>"; };
+		BS0000010000000100000001 /* BLEScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEScanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -247,6 +249,7 @@
 				DB0000010000000100000001 /* Device.swift */,
 				DS0000010000000100000001 /* DeviceSnapshot.swift */,
 				SH0000010000000100000001 /* SignalHysteresisEngine.swift */,
+				BS0000010000000100000001 /* BLEScanner.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -453,6 +456,7 @@
 				DB0000020000000100000001 /* Device.swift in Sources */,
 				DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */,
 				SH0000020000000100000001 /* SignalHysteresisEngine.swift in Sources */,
+				BS0000020000000100000001 /* BLEScanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

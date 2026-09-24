@@ -24,7 +24,7 @@ private final class BLELogThrottler: @unchecked Sendable {
 }
 
 private let bleLogThrottler = BLELogThrottler()
-private func throttledBleLog(_ key: String, interval: TimeInterval = 1.0, _ msg: String) {
+func throttledBleLog(_ key: String, interval: TimeInterval = 1.0, _ msg: String) {
     guard bleLogThrottler.shouldLog(key: key, interval: interval) else { return }
     Log.ble.debug("\(msg)")
 }
@@ -70,13 +70,17 @@ protocol FUnDelegate: AnyObject {
 ///   （devices / monitoredUUID / presence / pipeline 等）统一由 `lock`（UnfairLock）保护；
 /// - Timer 操作与 `@Published`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
 /// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
-class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate, @unchecked Sendable {
+class FUn: NSObject, ObservableObject, @unchecked Sendable, BLEScannerHost {
     static let UNLOCK_DISABLED = SignalHysteresisEngine.unlockDisabled
     static let LOCK_DISABLED = SignalHysteresisEngine.lockDisabled
     let bleQueue = DispatchQueue(label: "com.funlock.ble")
     private let lock = UnfairLock()
-    var centralMgr : CBCentralManager!
-    var devices : [UUID : Device] = [:]
+    private(set) var scanner: BLEScanner!
+    var centralMgr: CBCentralManager! { scanner.centralMgr }
+    var devices: [UUID: Device] {
+        get { scanner.devices }
+        set { scanner.devices = newValue }
+    }
     weak var delegate: FUnDelegate?
     var inputMonitor: InputActivityMonitor?
 
@@ -85,10 +89,22 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         inputMonitor?.isActive == true
     }
 
-    private var scanMode = false
-    var monitoredUUID: UUID?
-    private var monitoredUUIDs: Set<UUID> = []
-    private var monitoredPeripheral: CBPeripheral?
+    var scanMode: Bool {
+        get { scanner.scanMode }
+        set { scanner.scanMode = newValue }
+    }
+    var monitoredUUID: UUID? {
+        get { scanner.monitoredUUID }
+        set { scanner.monitoredUUID = newValue }
+    }
+    var monitoredUUIDs: Set<UUID> {
+        get { scanner.monitoredUUIDs }
+        set { scanner.monitoredUUIDs = newValue }
+    }
+    var monitoredPeripheral: CBPeripheral? {
+        get { scanner.monitoredPeripheral }
+        set { scanner.monitoredPeripheral = newValue }
+    }
     private var proximityTimer : Timer?
     private var signalTimer: Timer?
     var presence = false
@@ -96,9 +112,35 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     @Published var unlockRSSI = -60
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
-    private var lastReadAt = 0.0
+    var lastReadAt: Double {
+        get { scanner.lastReadAt }
+        set { scanner.lastReadAt = newValue }
+    }
     private var powerWarn = true
-    private var passiveMode = false
+    var passiveMode: Bool {
+        get { scanner.passiveMode }
+        set { scanner.passiveMode = newValue }
+    }
+    var activeModeTimer: Timer? {
+        get { scanner.activeModeTimer }
+        set { scanner.activeModeTimer = newValue }
+    }
+    var connectionTimer: Timer? {
+        get { scanner.connectionTimer }
+        set { scanner.connectionTimer = newValue }
+    }
+    var stableCount: Int {
+        get { scanner.stableCount }
+        set { scanner.stableCount = newValue }
+    }
+    var activePollInterval: TimeInterval {
+        get { scanner.activePollInterval }
+        set { scanner.activePollInterval = newValue }
+    }
+    var lastEstimatedRSSI: Int {
+        get { scanner.lastEstimatedRSSI }
+        set { scanner.lastEstimatedRSSI = newValue }
+    }
     var thresholdRSSI = -90
     // 管道状态 (替代旧的散装字段)
     var pipeline = SignalPipeline()
@@ -138,75 +180,25 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     var heartbeatTimer: Timer?
     var heartbeatInterval: TimeInterval = 2.0
     private var lastHeartbeatInterval: TimeInterval = 2.0
-    var activeModeTimer : Timer? = nil
-    var connectionTimer : Timer? = nil
-    var stableCount: Int = 0
-    var activePollInterval: TimeInterval = 2.0
-    var lastEstimatedRSSI: Int = 0
     var signalLostCount: Int = 0
-    // 节流：非监控设备的 UI 刷新时间戳
-    private var lastUIUpdateTime: [UUID: Date] = [:]
-    private let uiThrottleInterval: TimeInterval = 1.0
-    // 跟踪当前扫描的 AllowDuplicates 状态，避免重复启动
-    private var currentScanAllowDuplicates: Bool = false
     // 冷静期：解锁后短时间内不触发锁定，防止振荡
     private var lastProximityEventTime: Date = .distantPast
     private let proximityGracePeriod: TimeInterval = 5.0
 
     func scanForPeripherals() {
-        // 优化：根据当前模式动态决定 AllowDuplicates
-        let allowDuplicates: Bool
-        let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
-        if !hasMonitor {
-            // 未绑定设备，只需发现列表，不需要重复广播
-            allowDuplicates = false
-        } else if lock.withLock({ passiveMode }) {
-            // 被动模式：靠扫描回调获取 RSSI，需要重复
-            allowDuplicates = true
-        } else {
-            // 主动模式 + 有目标：靠 readRSSI 轮询，不需要重复
-            allowDuplicates = false
-        }
-        // 参数没变且正在扫描，跳过重启
-        if centralMgr.isScanning && currentScanAllowDuplicates == allowDuplicates {
-            return
-        }
-        // 参数变了，需要先停再启
-        if centralMgr.isScanning {
-            centralMgr.stopScan()
-        }
-        currentScanAllowDuplicates = allowDuplicates
-        let options: [String: Any] = allowDuplicates
-            ? [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-            : [:]
-        centralMgr.scanForPeripherals(withServices: nil, options: options)
+        scanner.scanForPeripherals()
     }
 
     func startScanning() {
-        scanMode = true
-        scanForPeripherals()
+        scanner.startScanning()
     }
 
     func stopScanning() {
-        scanMode = false
-        centralMgr.stopScan()
-        currentScanAllowDuplicates = false
+        scanner.stopScanning()
     }
 
     func setPassiveMode(_ mode: Bool) {
-        let peripheralToCancel: CBPeripheral? = lock.withLock {
-            passiveMode = mode
-            if passiveMode {
-                activeModeTimer?.invalidate()
-                activeModeTimer = nil
-            }
-            return passiveMode ? monitoredPeripheral : nil
-        }
-
-        if let p = peripheralToCancel {
-            centralMgr.cancelPeripheralConnection(p)
-        }
-        scanForPeripherals()
+        scanner.setPassiveMode(mode)
     }
 
     func startMonitor(uuid: UUID) {
@@ -316,34 +308,6 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             Task { @MainActor [weak self] in
                 self?.delegate?.updatePresence(presence: false, reason: "lost")
             }
-        }
-    }
-
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        logDebug(component: "FUn", "[DIAG] centralManagerDidUpdateState - state=\(central.state.rawValue), authorization=\(CBManager.authorization.rawValue)")
-        switch central.state {
-        case .poweredOn:
-            Log.ble.debug("Bluetooth powered on")
-            if activeModeTimer == nil {
-                scanForPeripherals()
-            }
-            powerWarn = false
-        case .poweredOff:
-            Log.ble.debug("Bluetooth powered off")
-            invalidateAllTimers()
-            let shouldWarn: Bool = lock.withLock {
-                presence = false
-                let w = powerWarn
-                powerWarn = false
-                return w
-            }
-            if shouldWarn {
-                Task { @MainActor [weak self] in
-                    self?.delegate?.bluetoothPowerWarn()
-                }
-            }
-        default:
-            break
         }
     }
 
@@ -524,27 +488,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             signalTimer = nil
             proximityTimer?.invalidate()
             proximityTimer = nil
-            activeModeTimer?.invalidate()
-            activeModeTimer = nil
-            connectionTimer?.invalidate()
-            connectionTimer = nil
             heartbeatTimer?.invalidate()
             heartbeatTimer = nil
         }
+        scanner?.invalidateAllTimers()
     }
 
     func invalidateAllDeviceTimers() {
-        let timers: [Timer] = lock.withLock {
-            var collected: [Timer] = []
-            for (_, device) in devices {
-                if let t = device.scanTimer {
-                    collected.append(t)
-                    device.scanTimer = nil
-                }
-            }
-            return collected
-        }
-        for t in timers { t.invalidate() }
+        scanner?.invalidateAllDeviceTimers()
     }
 
     // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
@@ -790,362 +741,64 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func resetScanTimer(device: Device) {
-        device.scanTimer?.invalidate()
-        guard let uuid = device.uuid else { return }
-        // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
-        let peripheral = device.peripheral
-        let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
-            // 闭包只捕获 uuid（Sendable）；device 在 lock 保护下原子取出并移除，再派发主线程
-            guard let self = self else { return }
-            if let p = peripheral {
-                self.centralMgr.cancelPeripheralConnection(p)
-            }
-            // 在 lock 保护下原子取出并移除；先取出再派发，避免异步执行时已被移除导致恒 nil
-            if let device = self.lock.withLock({ self.devices.removeValue(forKey: uuid) }) {
-                Task { @MainActor [weak self] in
-                    self?.delegate?.removeDevice(device: device)
-                }
-            }
-            // 防泄漏：设备过期时清理节流记录（派发到 bleQueue 串行队列保证线程安全）
-            self.bleQueue.async { [weak self] in
-                self?.lastUIUpdateTime.removeValue(forKey: uuid)
-            }
-        })
-        RunLoop.main.add(timer, forMode: .common)
-        device.scanTimer = timer
+        scanner.resetScanTimer(device: device, timeout: signalTimeout)
     }
 
     func connectMonitoredPeripheral() {
-        guard let p = monitoredPeripheral else { return }
-
-        // Idk why but this works like a charm when 'didConnect' won't get called.
-        // However, this generates warnings in the log.
-        p.readRSSI()
-
-        guard p.state == .disconnected else { return }
-        Log.ble.debug("Connecting")
-        centralMgr.connect(p, options: nil)
-        connectionTimer?.invalidate()
-        let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] _ in
-            if p.state == .connecting {
-                Log.ble.error("Connection timeout")
-                self?.centralMgr.cancelPeripheralConnection(p)
-            }
-        })
-        RunLoop.main.add(connTimer, forMode: .common)
-        lock.withLock { connectionTimer = connTimer }
+        scanner.connectMonitoredPeripheral()
     }
 
-    private func restartActiveModeTimer(peripheral: CBPeripheral) {
-        let pollInterval: TimeInterval = lock.withLock {
-            activeModeTimer?.invalidate()
-            return activePollInterval
-        }
-
-        let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] _ in
-            guard let self = self else { return }
-            let lastRead = self.lock.withLock { self.lastReadAt }
-            if Date().timeIntervalSince1970 > lastRead + 10 {
-                Log.ble.info("Falling back to passive mode")
-                self.centralMgr.cancelPeripheralConnection(peripheral)
-                self.lock.withLock {
-                    self.activeModeTimer?.invalidate()
-                    self.activeModeTimer = nil
-                }
-                self.scanForPeripherals()
-            } else if peripheral.state == .connected {
-                peripheral.readRSSI()
-            } else {
-                self.connectMonitoredPeripheral()
-            }
-        })
-        RunLoop.main.add(timer, forMode: .common)
-        lock.withLock { activeModeTimer = timer }
-    }
-
-    func centralManager(_ central: CBCentralManager,
-                        didDiscover peripheral: CBPeripheral,
-                        advertisementData: [String : Any],
-                        rssi RSSI: NSNumber)
-    {
-        let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
-
-        // 调试日志：追踪设备发现
-        let monitorInfo: (monitoredUUID: UUID?, uuidCount: Int) = lock.withLock {
-            (monitoredUUID, monitoredUUIDs.count)
-        }
-        let isInList = monitoredUUIDs.contains(peripheral.identifier)
-        throttledBleLog("didDiscover", interval: 1.0, "[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
-
-        if monitoredUUIDs.contains(peripheral.identifier) {
-            let isMonitored: Bool = lock.withLock {
-                let match = peripheral.identifier == monitoredUUID
-                if match && monitoredPeripheral == nil {
-                    monitoredPeripheral = peripheral
-                }
-                return match
-            }
-            if isMonitored {
-                // 扫描回调：更新 presence 和锁定判断
-                updateMonitoredPeripheral(rssi)
-                let shouldConnect: Bool = lock.withLock { activeModeTimer == nil && !passiveMode }
-                if shouldConnect {
-                    connectMonitoredPeripheral()
-                }
-            }
-        }
-
-        // 优化 1：监控模式下，非目标设备直接丢弃
-        let hasMonitor: Bool = lock.withLock { monitoredUUID != nil }
-        if hasMonitor && !monitoredUUIDs.contains(peripheral.identifier) {
-            return
-        }
-
-        if (scanMode) {
-            if let uuids = advertisementData["kCBAdvDataServiceUUIDs"] as? [CBUUID] {
-                for uuid in uuids {
-                    if uuid == BLEUUIDs.exposureNotification {
-                        return
-                    }
-                }
-            }
-            let dev = lock.withLock { devices[peripheral.identifier] }
-            var device: Device
-            if (dev == nil) {
-                device = Device(uuid: peripheral.identifier)
-                if (rssi >= thresholdRSSI) {
-                    device.peripheral = peripheral
-                    device.rssi = rssi
-                    device.advData = advertisementData["kCBAdvDataManufacturerData"] as? Data
-                    if let info = getLEDeviceInfoFromUUID(peripheral.identifier.description) {
-                        device.blName = info.name
-                        device.macAddr = info.macAddr
-                    }
-                    lock.withLock { devices[peripheral.identifier] = device }
-                    central.connect(peripheral, options: nil)
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
-                    let deviceId = peripheral.identifier
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        let snapshot = self.lock.withLock { self.devices[deviceId] }
-                        if let snapshot = snapshot {
-                            self.delegate?.newDevice(device: snapshot)
-                        }
-                    }
-                }
-            } else {
-                device = dev!
-                device.rssi = rssi
-                // 优化 3：非监控设备 UI 刷新节流（1 秒 1 次）
-                let now = Date()
-                // 防泄漏：字典超限时清空（丢弃节流记录的代价仅是一次多余 UI 刷新）
-                if lastUIUpdateTime.count > 200 {
-                    lastUIUpdateTime.removeAll()
-                }
-                if let lastUpdate = lastUIUpdateTime[peripheral.identifier],
-                   now.timeIntervalSince(lastUpdate) < uiThrottleInterval {
-                    // 节流窗口内，只更新数据不派发 UI
-                } else {
-                    lastUIUpdateTime[peripheral.identifier] = now
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
-                    let deviceId = peripheral.identifier
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        let snapshot = self.lock.withLock { self.devices[deviceId] }
-                        if let snapshot = snapshot {
-                            self.delegate?.updateDevice(device: snapshot)
-                        }
-                    }
-                }
-            }
-            resetScanTimer(device: device)
-        }
-    }
-
-    func centralManager(_ central: CBCentralManager,
-                        didConnect peripheral: CBPeripheral)
-    {
-        peripheral.delegate = self
-        if scanMode {
-            peripheral.discoverServices([BLEUUIDs.deviceInformation])
-        }
-        let shouldActivate: Bool = lock.withLock {
-            peripheral == monitoredPeripheral && !passiveMode
-        }
-        if shouldActivate {
-            Log.ble.debug("Connected")
-            lock.withLock {
-                connectionTimer?.invalidate()
-                connectionTimer = nil
-            }
-            // 优化 4：主动模式已连接，停掉全局扫描
-            centralMgr.stopScan()
-            peripheral.readRSSI()
-        }
-    }
-
-    //MARK:CBCentralManagerDelegate end -
-
-    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        Log.ble.debug("didDisconnectPeripheral: \(peripheral.identifier)")
-        if peripheral == monitoredPeripheral {
-            // 只取消主动模式定时器，保留心跳和信号超时链用于检测离场
-            lock.withLock {
-                activeModeTimer?.invalidate()
-                activeModeTimer = nil
-                connectionTimer?.invalidate()
-                connectionTimer = nil
-                signalLostCount = 0
-            }
-            // 不立即锁屏 — BLE 连接可能因干扰短暂断开
-            // 由心跳衰减机制判断：设备真正离开后 ~10 秒锁屏
-            // 恢复扫描，尝试重新发现设备
-            scanForPeripherals()
-        }
-    }
-
-    //MARK:- CBPeripheralDelegate start
-
-    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        let shouldProcess: Bool = lock.withLock {
-            guard peripheral.identifier == monitoredUUID else { return false }
-            if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
-            return true
-        }
-        guard shouldProcess else { return }
-        let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
-        updateMonitoredPeripheral(rssi)
-
-        let now = Date().timeIntervalSince1970
-        var restartPolling = false
-        _ = lock.withLock {
-            let k = pipeline.kalmanEstimate
-            lastReadAt = now
-            let fluctuation = abs(k - Double(lastEstimatedRSSI))
-            lastEstimatedRSSI = Int(k)
-            // 方案 A：信号接近阈值（有效信号进入 [threshold-window, threshold)）时启用快速轮询，
-            // 信号一触线立刻被感知，缩短解锁/锁屏感知延迟
-            // 走近方向：解锁爬升区 [stair-window, stair) 也启用快速轮询——用户从远处走回时
-            // 若只按锁定阈值触发，爬升区用 8s 慢采样，会出现"走到面前等几十秒"的感知延迟
-            var nearClimb = false
-            if unlockRSSI != Self.UNLOCK_DISABLED {
-                nearClimb = Self.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
-            }
-            let threshold = Double(lockRSSI == Self.LOCK_DISABLED ? unlockRSSI : lockRSSI)
-            let nearThreshold = nearClimb || Self.isNearThreshold(effectiveRSSI, threshold: threshold)
-            if nearThreshold {
-                if activePollInterval != fastPollInterval {
-                    activePollInterval = fastPollInterval
-                    restartPolling = true
-                }
-            } else {
-                if fluctuation < 5 {
-                    stableCount += 1
-                } else {
-                    stableCount = 0
-                }
-                if activePollInterval == fastPollInterval {
-                    // 离开接近窗口：快速档回落 2s 基准
-                    activePollInterval = 2.0
-                    stableCount = 0
-                    restartPolling = true
-                } else if stableCount >= 10 && activePollInterval < 8.0 {
-                    activePollInterval = 8.0
-                    restartPolling = true
-                } else if fluctuation >= 5 && activePollInterval > 2.0 {
-                    activePollInterval = 2.0
-                    stableCount = 0
-                    restartPolling = true
-                }
-            }
-            return k
-        }
-
-        if restartPolling {
-            restartActiveModeTimer(peripheral: peripheral)
-        }
-
-        let shouldStartActiveMode = lock.withLock { activeModeTimer == nil && !passiveMode }
-        if shouldStartActiveMode {
-            Log.ble.debug("Entering active mode")
-            if !scanMode {
-                centralMgr.stopScan()
-            }
-            restartActiveModeTimer(peripheral: peripheral)
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral,
-                    didDiscoverServices error: Error?) {
-        if let services = peripheral.services {
-            for service in services {
-                if service.uuid == BLEUUIDs.deviceInformation {
-                    peripheral.discoverCharacteristics([BLEUUIDs.manufacturerName, BLEUUIDs.modelName], for: service)
-                }
-            }
-        }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral,
-                    didDiscoverCharacteristicsFor service: CBService,
-                    error: Error?)
-    {
-        if let chars = service.characteristics {
-            for chara in chars {
-                if chara.uuid == BLEUUIDs.manufacturerName || chara.uuid == BLEUUIDs.modelName {
-                    peripheral.readValue(for:chara)
-                }
-            }
-        }
-    }
-    
-    func peripheral(_ peripheral: CBPeripheral,
-                    didUpdateValueFor characteristic: CBCharacteristic,
-                    error: Error?)
-    {
-        if let value = characteristic.value {
-            let str: String? = String(data: value, encoding: .utf8)
-            if let s = str {
-                if let device = lock.withLock({ devices[peripheral.identifier] }) {
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
-                    let deviceId = peripheral.identifier
-                    if characteristic.uuid == BLEUUIDs.manufacturerName {
-                        device.manufacture = s
-                        Task { @MainActor [weak self] in
-                            guard let self = self else { return }
-                            if let snapshot = self.lock.withLock({ self.devices[deviceId] }) {
-                                self.delegate?.updateDevice(device: snapshot)
-                            }
-                        }
-                    }
-                    if characteristic.uuid == BLEUUIDs.modelName {
-                        device.model = s
-                        Task { @MainActor [weak self] in
-                            guard let self = self else { return }
-                            if let snapshot = self.lock.withLock({ self.devices[deviceId] }) {
-                                self.delegate?.updateDevice(device: snapshot)
-                            }
-                        }
-                    }
-                    if device.model != nil && device.manufacture != nil && device.peripheral != monitoredPeripheral {
-                        centralMgr.cancelPeripheralConnection(peripheral)
-                    }
-                }
-            }
-        }
-    }
-    
-    func peripheral(_ peripheral: CBPeripheral,
-                    didModifyServices invalidatedServices: [CBService])
-    {
-        peripheral.discoverServices([BLEUUIDs.deviceInformation])
-    }
-    //MARK:CBPeripheralDelegate end -
 
     override init() {
         super.init()
         let btAuth = CBManager.authorization
-        logDebug(component: "FUn", "[DIAG] FUn.init() - CBCentralManager initializing, bluetooth authorization=\(btAuth.rawValue)")
-        centralMgr = CBCentralManager(delegate: self, queue: bleQueue)
+        logDebug(component: "FUn", "[DIAG] FUn.init() - initializing BLEScanner, bluetooth authorization=\(btAuth.rawValue)")
+        scanner = BLEScanner(queue: bleQueue, lock: lock, host: self)
+    }
+}
+
+// MARK: - BLEScannerHost
+
+extension FUn {
+    func scanner(_ scanner: BLEScanner, didSampleMonitoredRSSI rssi: Int) {
+        updateMonitoredPeripheral(rssi)
+    }
+
+    func scannerDidDisconnectMonitored(_ scanner: BLEScanner) {
+        signalLostCount = 0
+    }
+
+    func scannerDidPowerOn(_ scanner: BLEScanner) {
+        powerWarn = false
+    }
+
+    func scannerDidPowerOff(_ scanner: BLEScanner) {
+        invalidateAllTimers()
+        let shouldWarn: Bool = lock.withLock {
+            presence = false
+            let w = powerWarn
+            powerWarn = false
+            return w
+        }
+        if shouldWarn {
+            Task { @MainActor [weak self] in
+                self?.delegate?.bluetoothPowerWarn()
+            }
+        }
+    }
+
+    func scannerPollingContext(_ scanner: BLEScanner) -> BLEScanner.PollingContext {
+        let (k, near) = lock.withLock {
+            (pipeline.kalmanEstimate, SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(unlockRSSI)))
+        }
+        return BLEScanner.PollingContext(kalman: k, nearThreshold: near)
+    }
+
+    func scannerDeviceScanTimeout(_ scanner: BLEScanner) -> TimeInterval {
+        signalTimeout
+    }
+
+    var bleDelegate: FUnDelegate? {
+        delegate
     }
 }
