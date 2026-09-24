@@ -1,14 +1,15 @@
-# FUnlock Phase 3: macOS 14+ 现代 Observation 演进与 DeviceSnapshot 闭环实现计划
+# FUnlock Phase 3: macOS 14+ 现代 Observation 演进、全功能保留与 UI 质感升级实现计划
 
 > **面向 AI 代理的工作者：** 必需子技能：使用 subagent-driven-development（推荐）或 executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
-**目标：** 将项目最低部署目标升至 macOS 14.0，全面引入 Swift 官方 `@Observable` 宏替代旧版 Combine 状态模型，将设备模型彻底闭环至不可变值类型 `DeviceSnapshot`，保持 382 个测试持续通过且 0 编译器与链接告警。
+**目标：** 最低部署目标升至 macOS 14.0，全面引入 `@Observable` 宏替代旧版 Combine，设备模型贯通为不可变纯值 `DeviceSnapshot`，菜单栏 Popover 落地 8 大功能零删减与 Apple 弹簧微动效，保持 382 个单测全绿且 0 编译警告。
 
 **架构：**
-1. **工程配置**：升级 `MACOSX_DEPLOYMENT_TARGET = 14.0`，消除 XCTest 的 ld 链接版本不匹配警告。
-2. **状态响应**：在 `FUnManager`、`ProfileManager`、`DecisionLogger`、`SignalDataStore`、`FUn` 中引入 `import Observation` 与 `@Observable` 宏，删除全部 `@Published` 与 `ObservableObject` 样板代码。
-3. **模型闭环**：将 `FUnDelegate` 的设备相关回调与 `FUnManager.discoveredDevices` 彻底切换为 `DeviceSnapshot` 纯值类型，杜绝跨线程堆引用。
-4. **视图精简**：SwiftUI 视图层全面精简，用普通属性代替 `@ObservedObject`，用 `@State` 代替 `@StateObject`。
+1. **工程配置**：`MACOSX_DEPLOYMENT_TARGET = 14.0;`（已完成）。
+2. **状态响应**：在 `FUnManager`、`ProfileManager`、`DecisionLogger`、`SignalDataStore`、`FUn` 中全面应用 `@Observable` 宏，删除全部 `@Published` 与 `ObservableObject`。
+3. **模型闭环**：`FUnDelegate` 的设备相关回调与 `discoveredDevices` 彻底切换为 `DeviceSnapshot` 纯值类型，杜绝跨线程堆引用。
+4. **菜单栏悬浮窗升级**：`MenuBarPopover.swift` 按照苹果 HIG 翻新，**严格 1:1 保留全部 8 项功能**，集成 `.spring` 物理微动效、呼吸光环与 5 格平滑信号柱。
+5. **视图层精简与概览增强**：`OverviewView.swift` 增加迟滞安全区可视化渲染，全量视图移除 `@ObservedObject` 改用标准属性。
 
 **技术栈：** macOS 14.0+ SDK、Swift 6 严格并发模式、Swift 官方 Observation 框架、SwiftUI、XCTest。
 
@@ -16,6 +17,7 @@
 
 ## 全局约束
 
+- **零功能删减**：菜单栏悬浮窗中的 8 项核心功能（设备卡片、自动解锁开关、打开设置、修改锁屏密码、5态更新、信号统计仪表盘、立即锁屏、退出）**严禁删减任何一项**。
 - 绝不改动 `SignalPipeline` 的 Kalman 滤波与自适应衰减数学模型。
 - 绝不削弱密码读取与锁屏安全门控（`isSecureToInject`）逻辑。
 - 保持全量 382 个单元测试 100% 通过。
@@ -24,31 +26,15 @@
 
 ---
 
-### 任务 1：Xcode 工程升级最低部署目标至 macOS 14.0
+### 任务 1：Xcode 工程升级最低部署目标至 macOS 14.0 [已完成]
 
 **文件：**
 - 修改：`FUnlock.xcodeproj/project.pbxproj`
 
-- [ ] **步骤 1：批量更新 project.pbxproj 中的 MACOSX_DEPLOYMENT_TARGET**
-
-将 project.pbxproj 中所有的 `MACOSX_DEPLOYMENT_TARGET = 13.0;` 统一修改为 `MACOSX_DEPLOYMENT_TARGET = 14.0;`。
-
-- [ ] **步骤 2：运行编译验证 ld 14.0 链接警告消除**
-
-运行：`xcodebuild build-for-testing -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | grep "ld: warning"`
-预期：此前关于 `building for macOS-13.0, but linking with dylib which was built for newer version 14.0` 的链接警告完全消除。
-
-- [ ] **步骤 3：运行测试验证通过**
-
-运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS'`
-预期：382 个测试 100% 通过。
-
-- [ ] **步骤 4：Commit**
-
-```bash
-git add FUnlock.xcodeproj/project.pbxproj
-git commit -m "build(xcode): 升级最低部署目标至 macOS 14.0"
-```
+- [x] **步骤 1：批量更新 project.pbxproj 中的 MACOSX_DEPLOYMENT_TARGET**
+- [x] **步骤 2：运行编译验证 ld 14.0 链接警告消除**
+- [x] **步骤 3：运行测试验证通过**
+- [x] **步骤 4：Commit**（已提交为 `7d152e0`）
 
 ---
 
@@ -101,7 +87,7 @@ final class SignalDataStore: @unchecked Sendable {
     var unlockThreshold: Double = -60
     var lockThreshold: Double = -80
 ```
-移除 `@Published` 属性修饰符。
+移除 `@Published` 属性修饰符与 `ObservableObject` 继承。
 
 - [ ] **步骤 3：FUnManager 与 FUn 升级至 @Observable**
 
@@ -193,7 +179,7 @@ protocol FUnDelegate: AnyObject {
 
 - [ ] **步骤 4：适配 OverviewView 与 SidebarView**
 
-视图层列表中类型直接使用 `DeviceSnapshot`。
+视图层列表中类型直接使用 `DeviceSnapshot`，消除堆对象跨线程共享。
 
 - [ ] **步骤 5：运行测试验证通过**
 
@@ -209,12 +195,50 @@ git commit -m "refactor(domain): 设备事件全链路迁移为不可变 DeviceS
 
 ---
 
-### 任务 4：SwiftUI 视图层胶水代码精简（@ObservedObject -> var, @StateObject -> @State）
+### 任务 4：菜单栏 Popover 现代质感与全功能 1:1 重构
+
+**文件：**
+- 修改：`FUnlock/MenuBarPopover.swift`
+
+- [ ] **步骤 1：落地规格约定的 8 项菜单功能（严格 1:1，0 删减）**
+
+对齐规格第 3 节契约：
+1. 设备状态英雄卡（设备图标、名称、连接状态、5 格平滑指示柱、实时 dBm 数值、距离描述）
+2. 自动解锁总开关（带 Toggle 平滑切换）
+3. 打开设置（`⌘,` 快捷键）
+4. 修改锁屏密码
+5. 检查更新（5 态状态机、下载进度胶囊）
+6. 信号统计仪表盘（`⌘S` 快捷键）
+7. 立即锁屏（`⌃⌘Q` 快捷键，警告色）
+8. 退出 FUnlock（`⌘Q` 快捷键）
+
+- [ ] **步骤 2：注入苹果原生微动效与毛玻璃材质**
+
+1. 弹簧微动效：`withAnimation(.spring(response: 0.32, dampingFraction: 0.78, blendDuration: 0))`。
+2. 状态呼吸微光：处于解锁/连接状态时，呼吸圆点带柔和微光动画。
+3. 5 格信号柱平滑插值：保留 5 根柱状条的高度与颜色平滑过渡。
+4. 材质：`.background(.ultraThinMaterial)` + 半透明高光描边。
+5. 按压反馈：菜单项支持 `scaleEffect(isPressed ? 0.985 : 1.0)`。
+
+- [ ] **步骤 3：运行测试验证通过**
+
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS'`
+预期：382 个测试全部通过。
+
+- [ ] **步骤 4：Commit**
+
+```bash
+git add FUnlock/MenuBarPopover.swift
+git commit -m "refactor(ui): 菜单栏 Popover 现代控制中心风格重构并对齐全部 8 项功能"
+```
+
+---
+
+### 任务 5：设备概览迟滞安全区增强与全量视图胶水代码精简
 
 **文件：**
 - 修改：`FUnlock/OverviewView.swift`
 - 修改：`FUnlock/SidebarView.swift`
-- 修改：`FUnlock/MenuBarPopover.swift`
 - 修改：`FUnlock/StatsView.swift`
 - 修改：`FUnlock/DiagnosticsView.swift`
 - 修改：`FUnlock/ConfigSettingsView.swift`
@@ -222,33 +246,37 @@ git commit -m "refactor(domain): 设备事件全链路迁移为不可变 DeviceS
 - 修改：`FUnlock/MainWindowView.swift`
 - 修改：`FUnlock/NetworkSettingsView.swift`
 
-- [ ] **步骤 1：精简全量视图的属性包装器**
+- [ ] **步骤 1：OverviewView 引入迟滞安全区可视化渲染**
+
+在 `OverviewView.swift` 的双阈值调节区中，可视化渲染“解锁与锁定”之间的安全防误锁缓冲带。
+
+- [ ] **步骤 2：全量视图精简 @ObservedObject 样板代码**
 
 将所有视图中的 `@ObservedObject var manager: FUnManager` 简化为 `var manager: FUnManager`。
 将 `@ObservedObject var fun: FUn` 简化为 `var fun: FUn`。
 将 `@ObservedObject private var dataStore` 简化为 `private var dataStore`。
 将 `@StateObject private var profileManager` 简化为 `@State private var profileManager`。
 
-- [ ] **步骤 2：运行测试验证视图构建与行为**
+- [ ] **步骤 3：运行全量测试验证**
 
 运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS'`
 预期：382 个测试全部通过。
 
-- [ ] **步骤 3：Commit**
+- [ ] **步骤 4：Commit**
 
 ```bash
-git add FUnlock/OverviewView.swift FUnlock/SidebarView.swift FUnlock/MenuBarPopover.swift FUnlock/StatsView.swift FUnlock/DiagnosticsView.swift FUnlock/ConfigSettingsView.swift FUnlock/CalibrationWizardView.swift FUnlock/MainWindowView.swift FUnlock/NetworkSettingsView.swift
-git commit -m "refactor(ui): 精简 SwiftUI 视图层 Observable 绑定样板代码"
+git add FUnlock/OverviewView.swift FUnlock/SidebarView.swift FUnlock/StatsView.swift FUnlock/DiagnosticsView.swift FUnlock/ConfigSettingsView.swift FUnlock/CalibrationWizardView.swift FUnlock/MainWindowView.swift FUnlock/NetworkSettingsView.swift
+git commit -m "refactor(ui): 落地迟滞安全区可视化并全面精简 Observable 视图绑定"
 ```
 
 ---
 
-### 任务 5：全量回归验证与终验
+### 任务 6：全量回归与终验
 
 **文件：**
 - 全局验证
 
-- [ ] **步骤 1：clean build 验证 0 错误、0 警告、0 ld 告警**
+- [ ] **步骤 1：clean build 验证 0 错误、0 源码警告、0 ld 告警**
 
 运行：`xcodebuild clean build -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS'`
 预期：0 警告，0 错误，BUILD SUCCEEDED。
@@ -258,13 +286,8 @@ git commit -m "refactor(ui): 精简 SwiftUI 视图层 Observable 绑定样板代
 运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS'`
 预期：382 个测试 100% 通过。
 
-- [ ] **步骤 3：单文件行数核查**
-
-运行：`wc -l FUnlock/*.swift | sort -nr | head -n 15`
-预期：核心领域文件均受控在规范范围内。
-
-- [ ] **步骤 4：Commit**
+- [ ] **步骤 3：Commit**
 
 ```bash
-git commit --allow-empty -m "chore(release): Phase 3 现代 Observation 演进与 DeviceSnapshot 闭环验收通过"
+git commit --allow-empty -m "chore(release): Phase 3 现代 Observation 演进与 UI 重构全量验收通过"
 ```
