@@ -8,8 +8,8 @@ final class DecisionLoggerTests: XCTestCase {
     private var logger: DecisionLogger!
     private var currentTime: Date!
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("DecisionLoggerTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -18,10 +18,10 @@ final class DecisionLoggerTests: XCTestCase {
                                 nowProvider: { [weak self] in self?.currentTime ?? Date() })
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         logger = nil
         try? FileManager.default.removeItem(at: tempDir)
-        try super.tearDownWithError()
+        try await super.tearDown()
     }
 
     func testRecordAppendsAndPublishes() {
@@ -129,19 +129,19 @@ final class UnlockDecisionInstrumentationTests: XCTestCase {
     var logger: DecisionLogger!
     private var tempDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("UnlockDecisionTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         logger = DecisionLogger(testLogDirectory: tempDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         logger.clear()
         logger = nil
         try? FileManager.default.removeItem(at: tempDir)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func runAttempt(_ mutate: (FUnManager) -> Void) throws -> DecisionLogger {

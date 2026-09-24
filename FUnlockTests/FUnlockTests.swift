@@ -1,4 +1,5 @@
 import XCTest
+import os.lock
 @testable import FUnlock
 
 class FUnlockTests: XCTestCase {
@@ -129,11 +130,11 @@ class FUnlockTests: XCTestCase {
     }
 
     func testDecay_floorClamp() {
-        var pipeline = SignalPipeline()
+        let pipeline = SignalPipeline()
         let now = Date()
         // 很久没有信号，模拟长衰减
         var pipeline2 = pipeline
-        let decision = pipeline2.process(rssi: -90, source: .scanning, now: now)
+        _ = pipeline2.process(rssi: -90, source: .scanning, now: now)
         // 再用一个很远的时间点
         let oldPipeline = pipeline2
         let decision2 = pipeline2.process(rssi: -90, source: .scanning, now: now.addingTimeInterval(500))
@@ -380,7 +381,7 @@ class LockIntentTests: XCTestCase {
 
     func testManualLockDeadlineNowIsExpired() {
         // deadline 刚好是当前时刻（严格小于），应视为已过期
-        let intent = LockIntent.manualLock(deadline: Date())
+        _ = LockIntent.manualLock(deadline: Date())
         // Date() 可能与 deadline 同时，< 判断可能为 false
         // 这里测试的是：如果 deadline 就是 now，isManualLockActive 取决于毫秒级时序
         // 关键行为：过期后的 intent 不应阻止自动解锁
@@ -893,8 +894,8 @@ class FUnManagerCooldownTests: XCTestCase {
     private var currentTime: Date!
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         let fun = FUn()
         manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
@@ -1129,8 +1130,6 @@ class InjectionPreludeTests: XCTestCase {
         var shiftDelayUsed: TimeInterval = 0
         var injectionCalled = false
 
-        let preludeDelay: TimeInterval = 0.3
-
         // 模拟 sendShiftKey 返回失败
         shiftCalled = true
         shiftDelayUsed = 0  // Shift 失败 → 无延迟
@@ -1198,13 +1197,11 @@ class InjectionPreludeTests: XCTestCase {
                        "Shift 成功 + 注入失败 = false")
 
         // 场景 3：Shift 失败 + 密码注入成功 → 返回 true（Shift 失败不阻止注入）
-        let scenario3_shiftFailed = false
         let scenario3_injectionResult = true
         XCTAssertTrue(scenario3_injectionResult,
                       "Shift 失败后密码注入仍应成功")
 
         // 场景 4：Shift 失败 + 密码注入失败 → 返回 false
-        let scenario4_shiftFailed = false
         let scenario4_injectionResult = false
         XCTAssertFalse(scenario4_injectionResult,
                        "Shift 失败 + 注入失败 = false")
@@ -1601,8 +1598,8 @@ class LegacyCompatibilityTests: XCTestCase {
     private var logFile: URL!
     private var tempDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         logFile = dir.appendingPathComponent("FUnlock/events.log")
         try? "".write(to: logFile, atomically: true, encoding: .utf8)
@@ -1614,11 +1611,11 @@ class LegacyCompatibilityTests: XCTestCase {
         try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? "".write(to: logFile, atomically: true, encoding: .utf8)
         TelemetryLogger.shared.testLogDirectory = nil
         try? FileManager.default.removeItem(at: tempDir)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func readLog() -> String {
@@ -1911,13 +1908,11 @@ class LegacyCompatibilityTests: XCTestCase {
         let manager = FUnManager(fun: FUn())
         manager.onUnlock()
 
-        // 验证 logEvent 被间接调用（通过读取 events.log）
-        let content = readLog()
-        // onUnlock 内部通过 intrudeCheckTask 异步写入，这里验证 lastUnlockTime 被更新
+        // onUnlock 内部通过 intrudeCheckTask 异步写入，这里改为验证 lastUnlockTime 被更新
         // 使用时间间隔比较：两者应在同一秒内
         let interval = manager.lastUnlockTime.timeIntervalSince(manager.state.unlockedAt)
-        XCTAssertEqualWithAccuracy(interval, 0, accuracy: 1.0,
-                                   "onUnlock 后 lastUnlockTime 与 unlockedAt 应在同一秒内")
+        XCTAssertEqual(interval, 0, accuracy: 1.0,
+                       "onUnlock 后 lastUnlockTime 与 unlockedAt 应在同一秒内")
         XCTAssertTrue(manager.state.screen == .unlocked, "onUnlock 后 screen 应为 unlocked")
     }
 
@@ -2192,26 +2187,26 @@ class DualVerificationTests: XCTestCase {
     // MARK: - verifyUnlock: TaskGroup 取消验证
 
     func testCancelsOtherTasksAfterWin() async {
-        var notificationChecked = false
-        var cgSessionChecked = false
+        // 闭包为 @Sendable 且在并发域执行，共享状态用锁保护
+        // （Swift 6 下直接捕获并改写 var 会被判为数据竞争）
+        let notificationChecked = OSAllocatedUnfairLock(initialState: false)
 
         let result = await SystemInteractionService.verifyUnlock(
             timeout: 2.0,
             notificationTimeout: 1.0,
             waitForNotification: { _ in
                 try? await Task.sleep(nanoseconds: 20_000_000)
-                notificationChecked = true
+                notificationChecked.withLock { $0 = true }
                 return true  // 20ms 后返回 true → 赢得竞速
             },
             checkUnlocked: { _ in
                 try? await Task.sleep(nanoseconds: 100_000_000)
-                cgSessionChecked = true
                 return true  // 100ms 后返回 true（不应执行到这里）
             }
         )
         XCTAssertTrue(result.unlock, "通知路径应赢得竞速")
-        XCTAssertTrue(notificationChecked, "通知路径的闭包应被执行")
-        // 注意：cgSessionChecked 可能为 true 或 false，取决于取消时序
+        XCTAssertTrue(notificationChecked.withLock { $0 }, "通知路径的闭包应被执行")
+        // 注意：checkUnlocked 路径（CGSession）可能已被取消或未执行完，取决于取消时序
         // 关键是返回值正确（true），而不是验证取消时序（竞态条件）
     }
 
@@ -2358,7 +2353,6 @@ class StaircaseThresholdTests: XCTestCase {
     }
 
     func testOffsetClampNegative() {
-        let fun = FUn()
         XCTAssertEqual(FUn.clampOffset(-5), 0, "负偏移应钳制为 0")
         XCTAssertEqual(FUn.clampOffset(30), 20, "超大偏移应钳制为 20")
         XCTAssertEqual(FUn.clampOffset(12), 12, "范围内偏移保持不变")
@@ -2382,8 +2376,8 @@ class PreWakeStaircaseTests: XCTestCase {
 
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         let fun = FUn()
         manager = FUnManager(fun: fun)
         // 设置必要的 UserDefaults 开关（预备唤醒测试需要）
@@ -2771,8 +2765,8 @@ class UserInterventionTests: XCTestCase {
 
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         manager = FUnManager(fun: FUn())
     }
 
@@ -2897,8 +2891,8 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
     private var currentTime: Date!
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         let fun = FUn()
         manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
@@ -3076,8 +3070,8 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
     private var currentTime: Date!
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         let fun = FUn()
         manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
@@ -3215,8 +3209,8 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
     private var currentTime: Date!
     private var manager: FUnManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         let fun = FUn()
         manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
@@ -3498,6 +3492,8 @@ class LockUnlockEfficiencyTests: XCTestCase {
 extension MenuBarPopoverViewTests {
 }
 
+/// 所测静态方法（signalBars / signalLevel / signalText）为 MainActor 隔离，整个测试类需主线程隔离
+@MainActor
 final class MenuBarPopoverViewTests: XCTestCase {
     func testSignalBars_bounds() {
         XCTAssertEqual(MenuBarPopoverView.signalBars(for: -95), 1)
@@ -3585,8 +3581,8 @@ class StatsCalculatorTests: XCTestCase {
 class ProfileImportExportTests: XCTestCase {
     private var manager: ProfileManager!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         ConfigStore.shared.defaults.removeObject(forKey: "profiles")
         ConfigStore.shared.defaults.removeObject(forKey: "activeProfileID")
         manager = ProfileManager()
@@ -3738,20 +3734,20 @@ final class ManualLockThrottleTests: XCTestCase {
     private var logger: DecisionLogger!
     private var tempDir: URL!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ThrottleTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         logger = DecisionLogger(testLogDirectory: tempDir)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         logger.clear()
         logger = nil
         try? FileManager.default.removeItem(at: tempDir)
         tempDir = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testManualLockActiveThrottled30s() {
