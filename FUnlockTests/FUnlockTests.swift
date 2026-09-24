@@ -3778,3 +3778,49 @@ final class ManualLockThrottleTests: XCTestCase {
         XCTAssertEqual(count, 1, "30 秒内 manualLockActive 只记录一次")
     }
 }
+
+// MARK: - resetScanTimer 超时移除派发测试
+
+/// 回归验证：resetScanTimer 的 Timer 超时回调必须先把 device 从 devices 原子取出，
+/// 再经主线程派发 removeDevice。
+/// （修复背景：曾因回调内同步 removeValue 抢在 Task { @MainActor } 之前执行，
+/// 导致闭包内按 uuid 取快照恒为 nil，delegate.removeDevice 永不触发）
+@MainActor
+final class FUnResetScanTimerTests: XCTestCase {
+
+    /// 捕获 removeDevice 调用的 delegate spy
+    private final class DelegateSpy: FUnDelegate {
+        var removedDevices: [Device] = []
+        var onRemove: (() -> Void)?
+
+        func newDevice(device: Device) {}
+        func updateDevice(device: Device) {}
+        func removeDevice(device: Device) {
+            removedDevices.append(device)
+            onRemove?()
+        }
+        func updateRSSI(rssi: Int?, active: Bool) {}
+        func updatePresence(presence: Bool, reason: String) {}
+        func bluetoothPowerWarn() {}
+        func onDeviceApproached() {}
+    }
+
+    func testScanTimerTimeoutDispatchesRemoveDevice() {
+        let fun = FUn()
+        fun.signalTimeout = 0.05  // 50ms 加速超时
+        let device = Device(uuid: UUID())
+        let spy = DelegateSpy()
+        fun.delegate = spy
+        fun.devices[device.uuid] = device
+
+        let removed = expectation(description: "removeDevice 派发")
+        spy.onRemove = { removed.fulfill() }
+
+        fun.resetScanTimer(device: device)
+        wait(for: [removed], timeout: 2.0)
+
+        XCTAssertEqual(spy.removedDevices.count, 1, "超时应派发一次 removeDevice")
+        XCTAssertTrue(spy.removedDevices.first === device, "派发的应是原 device 实例")
+        XCTAssertNil(fun.devices[device.uuid], "device 应已从 devices 移除")
+    }
+}

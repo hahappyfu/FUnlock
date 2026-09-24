@@ -254,6 +254,9 @@ final class SystemInteractionService: Sendable {
             logBoth("SystemInteraction", "PASSWORD: screen no longer locked after AppleScript, treating as failure", fileMsg: "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
             return false
         }
+        // 注：macOS 27 SDK 下 executeAndReturnError 返回非可选 NSAppleEventDescriptor，
+        // `result != nil` 在 -O 优化下会被折叠为恒真，无法据以判成败；
+        // 故以 errorInfo == nil（无错误信息即成功）为准。
         if errorInfo == nil {
             Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
             return true

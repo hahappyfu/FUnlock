@@ -863,19 +863,19 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
         let peripheral = device.peripheral
         let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
-            // 闭包只捕获 uuid（Sendable），device 在闭包内按 uuid 取锁内快照
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                if let removed = self.lock.withLock({ self.devices[uuid] }) {
-                    self.delegate?.removeDevice(device: removed)
+            // 闭包只捕获 uuid（Sendable）；device 在 lock 保护下原子取出并移除，再派发主线程
+            guard let self = self else { return }
+            if let p = peripheral {
+                self.centralMgr.cancelPeripheralConnection(p)
+            }
+            // 在 lock 保护下原子取出并移除；先取出再派发，避免异步执行时已被移除导致恒 nil
+            if let device = self.lock.withLock({ self.devices.removeValue(forKey: uuid) }) {
+                Task { @MainActor [weak self] in
+                    self?.delegate?.removeDevice(device: device)
                 }
             }
-            if let p = peripheral {
-                self?.centralMgr.cancelPeripheralConnection(p)
-            }
-            _ = self?.lock.withLock { self?.devices.removeValue(forKey: uuid) }
             // 防泄漏：设备过期时清理节流记录
-            self?.lastUIUpdateTime.removeValue(forKey: uuid)
+            self.lastUIUpdateTime.removeValue(forKey: uuid)
         })
         RunLoop.main.add(timer, forMode: .common)
         device.scanTimer = timer
