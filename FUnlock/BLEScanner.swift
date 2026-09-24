@@ -159,15 +159,19 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
         let peripheral = device.peripheral
         let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] _ in
-            // 闭包只捕获 uuid（Sendable）；device 在 lock 保护下原子取出并移除，再派发主线程
+            // 闭包只捕获 uuid（Sendable）；device 在 lock 保护下原子取出并移除，
+            // 锁内即刻转成不可变快照，杜绝堆引用跨 Actor 共享，再派发主线程
             guard let self = self else { return }
             if let p = peripheral {
                 self.centralMgr.cancelPeripheralConnection(p)
             }
-            // 在 lock 保护下原子取出并移除；先取出再派发，避免异步执行时已被移除导致恒 nil
-            if let device = self.lock.withLock({ self.devices.removeValue(forKey: uuid) }) {
+            let snapshot: DeviceSnapshot? = self.lock.withLock {
+                guard let device = self.devices.removeValue(forKey: uuid) else { return nil }
+                return device.toSnapshot(isMonitored: self.monitoredUUID == uuid)
+            }
+            if let snapshot {
                 Task { @MainActor [weak self] in
-                    self?.host?.bleDelegate?.removeDevice(device: device)
+                    self?.host?.bleDelegate?.removeDevice(device: snapshot)
                 }
             }
             // 防泄漏：设备过期时清理节流记录（派发到 bleQueue 串行队列保证线程安全）
@@ -245,12 +249,16 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     }
                     lock.withLock { devices[peripheral.identifier] = device }
                     central.connect(peripheral, options: nil)
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
+                    // 闭包只捕获 peripheral.identifier（Sendable）；device 在闭包内按 id 锁内取值，
+                    // 并立刻转为不可变快照再派发，杜绝堆引用跨 Actor 共享
                     let deviceId = peripheral.identifier
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
-                        let snapshot = self.lock.withLock { self.devices[deviceId] }
-                        if let snapshot = snapshot {
+                        let snapshot: DeviceSnapshot? = self.lock.withLock {
+                            guard let device = self.devices[deviceId] else { return nil }
+                            return device.toSnapshot(isMonitored: self.monitoredUUID == deviceId)
+                        }
+                        if let snapshot {
                             self.host?.bleDelegate?.newDevice(device: snapshot)
                         }
                     }
@@ -269,12 +277,16 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     // 节流窗口内，只更新数据不派发 UI
                 } else {
                     lastUIUpdateTime[peripheral.identifier] = now
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
+                    // 闭包只捕获 peripheral.identifier（Sendable）；device 在闭包内按 id 锁内取值，
+                    // 并立刻转为不可变快照再派发，杜绝堆引用跨 Actor 共享
                     let deviceId = peripheral.identifier
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
-                        let snapshot = self.lock.withLock { self.devices[deviceId] }
-                        if let snapshot = snapshot {
+                        let snapshot: DeviceSnapshot? = self.lock.withLock {
+                            guard let device = self.devices[deviceId] else { return nil }
+                            return device.toSnapshot(isMonitored: self.monitoredUUID == deviceId)
+                        }
+                        if let snapshot {
                             self.host?.bleDelegate?.updateDevice(device: snapshot)
                         }
                     }

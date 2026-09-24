@@ -50,12 +50,14 @@ let mildSlopeThreshold = 1.0
 
 /// 蓝牙事件回调协议：所有回调均涉及 UI 更新、通知或主线程状态机
 /// （AppDelegate 的 manager.onDeviceDiscovered 等），故协议层隔离到主 actor。
+/// 设备事件（newDevice/updateDevice/removeDevice）统一携带不可变纯值 `DeviceSnapshot`，
+/// 由派发方在 `lock` 保护下调用 `Device.toSnapshot(isMonitored:)` 生成，杜绝堆引用跨 Actor 共享。
 /// FUn 内部派发时统一通过 `Task { @MainActor [weak self] in ... }` 跨回主线程。
 @MainActor
 protocol FUnDelegate: AnyObject {
-    func newDevice(device: Device)
-    func updateDevice(device: Device)
-    func removeDevice(device: Device)
+    func newDevice(device: DeviceSnapshot)
+    func updateDevice(device: DeviceSnapshot)
+    func removeDevice(device: DeviceSnapshot)
     func updateRSSI(rssi: Int?, active: Bool)
     func updatePresence(presence: Bool, reason: String)
     func bluetoothPowerWarn()

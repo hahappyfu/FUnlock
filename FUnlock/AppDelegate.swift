@@ -192,13 +192,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - FUnDelegate（UI 更新 + 转发设备事件）
 
-    @MainActor func newDevice(device: Device) {
+    @MainActor func newDevice(device: DeviceSnapshot) {
         manager.onDeviceDiscovered(device)
     }
-    @MainActor func updateDevice(device: Device) {
+    @MainActor func updateDevice(device: DeviceSnapshot) {
         manager.onDeviceUpdated(device)
     }
-    @MainActor func removeDevice(device: Device) {
+    @MainActor func removeDevice(device: DeviceSnapshot) {
         manager.onDeviceRemoved(device)
     }
 

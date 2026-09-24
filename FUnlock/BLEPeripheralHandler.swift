@@ -261,7 +261,12 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
                         device.manufacture = s
                         Task { @MainActor [weak self] in
                             guard let self = self, let scanner = self.scanner else { return }
-                            if let snapshot = self.lock.withLock({ scanner.devices[deviceId] }) {
+                            // 闭包只捕获 deviceId（Sendable）；device 在锁内取值并立刻转为不可变快照再派发
+                            let snapshot: DeviceSnapshot? = self.lock.withLock {
+                                guard let device = scanner.devices[deviceId] else { return nil }
+                                return device.toSnapshot(isMonitored: scanner.monitoredUUID == deviceId)
+                            }
+                            if let snapshot {
                                 scanner.host?.bleDelegate?.updateDevice(device: snapshot)
                             }
                         }
@@ -270,7 +275,12 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
                         device.model = s
                         Task { @MainActor [weak self] in
                             guard let self = self, let scanner = self.scanner else { return }
-                            if let snapshot = self.lock.withLock({ scanner.devices[deviceId] }) {
+                            // 闭包只捕获 deviceId（Sendable）；device 在锁内取值并立刻转为不可变快照再派发
+                            let snapshot: DeviceSnapshot? = self.lock.withLock {
+                                guard let device = scanner.devices[deviceId] else { return nil }
+                                return device.toSnapshot(isMonitored: scanner.monitoredUUID == deviceId)
+                            }
+                            if let snapshot {
                                 scanner.host?.bleDelegate?.updateDevice(device: snapshot)
                             }
                         }

@@ -23,7 +23,7 @@ struct OverviewView: View {
 
     // 扫描状态
     @State private var isScanning = false
-    @State private var frozenDevices: [Device] = []
+    @State private var frozenDevices: [DeviceSnapshot] = []
     @State private var scanTimer: Timer?
 
     @State private var showUnbindConfirm = false
@@ -452,7 +452,7 @@ private struct ThresholdOffsetRow: View {
 // MARK: - 设备行
 
 private struct DeviceRowView: View {
-    let device: Device
+    let device: DeviceSnapshot
     let onSelect: () -> Void
 
     var body: some View {
@@ -461,7 +461,7 @@ private struct DeviceRowView: View {
                 Image(systemName: "iphone")
                     .foregroundColor(.accentColor)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(device.description)
+                    Text(device.name)
                         .lineLimit(1)
                     if let mac = device.macAddr {
                         Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())

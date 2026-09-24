@@ -23,7 +23,7 @@ final class FUnManager {
     var state = LockScreenState()
     var rssi: Int? = nil
     var connected: Bool = false
-    var discoveredDevices: [Device] = []
+    var discoveredDevices: [DeviceSnapshot] = []
     var monitoredDeviceName: String? = nil
     var lockRSSI: Int = -80
     var unlockRSSI: Int = -60
@@ -177,7 +177,7 @@ final class FUnManager {
 
     // MARK: - 设备发现
 
-    func onDeviceDiscovered(_ device: Device) {
+    func onDeviceDiscovered(_ device: DeviceSnapshot) {
         if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
             discoveredDevices[idx] = device
         } else {
@@ -185,25 +185,23 @@ final class FUnManager {
         }
     }
 
-    func onDeviceUpdated(_ device: Device) {
+    func onDeviceUpdated(_ device: DeviceSnapshot) {
         if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
-            // Device 为引用类型，就地改字段不会触发 @Observable 通知；
-            // discoveredDevices 当前唯一消费方（OverviewView.startScan）靠 Timer 主动轮询，不依赖该通知。
-            discoveredDevices[idx].rssi = device.rssi
-            discoveredDevices[idx].manufacture = device.manufacture
-            discoveredDevices[idx].model = device.model
+            // DeviceSnapshot 为纯值类型，整元素替换即触发 @Observable 数组变更通知，
+            // 无需像旧引用类型那样就地改字段后手动补发
+            discoveredDevices[idx] = device
         }
     }
 
-    func onDeviceRemoved(_ device: Device) {
+    func onDeviceRemoved(_ device: DeviceSnapshot) {
         discoveredDevices.removeAll { $0.uuid == device.uuid }
     }
 
-    func selectDevice(_ device: Device) {
+    func selectDevice(_ device: DeviceSnapshot) {
         fun.startMonitor(uuid: device.uuid)
-        monitoredDeviceName = device.description
+        monitoredDeviceName = device.name
         prefs.set(device.uuid.uuidString, forKey: "device")
-        prefs.set(device.description, forKey: "deviceName")
+        prefs.set(device.name, forKey: "deviceName")
     }
 
     func unbindDevice() {

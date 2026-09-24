@@ -9,15 +9,18 @@ public struct DeviceSnapshot: Sendable, Identifiable, Hashable, Equatable {
     public let rssi: Int
     public let manufacture: String?
     public let model: String?
+    /// LE 厂商解析出的 MAC 地址（若可得），供设备列表副标题展示
+    public let macAddr: String?
     public let isMonitored: Bool
 
-    public init(id: UUID, uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, isMonitored: Bool = false) {
+    public init(id: UUID, uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, macAddr: String? = nil, isMonitored: Bool = false) {
         self.id = id
         self.uuid = uuid
         self.name = name
         self.rssi = rssi
         self.manufacture = manufacture
         self.model = model
+        self.macAddr = macAddr
         self.isMonitored = isMonitored
     }
 }

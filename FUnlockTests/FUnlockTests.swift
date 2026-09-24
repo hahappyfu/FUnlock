@@ -3778,7 +3778,7 @@ final class ManualLockThrottleTests: XCTestCase {
 // MARK: - resetScanTimer 超时移除派发测试
 
 /// 回归验证：resetScanTimer 的 Timer 超时回调必须先把 device 从 devices 原子取出，
-/// 再经主线程派发 removeDevice。
+/// 并在锁内转成不可变 DeviceSnapshot 快照后经主线程派发 removeDevice。
 /// （修复背景：曾因回调内同步 removeValue 抢在 Task { @MainActor } 之前执行，
 /// 导致闭包内按 uuid 取快照恒为 nil，delegate.removeDevice 永不触发）
 @MainActor
@@ -3786,12 +3786,12 @@ final class FUnResetScanTimerTests: XCTestCase {
 
     /// 捕获 removeDevice 调用的 delegate spy
     private final class DelegateSpy: FUnDelegate {
-        var removedDevices: [Device] = []
+        var removedDevices: [DeviceSnapshot] = []
         var onRemove: (() -> Void)?
 
-        func newDevice(device: Device) {}
-        func updateDevice(device: Device) {}
-        func removeDevice(device: Device) {
+        func newDevice(device: DeviceSnapshot) {}
+        func updateDevice(device: DeviceSnapshot) {}
+        func removeDevice(device: DeviceSnapshot) {
             removedDevices.append(device)
             onRemove?()
         }
@@ -3816,7 +3816,7 @@ final class FUnResetScanTimerTests: XCTestCase {
         wait(for: [removed], timeout: 2.0)
 
         XCTAssertEqual(spy.removedDevices.count, 1, "超时应派发一次 removeDevice")
-        XCTAssertTrue(spy.removedDevices.first === device, "派发的应是原 device 实例")
+        XCTAssertEqual(spy.removedDevices.first?.uuid, device.uuid, "派发的快照应对应原设备 uuid（DeviceSnapshot 为纯值类型，不再持有堆引用）")
         XCTAssertNil(fun.devices[device.uuid], "device 应已从 devices 移除")
     }
 }

@@ -79,6 +79,7 @@ extension Device {
             rssi: rssi,
             manufacture: manufacture,
             model: model,
+            macAddr: macAddr,
             isMonitored: isMonitored
         )
     }
