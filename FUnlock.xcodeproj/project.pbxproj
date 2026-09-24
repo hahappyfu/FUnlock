@@ -69,6 +69,9 @@
 		DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS0000010000000100000001 /* DeviceSnapshot.swift */; };
 		SH0000020000000100000001 /* SignalHysteresisEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = SH0000010000000100000001 /* SignalHysteresisEngine.swift */; };
 		BS0000020000000100000001 /* BLEScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BS0000010000000100000001 /* BLEScanner.swift */; };
+		BP0000020000000100000001 /* BLEPeripheralHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP0000010000000100000001 /* BLEPeripheralHandler.swift */; };
+		LC0000020000000100000001 /* FUnLockCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = LC0000010000000100000001 /* FUnLockCoordinator.swift */; };
+		SP0000020000000100000001 /* FUnSignalProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000010000000100000001 /* FUnSignalProcessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +161,9 @@
 		DS0000010000000100000001 /* DeviceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSnapshot.swift; sourceTree = "<group>"; };
 		SH0000010000000100000001 /* SignalHysteresisEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalHysteresisEngine.swift; sourceTree = "<group>"; };
 		BS0000010000000100000001 /* BLEScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEScanner.swift; sourceTree = "<group>"; };
+		BP0000010000000100000001 /* BLEPeripheralHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEPeripheralHandler.swift; sourceTree = "<group>"; };
+		LC0000010000000100000001 /* FUnLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnLockCoordinator.swift; sourceTree = "<group>"; };
+		SP0000010000000100000001 /* FUnSignalProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnSignalProcessor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -250,6 +256,9 @@
 				DS0000010000000100000001 /* DeviceSnapshot.swift */,
 				SH0000010000000100000001 /* SignalHysteresisEngine.swift */,
 				BS0000010000000100000001 /* BLEScanner.swift */,
+				BP0000010000000100000001 /* BLEPeripheralHandler.swift */,
+				LC0000010000000100000001 /* FUnLockCoordinator.swift */,
+				SP0000010000000100000001 /* FUnSignalProcessor.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -457,6 +466,9 @@
 				DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */,
 				SH0000020000000100000001 /* SignalHysteresisEngine.swift in Sources */,
 				BS0000020000000100000001 /* BLEScanner.swift in Sources */,
+				BP0000020000000100000001 /* BLEPeripheralHandler.swift in Sources */,
+				LC0000020000000100000001 /* FUnLockCoordinator.swift in Sources */,
+				SP0000020000000100000001 /* FUnSignalProcessor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
