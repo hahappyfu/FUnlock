@@ -10,7 +10,8 @@ struct Profile: Identifiable, Codable, Hashable {
     static let `default` = Profile(id: "default", name: "默认", lockRSSI: -80, unlockRSSI: -60, enabled: true)
 }
 
-class ProfileManager: ObservableObject {
+@MainActor
+final class ProfileManager: ObservableObject {
     static let shared = ProfileManager()
 
     @Published var profiles: [Profile] = []

@@ -3578,6 +3578,7 @@ class StatsCalculatorTests: XCTestCase {
 
 // MARK: - 配置文件导入导出
 
+@MainActor
 class ProfileImportExportTests: XCTestCase {
     private var manager: ProfileManager!
 

@@ -17,7 +17,8 @@ struct SignalSample: Identifiable {
 }
 
 /// 全局信号数据仓库
-final class SignalDataStore: ObservableObject {
+/// @unchecked Sendable 依据：ring 由 NSLock 保护，@Published 属性仅主线程读写
+final class SignalDataStore: ObservableObject, @unchecked Sendable {
     static let shared = SignalDataStore()
 
     /// 底层环形缓冲（高频写入，不触发 UI）

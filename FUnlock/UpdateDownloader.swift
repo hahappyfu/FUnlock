@@ -1,6 +1,7 @@
 import Foundation
 
-class UpdateDownloader: NSObject, URLSessionDownloadDelegate {
+/// @unchecked Sendable 依据：任务与状态回调仅在主队列访问（delegateQueue = .main）
+final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     enum State: Equatable {
         case idle
         case downloading(progress: Double)

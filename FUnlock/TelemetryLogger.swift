@@ -28,7 +28,8 @@ struct TelemetryRecord {
 
 /// 形子模式遥测日志单例
 /// 监听 FUnManager 的真实动作，异步追加写入 CSV 文件
-final class TelemetryLogger {
+/// @unchecked Sendable 依据：落盘经串行 queue，测试钩子仅 @testable 使用
+final class TelemetryLogger: @unchecked Sendable {
     static let shared = TelemetryLogger()
     private init() {
         ensureDirectory()

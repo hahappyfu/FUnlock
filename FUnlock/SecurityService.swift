@@ -18,7 +18,7 @@ enum KeychainError: Error, CustomStringConvertible {
     }
 }
 
-final class SecurityService {
+final class SecurityService: Sendable {
     static let shared = SecurityService()
     private init() {}
 

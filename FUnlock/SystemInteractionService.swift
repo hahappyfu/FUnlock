@@ -5,7 +5,7 @@ import IOKit
 
 
 /// Encapsulates all OS-level side effects: screen control, keyboard injection, media, notifications
-final class SystemInteractionService {
+final class SystemInteractionService: Sendable {
     static let shared = SystemInteractionService()
     private init() {}
 
@@ -321,8 +321,10 @@ final class SystemInteractionService {
 
     // MARK: - Notifications
 
-    private var deliveredNotificationId = ""
+    /// 已投递的锁屏通知标识；仅由主线程（通知相关路径）访问
+    @MainActor private var deliveredNotificationId = ""
 
+    @MainActor
     func notifyLock(reason: String) {
         let content = UNMutableNotificationContent()
         content.title = "Funlock"
@@ -334,6 +336,7 @@ final class SystemInteractionService {
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 
+    @MainActor
     func clearLockNotification() {
         if !deliveredNotificationId.isEmpty {
             UNUserNotificationCenter.current()

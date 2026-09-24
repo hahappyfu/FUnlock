@@ -1,7 +1,8 @@
 import Foundation
 
 /// Event logging (events.log) and user script execution (event script)
-final class ScriptRunner {
+/// @unchecked Sendable 依据：lastLogTime 与文件写入由 NSLock 保护（testLogDirectory 等钩子仅测试使用）
+final class ScriptRunner: @unchecked Sendable {
     static let shared = ScriptRunner()
     private init() { nowProvider = { Date() } }
 
