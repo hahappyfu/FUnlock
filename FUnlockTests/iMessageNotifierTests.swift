@@ -126,6 +126,7 @@ final class iMessageNotifierTests: XCTestCase {
 
     // MARK: - sendTestNotification
 
+    @MainActor
     func testTestNotificationFailsFastWhenDisabled() {
         ConfigStore.shared.defaults.set(false, forKey: "iMessageNotify")
         ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
@@ -140,6 +141,7 @@ final class iMessageNotifierTests: XCTestCase {
         wait(for: [exp], timeout: 2)
     }
 
+    @MainActor
     func testTestNotificationFailsWhenNoRecipient() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
         ConfigStore.shared.defaults.removeObject(forKey: "iMessageNotifyRecipient")
@@ -154,6 +156,7 @@ final class iMessageNotifierTests: XCTestCase {
         wait(for: [exp], timeout: 2)
     }
 
+    @MainActor
     func testTestNotificationSuccess() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
         ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
@@ -167,6 +170,7 @@ final class iMessageNotifierTests: XCTestCase {
         wait(for: [exp], timeout: 2)
     }
 
+    @MainActor
     func testSendTestNotificationFailurePropagates() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
         ConfigStore.shared.defaults.set("13800138001", forKey: "iMessageNotifyRecipient")
@@ -183,6 +187,7 @@ final class iMessageNotifierTests: XCTestCase {
         wait(for: [exp], timeout: 2)
     }
 
+    @MainActor
     func testTestNotificationBypassDebounce() {
         ConfigStore.shared.defaults.set(true, forKey: "iMessageNotify")
         ConfigStore.shared.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")

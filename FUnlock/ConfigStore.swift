@@ -4,7 +4,11 @@ import Foundation
 /// 配置存储：独立 suite 域，与 bundle id 解耦。
 /// 覆盖安装 app 后配置不丢失（偏好域不随 bundle 替换而重建）。
 /// 所有配置读写走这里，不再直接使用 UserDefaults.standard。
-final class ConfigStore {
+///
+/// 线程契约（@unchecked Sendable 依据）：实例唯一持有的引用 `defaults` 为 let
+/// （初始化后不再变化），且 UserDefaults 自身文档明确线程安全（"UserDefaults is thread-safe"），
+/// 故跨线程共享本类实例不会引入数据竞争。
+final class ConfigStore: @unchecked Sendable {
     static let shared = ConfigStore()
 
     /// 固定 suite 域名（不随 bundle id 变）

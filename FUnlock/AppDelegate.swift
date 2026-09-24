@@ -148,7 +148,8 @@ struct PermissionCheckView: View {
     }
 
     private func requestAX() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // 用字面量替代全局 var kAXTrustedCheckOptionPrompt（其值即同名 CFString），规避 Swift 6 全局可变状态警告
+        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
         openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
     }
@@ -258,11 +259,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - UNUserNotificationCenter
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) -> UNNotificationPresentationOptions {
-        return [.alert, .sound]
+    // 注：FUnDelegate（@MainActor 协议）的 conformance 使本类整体推断为 main actor 隔离；
+    // 而 UNUserNotificationCenterDelegate 的回调要求 nonisolated，显式标注 nonisolated，
+    // 避免非 Sendable 参数（UNUserNotificationCenter/UNNotification/UNNotificationResponse）
+    // 跨隔离域传入的 #NonSendableInAsyncConformanceOrOverride 警告。
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        return [.banner, .sound]
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let id = response.notification.request.identifier
         if id == "funlock-update" {
             // 点击更新通知 → 触发下载安装
@@ -395,7 +400,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.manager.onUserIntervention()
+            Task { @MainActor in
+                self?.manager.onUserIntervention()
+            }
         }
     }
 
@@ -584,7 +591,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .sink { [weak self] _ in self?.manager.onScreensaverStop(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.security.loginwindow.passwordChanged"))
-            .sink { [weak self] _ in SecurityService.shared.handlePasswordChanged() }
+            .sink { _ in
+                Task { @MainActor in SecurityService.shared.handlePasswordChanged() }
+            }
             .store(in: &cancellables)
 
         // 应用失活（点击桌面 / 切换到其他 App）时自动收起状态栏菜单

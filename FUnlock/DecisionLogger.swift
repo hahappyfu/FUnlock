@@ -108,7 +108,7 @@ final class DecisionLogger: ObservableObject {
     static let shared = DecisionLogger()
 
     /// 内存环形缓冲容量
-    static let capacity = 500
+    nonisolated static let capacity = 500
     /// 同因合并窗口：连续相同 (category, outcome, reason) 在该秒数内只更新时间戳
     var coalescingWindow: TimeInterval = 3.0
     /// 持久化文件轮转上限
@@ -151,7 +151,7 @@ final class DecisionLogger: ObservableObject {
         let now = nowProvider()
 
         // 同因合并：连续相同 (category, outcome, reason) 且间隔 < 窗口 → 只更新时间戳
-        if var last = events.last,
+        if let last = events.last,
            last.category == category,
            last.outcome == outcome,
            last.reason == reason,
@@ -197,8 +197,8 @@ final class DecisionLogger: ObservableObject {
         let file = logFile
         queue.async {
             let loaded = Self.readTail(from: file, max: DecisionLogger.capacity)
-            Task { @MainActor [weak self] in
-                guard let self, self.events.isEmpty else { return }
+            Task { @MainActor in
+                guard self.events.isEmpty else { return }
                 for e in loaded { self.ring.append(e) }
                 self.events = self.ring.toArray()
             }
@@ -223,7 +223,7 @@ final class DecisionLogger: ObservableObject {
 
     // MARK: - 持久化（静态实现，仅处理值类型，无 self 捕获）
 
-    private static func write(_ event: DecisionEvent, latest: [DecisionEvent], to url: URL, maxFileSize: UInt64) {
+    private nonisolated static func write(_ event: DecisionEvent, latest: [DecisionEvent], to url: URL, maxFileSize: UInt64) {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         appendLine(event, to: url)
 
@@ -238,7 +238,7 @@ final class DecisionLogger: ObservableObject {
         }
     }
 
-    private static func appendLine(_ event: DecisionEvent, to url: URL) {
+    private nonisolated static func appendLine(_ event: DecisionEvent, to url: URL) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         guard var data = try? encoder.encode(event) else { return }
@@ -255,7 +255,7 @@ final class DecisionLogger: ObservableObject {
     }
 
     /// 读取文件尾部最多 max 条（按时间顺序返回）
-    static func readTail(from url: URL, max: Int) -> [DecisionEvent] {
+    nonisolated static func readTail(from url: URL, max: Int) -> [DecisionEvent] {
         guard let data = try? Data(contentsOf: url),
               let content = String(data: data, encoding: .utf8) else { return [] }
         let decoder = JSONDecoder()

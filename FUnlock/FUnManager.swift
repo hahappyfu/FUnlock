@@ -852,8 +852,8 @@ final class FUnManager: ObservableObject {
         updateChecker.check()
     }
 
-    /// 手动触发检查更新
-    func forceCheckUpdate(completion: ((String?) -> Void)? = nil) {
+    /// 手动触发检查更新（completion 在主线程回调）
+    func forceCheckUpdate(completion: (@MainActor (String?) -> Void)? = nil) {
         updateChecker.forceCheck(completion: completion)
     }
 

@@ -41,6 +41,7 @@ final class ScriptRunner: @unchecked Sendable {
     private var now: Date { nowProvider() }
 
     /// 记录事件（带去重），返回 true 表示实际写入，false 表示在窗口内被跳过
+    @discardableResult
     func logEventIfNeeded(_ event: String, rssi: Int? = nil, extraFields: [String: String] = [:]) -> Bool {
         let currentTime = now
         lock.lock()

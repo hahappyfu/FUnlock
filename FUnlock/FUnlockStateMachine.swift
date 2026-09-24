@@ -40,7 +40,7 @@ final class FUnlockStateMachine {
     private let maxConsecutiveFailures: Int = 3
 
     /// 降级通知标识符（供 AppDelegate 响应处理使用）
-    static let degradedNotificationID = "funlock-degraded"
+    nonisolated static let degradedNotificationID = "funlock-degraded"
 
     /// 调用方可通过此属性查询当前是否处于失败冷却期
     var isInCooldown: Bool {

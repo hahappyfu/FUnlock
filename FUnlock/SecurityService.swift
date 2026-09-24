@@ -47,6 +47,8 @@ final class SecurityService: Sendable {
 
     /// Fetch password from Keychain.
     /// - Returns: password string on success, nil on not-found (shows modal if warn=true), KeychainError on security error.
+    /// 标注 @MainActor：warn=true 时弹模态窗，需主线程。
+    @MainActor
     func fetchPassword(warn: Bool = false) -> Result<String?, KeychainError> {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
@@ -76,6 +78,7 @@ final class SecurityService: Sendable {
     }
 
     /// 便捷方法：从 Result 中提取密码，冷启动时显示提示并返回 nil
+    @MainActor
     func fetchPasswordOrShowError(warn: Bool = false) -> String? {
         switch fetchPassword(warn: warn) {
         case .success(let pw):
@@ -103,6 +106,7 @@ final class SecurityService: Sendable {
     // MARK: - Password Change Detection
 
     /// Handle system password change notification: clear old password and prompt user
+    @MainActor
     func handlePasswordChanged() {
         if case .failure = fetchPassword() { return }
         if case .success(nil) = fetchPassword() { return }
@@ -124,6 +128,8 @@ final class SecurityService: Sendable {
 
     // MARK: - Password Dialog
 
+    /// 弹出密码输入模态窗（主线程 UI）
+    @MainActor
     func askPassword() {
         let msg = NSAlert()
         msg.addButton(withTitle: t("ok"))
@@ -148,6 +154,8 @@ final class SecurityService: Sendable {
 // MARK: - UI Helper (shared alert utilities)
 
 enum UIHelper {
+    /// 弹出错误模态窗（主线程 UI）
+    @MainActor
     static func errorModal(_ msg: String, info: String? = nil) {
         let alert = NSAlert()
         alert.messageText = msg

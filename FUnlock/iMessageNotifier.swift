@@ -4,7 +4,12 @@
 import Foundation
 
 /// iMessage 通知单例
-final class iMessageNotifier {
+///
+/// 线程契约（@unchecked Sendable 依据）：
+/// - `lastSendTime`（防抖时间戳）的所有读写均由 `lock`（NSLock）保护；
+/// - `queue` / `debounceInterval` / `lock` 为 let，初始化后不再变化；
+/// - `scriptRunner` 仅测试进程在调用前注入（见属性注释），运行期只读。
+final class iMessageNotifier: @unchecked Sendable {
     /// 手动测试发送结果。用嵌套私有类型避免全局污染 String 的 Error 遵循。
     struct SendError: Error {
         let message: String
@@ -70,13 +75,7 @@ final class iMessageNotifier {
         let text = "\(title)\n\(body)"
         queue.async { [weak self] in
             guard let self = self else { return }
-            let err: String?
-            if let runner = self.scriptRunner {
-                err = runner(recipient, text)
-            } else {
-                err = self.runAppleScript(recipient: recipient, text: text)
-            }
-            if let err = err {
+            if let err = self.runScriptSync(recipient: recipient, text: text) {
                 Log.ble.error("[iMessage] 发送失败（静默丢弃）: \(err)")
             }
         }
@@ -84,38 +83,51 @@ final class iMessageNotifier {
 
     /// 手动连通性测试：发送并返回结果（成功 .success, 失败 .failure+原因）。
     /// 绕过 30s 防抖、不写 lastSendTime —— 测试就是要反复验证。
-    /// completion 在主线程回调。
+    /// 方法标注 @MainActor：completion 在主线程回调（同隔离域调用，无跨域发送）。
+    @MainActor
     func sendTestNotification(title: String, message: String,
-                              completion: @escaping (Result<Void, iMessageNotifier.SendError>) -> Void) {
+                              completion: @escaping @MainActor (Result<Void, iMessageNotifier.SendError>) -> Void) {
         guard enabled else {
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion(.failure(iMessageNotifier.SendError(message: "iMessage 通知开关未开启，请先开启")))
             }
             return
         }
         guard let recipient = recipient, !recipient.isEmpty else {
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 completion(.failure(iMessageNotifier.SendError(message: "收件人为空，请先填写 iMessage 收件人")))
             }
             return
         }
         let text = "\(title)\n\(message)"
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            let err: String?
-            if let runner = self.scriptRunner {
-                err = runner(recipient, text)
+        Task { @MainActor in
+            let err: String? = await self.runScript(recipient: recipient, text: text)
+            if let err = err {
+                completion(.failure(iMessageNotifier.SendError(message: err)))
             } else {
-                err = self.runAppleScript(recipient: recipient, text: text)
-            }
-            DispatchQueue.main.async {
-                if let err = err {
-                    completion(.failure(iMessageNotifier.SendError(message: err)))
-                } else {
-                    completion(.success(()))
-                }
+                completion(.success(()))
             }
         }
+    }
+
+    /// 在串行队列上执行发送脚本，并以 continuation 桥接为 async（保持 queue 串行契约）。
+    private func runScript(recipient: String, text: String) async -> String? {
+        await withCheckedContinuation { cont in
+            queue.async {
+                cont.resume(returning: self.runScriptSync(recipient: recipient, text: text))
+            }
+        }
+    }
+
+    /// 阻塞执行发送脚本，返回错误描述（nil 表示成功）。仅允许从 queue 队列内调用。
+    private func runScriptSync(recipient: String, text: String) -> String? {
+        let err: String?
+        if let runner = scriptRunner {
+            err = runner(recipient, text)
+        } else {
+            err = runAppleScript(recipient: recipient, text: text)
+        }
+        return err
     }
 
     /// 转义 AppleScript 字符串字面量中的 `\` 与 `"`，防止收件人/文本含引号时脚本语法被破坏

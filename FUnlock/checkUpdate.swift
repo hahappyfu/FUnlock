@@ -1,5 +1,8 @@
 import UserNotifications
 
+/// 更新检查器：全部状态在主线程读写（@MainActor）；
+/// 网络请求经 async URLSession API 挂起等待，不阻塞主线程。
+@MainActor
 class UpdateChecker {
     private let key = "lastUpdateCheck"
     private let interval: TimeInterval = 24 * 60 * 60
@@ -23,22 +26,25 @@ class UpdateChecker {
         doCheck()
     }
 
-    /// 忽略 24h 间隔，立即检测（用于手动触发）
-    func forceCheck(completion: ((String?) -> Void)? = nil) {
+    /// 忽略 24h 间隔，立即检测（用于手动触发）。
+    /// completion 在主线程回调（闭包标注 @MainActor：调用方无需自行 hop 主线程）。
+    func forceCheck(completion: (@MainActor (String?) -> Void)? = nil) {
         guard !checking else { return }
         doCheck(completion: completion)
     }
 
-    private func doCheck(completion: ((String?) -> Void)? = nil) {
+    private func doCheck(completion: (@MainActor (String?) -> Void)? = nil) {
         checking = true
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/hahappyfu/FUnlock/releases/latest")!)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-            guard let self = self else { return }
+        Task { @MainActor in
             defer { self.checking = false }
-            if error != nil {
-                completion?(nil)
-                return
+            let data: Data?
+            do {
+                let (d, _) = try await URLSession.shared.data(for: request)
+                data = d
+            } catch {
+                data = nil
             }
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -58,7 +64,6 @@ class UpdateChecker {
                 completion?(nil)
             }
         }
-        task.resume()
     }
 
     private func isNewVersion(_ remoteVersion: String) -> Bool {

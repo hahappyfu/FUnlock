@@ -115,7 +115,11 @@ class Device: NSObject {
     }
 }
 
-protocol FUnDelegate {
+/// 蓝牙事件回调协议：所有回调均涉及 UI 更新、通知或主线程状态机
+/// （AppDelegate 的 manager.onDeviceDiscovered 等），故协议层隔离到主 actor。
+/// FUn 内部派发时统一通过 `Task { @MainActor [weak self] in ... }` 跨回主线程。
+@MainActor
+protocol FUnDelegate: AnyObject {
     func newDevice(device: Device)
     func updateDevice(device: Device)
     func removeDevice(device: Device)
@@ -125,7 +129,13 @@ protocol FUnDelegate {
     func onDeviceApproached()
 }
 
-class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+/// BLE 中央管理器。
+/// 线程契约（@unchecked Sendable 依据）：
+/// - CBCentralManager 回调与设备扫描在串行 `bleQueue` 上执行，跨线程共享状态
+///   （devices / monitoredUUID / presence / pipeline 等）统一由 `lock`（UnfairLock）保护；
+/// - Timer 操作与 `@Published`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
+/// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
+class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate, @unchecked Sendable {
     static let UNLOCK_DISABLED = 1
     static let LOCK_DISABLED = -100
     let bleQueue = DispatchQueue(label: "com.funlock.ble")
@@ -364,14 +374,18 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
         }
         Log.sm.debug("Device is lost (3 consecutive timeouts)")
-        self.delegate?.updateRSSI(rssi: nil, active: false)
+        Task { @MainActor [weak self] in
+            self?.delegate?.updateRSSI(rssi: nil, active: false)
+        }
         if wasPresent {
             // P1: 记录信号丢失锁定事件
             SignalDataStore.shared.record(
                 rawRSSI: -100, kalmanEstimate: -100,
                 effectiveRSSI: -100, slope: 0, isAnomalous: false,
                 event: "locked: lost")
-            self.delegate?.updatePresence(presence: false, reason: "lost")
+            Task { @MainActor [weak self] in
+                self?.delegate?.updatePresence(presence: false, reason: "lost")
+            }
         }
     }
 
@@ -394,8 +408,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 return w
             }
             if shouldWarn {
-                DispatchQueue.main.async {
-                    self.delegate?.bluetoothPowerWarn()
+                Task { @MainActor [weak self] in
+                    self?.delegate?.bluetoothPowerWarn()
                 }
             }
         default:
@@ -661,8 +675,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                 event: "locked")
             self.lock.withLock { self.presence = false }
             self.cancelHeartbeat()
-            DispatchQueue.main.async {
-                self.delegate?.updatePresence(presence: false, reason: "away")
+            Task { @MainActor [weak self] in
+                self?.delegate?.updatePresence(presence: false, reason: "away")
             }
             self.lock.withLock { self.proximityTimer = nil }
         })
@@ -781,6 +795,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             return disp
         }
+        let activeMode = lock.withLock { activeModeTimer != nil }
 
         if signal >= Double(unlockThreshold) {
             if shouldNotifyClose {
@@ -789,17 +804,17 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     rawRSSI: Double(rssi), kalmanEstimate: effectiveRSSI,
                     effectiveRSSI: effectiveRSSI, slope: 0, isAnomalous: false,
                     event: "unlocked")
-                DispatchQueue.main.async {
-                    self.delegate?.updatePresence(presence: true, reason: "close")
+                Task { @MainActor [weak self] in
+                    self?.delegate?.updatePresence(presence: true, reason: "close")
                 }
             }
-            DispatchQueue.main.async {
-                self.delegate?.updateRSSI(rssi: Int(dispRSSI), active: self.activeModeTimer != nil)
-                self.delegate?.onDeviceApproached()
+            Task { @MainActor [weak self] in
+                self?.delegate?.updateRSSI(rssi: Int(dispRSSI), active: activeMode)
+                self?.delegate?.onDeviceApproached()
             }
         } else {
-            DispatchQueue.main.async {
-                self.delegate?.updateRSSI(rssi: Int(dispRSSI), active: self.activeModeTimer != nil)
+            Task { @MainActor [weak self] in
+                self?.delegate?.updateRSSI(rssi: Int(dispRSSI), active: activeMode)
             }
         }
     }
@@ -845,14 +860,20 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func resetScanTimer(device: Device) {
         device.scanTimer?.invalidate()
         guard let uuid = device.uuid else { return }
+        // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
+        let peripheral = device.peripheral
         let timer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.delegate?.removeDevice(device: device)
+            // 闭包只捕获 uuid（Sendable），device 在闭包内按 uuid 取锁内快照
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if let removed = self.lock.withLock({ self.devices[uuid] }) {
+                    self.delegate?.removeDevice(device: removed)
+                }
             }
-            if let p = device.peripheral {
+            if let p = peripheral {
                 self?.centralMgr.cancelPeripheralConnection(p)
             }
-            self?.lock.withLock { self?.devices.removeValue(forKey: uuid) }
+            _ = self?.lock.withLock { self?.devices.removeValue(forKey: uuid) }
             // 防泄漏：设备过期时清理节流记录
             self?.lastUIUpdateTime.removeValue(forKey: uuid)
         })
@@ -968,8 +989,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     }
                     lock.withLock { devices[peripheral.identifier] = device }
                     central.connect(peripheral, options: nil)
-                    DispatchQueue.main.async {
-                        self.delegate?.newDevice(device: device)
+                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
+                    let deviceId = peripheral.identifier
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        let snapshot = self.lock.withLock { self.devices[deviceId] }
+                        if let snapshot = snapshot {
+                            self.delegate?.newDevice(device: snapshot)
+                        }
                     }
                 }
             } else {
@@ -986,8 +1013,14 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     // 节流窗口内，只更新数据不派发 UI
                 } else {
                     lastUIUpdateTime[peripheral.identifier] = now
-                    DispatchQueue.main.async {
-                        self.delegate?.updateDevice(device: device)
+                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
+                    let deviceId = peripheral.identifier
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        let snapshot = self.lock.withLock { self.devices[deviceId] }
+                        if let snapshot = snapshot {
+                            self.delegate?.updateDevice(device: snapshot)
+                        }
                     }
                 }
             }
@@ -1051,7 +1084,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
 
         let now = Date().timeIntervalSince1970
         var restartPolling = false
-        let kalmanNow: Double = lock.withLock {
+        _ = lock.withLock {
             let k = pipeline.kalmanEstimate
             lastReadAt = now
             let fluctuation = abs(k - Double(lastEstimatedRSSI))
@@ -1140,16 +1173,24 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let str: String? = String(data: value, encoding: .utf8)
             if let s = str {
                 if let device = lock.withLock({ devices[peripheral.identifier] }) {
+                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
+                    let deviceId = peripheral.identifier
                     if characteristic.uuid == BLEUUIDs.manufacturerName {
                         device.manufacture = s
-                        DispatchQueue.main.async {
-                            self.delegate?.updateDevice(device: device)
+                        Task { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            if let snapshot = self.lock.withLock({ self.devices[deviceId] }) {
+                                self.delegate?.updateDevice(device: snapshot)
+                            }
                         }
                     }
                     if characteristic.uuid == BLEUUIDs.modelName {
                         device.model = s
-                        DispatchQueue.main.async {
-                            self.delegate?.updateDevice(device: device)
+                        Task { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            if let snapshot = self.lock.withLock({ self.devices[deviceId] }) {
+                                self.delegate?.updateDevice(device: snapshot)
+                            }
                         }
                     }
                     if device.model != nil && device.manufacture != nil && device.peripheral != monitoredPeripheral {

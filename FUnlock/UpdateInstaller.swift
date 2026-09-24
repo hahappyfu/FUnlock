@@ -105,7 +105,7 @@ enum UpdateInstaller {
 
         guard let output = String(data: data, encoding: .utf8),
               let teamId = output.split(separator: "\n")
-                  .first { $0.contains("TeamIdentifier=") }?
+                  .first(where: { $0.contains("TeamIdentifier=") })?
                   .split(separator: "=")
                   .last?
                   .trimmingCharacters(in: .whitespaces),

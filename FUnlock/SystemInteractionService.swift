@@ -4,6 +4,23 @@ import UserNotifications
 import IOKit
 
 
+/// 跨线程唤醒标志：由 NSLock 保护，供通知回调（任意线程）与轮询循环共享
+private final class WakeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var detected = false
+
+    var isSet: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return detected
+    }
+
+    func set() {
+        lock.lock(); defer { lock.unlock() }
+        detected = true
+    }
+}
+
+
 /// Encapsulates all OS-level side effects: screen control, keyboard injection, media, notifications
 final class SystemInteractionService: Sendable {
     static let shared = SystemInteractionService()
@@ -230,14 +247,14 @@ final class SystemInteractionService: Sendable {
             return false
         }
         var errorInfo: NSDictionary?
-        let result = appleScript.executeAndReturnError(&errorInfo)
+        _ = appleScript.executeAndReturnError(&errorInfo)
         // NSAppleScript 为同步执行，此处检查只能用于结果判定：
         // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
         if !isSecureCheck() {
             logBoth("SystemInteraction", "PASSWORD: screen no longer locked after AppleScript, treating as failure", fileMsg: "Level 3: screen no longer locked after AppleScript - result unreliable, treated as failure")
             return false
         }
-        if result != nil {
+        if errorInfo == nil {
             Log.sm.debug("PASSWORD: AppleScript injection completed successfully")
             return true
         } else {
@@ -358,17 +375,14 @@ final class SystemInteractionService: Sendable {
     func waitForUnlockNotification(timeout: TimeInterval = 1.0) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         // 唤醒信号：收到后立即开始高频轮询（比固定间隔更快）
-        let wakeSignal = NSLock()
-        var wakeDetected = false
+        let wakeFlag = WakeFlag()
 
         let observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { _ in
-            wakeSignal.lock()
-            wakeDetected = true
-            wakeSignal.unlock()
+            wakeFlag.set()
         }
 
         defer {
@@ -387,10 +401,7 @@ final class SystemInteractionService: Sendable {
                 logDebug(component: "SystemInteraction", "waitForUnlockNotification: CGSession nil → 继续轮询")
             }
             // 唤醒信号检测到后用更短间隔轮询（50ms），否则200ms
-            wakeSignal.lock()
-            let detected = wakeDetected
-            wakeSignal.unlock()
-            let interval: UInt64 = detected ? 50_000_000 : 200_000_000
+            let interval: UInt64 = wakeFlag.isSet ? 50_000_000 : 200_000_000
             try? await Task.sleep(nanoseconds: interval)
         }
         logDebug(component: "SystemInteraction", "waitForUnlockNotification: timeout (\(timeout)s)")
@@ -442,8 +453,8 @@ final class SystemInteractionService: Sendable {
     static func verifyUnlock(
         timeout: TimeInterval = 2.0,
         notificationTimeout: TimeInterval = 1.0,
-        waitForNotification: @escaping (TimeInterval) async -> Bool,
-        checkUnlocked: @escaping (TimeInterval) async -> Bool
+        waitForNotification: @escaping @Sendable (TimeInterval) async -> Bool,
+        checkUnlocked: @escaping @Sendable (TimeInterval) async -> Bool
     ) async -> UnlockNotification {
         let result = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
             group.addTask {
@@ -470,6 +481,7 @@ final class SystemInteractionService: Sendable {
     // MARK: - Alert Dialogs
 
     /// Show AX permission revoked alert (throttled to once per hour)
+    @MainActor
     func showAXRevokedAlertIfNeeded(lastAlertTime: inout Date) {
         let now = Date().timeIntervalSince1970
         if now - lastAlertTime.timeIntervalSince1970 < 3600 {
@@ -497,6 +509,8 @@ final class SystemInteractionService: Sendable {
         }
     }
 
+    /// 弹出密码不匹配告警（主线程 UI）
+    @MainActor
     func showPasswordMismatchAlert() {
         let alert = NSAlert()
         alert.messageText = t("password_mismatch_title")
@@ -511,6 +525,8 @@ final class SystemInteractionService: Sendable {
         }
     }
 
+    /// 弹出异常解锁告警（主线程 UI）
+    @MainActor
     func showAbnormalUnlockAlert(count: Int, window: Int) {
         Log.sm.debug("abnormal unlock alert: \(count) attempts in \(window)s")
         let alert = NSAlert()

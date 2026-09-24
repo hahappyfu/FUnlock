@@ -2,9 +2,10 @@
 
 import SQLite3
 
-private var inited = false
-private var db_paired: OpaquePointer?
-private var db_other: OpaquePointer?
+// 连接状态：connect() 首调初始化后仅读取；nonisolated(unsafe) 表示已人工确认调用方线程约定
+nonisolated(unsafe) private var inited = false
+nonisolated(unsafe) private var db_paired: OpaquePointer?
+nonisolated(unsafe) private var db_other: OpaquePointer?
 
 private func connect() {
     if inited { return }
@@ -46,7 +47,7 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
     defer { sqlite3_finalize(stmt) }
-    uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
+    _ = uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil
     }
@@ -73,7 +74,7 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
     defer { sqlite3_finalize(stmt) }
-    uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
+    _ = uuid.withCString { sqlite3_bind_text(stmt, 1, $0, -1, nil) }
     if sqlite3_step(stmt) != SQLITE_ROW {
         return nil
     }

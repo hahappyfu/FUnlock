@@ -2688,6 +2688,7 @@ class KeychainSecurityTests: XCTestCase {
 
     // MARK: - fetchPassword 返回类型为 Result
 
+    @MainActor
     func testFetchPasswordReturnsResultType() {
         let service = SecurityService.shared
         let result = service.fetchPassword()
@@ -2707,6 +2708,7 @@ class KeychainSecurityTests: XCTestCase {
 
     // MARK: - fetchPasswordOrShowError 便捷方法
 
+    @MainActor
     func testFetchPasswordOrShowErrorReturnsStringOrNil() {
         let service = SecurityService.shared
         // 便捷方法应返回 String?（不暴露 KeychainError）
@@ -2750,6 +2752,7 @@ class KeychainSecurityTests: XCTestCase {
 
     // MARK: - handlePasswordChanged 适配 Result 类型
 
+    @MainActor
     func testHandlePasswordChangedDoesNotCrashWithNoPassword() {
         // 确保 handlePasswordChanged 在无密码时不崩溃
         let service = SecurityService.shared

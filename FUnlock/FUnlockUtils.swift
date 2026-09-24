@@ -42,12 +42,13 @@ enum LogRotator {
 // MARK: - 时序埋点（限流 + 句柄缓存）
 
 private let timingLock = NSLock()
-private var timingFileHandle: FileHandle?
-private var lastTimingWriteByType: [String: Date] = [:]
+// 句柄与限流状态由 timingLock 保护；测试目录/上限仅测试写入一次
+nonisolated(unsafe) private var timingFileHandle: FileHandle?
+nonisolated(unsafe) private var lastTimingWriteByType: [String: Date] = [:]
 /// 测试覆盖：非 nil 时写该目录，避免污染真实日志
-private var timingLogTestDirectory: URL?
+nonisolated(unsafe) private var timingLogTestDirectory: URL?
 /// 单文件滚动上限（测试可调小）
-private var timingLogMaxBytes: UInt64 = LogRotator.defaultMaxBytes
+nonisolated(unsafe) private var timingLogMaxBytes: UInt64 = LogRotator.defaultMaxBytes
 
 private var timingLogDirectory: URL {
     if let testDir = timingLogTestDirectory { return testDir }
