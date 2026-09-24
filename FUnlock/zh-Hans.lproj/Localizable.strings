@@ -285,6 +285,7 @@
 "sidebar_group_settings" = "设置";
 "sidebar_group_diagnostics" = "诊断";
 "distance_threshold" = "距离阈值";
+"hysteresis_band" = "防误锁缓冲带";
 "change_device" = "更换设备";
 "done" = "完成";
 "cold_boot_keychain" = "冷启动后需要访问钥匙串";

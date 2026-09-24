@@ -218,6 +218,7 @@
 "sidebar_group_settings" = "Settings";
 "sidebar_group_diagnostics" = "Diagnostics";
 "distance_threshold" = "Distance Threshold";
+"hysteresis_band" = "Anti-lock Buffer";
 "change_device" = "Change Device";
 "done" = "Ferdig";
 "cold_boot_keychain" = "Nøkkelringtilgang etter kald start";

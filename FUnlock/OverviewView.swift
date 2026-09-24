@@ -199,6 +199,7 @@ struct OverviewView: View {
     private var thresholdSection: some View {
         Section(t("distance_threshold")) {
             thresholdBar
+            hysteresisBand
 
             ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
                                value: $sliderLock, isDragging: $isSliderDragging,
@@ -268,6 +269,50 @@ struct OverviewView: View {
         }
         .frame(height: 18)
         .padding(.vertical, 4)
+    }
+
+    // MARK: 迟滞安全区（防误锁缓冲带）
+
+    /// 解锁与锁定阈值之间的防误锁缓冲带：随滑块草稿值实时联动，
+    /// 两端刻度即两个阈值的位置，宽度即安全距离（dB）
+    private var hysteresisBand: some View {
+        let band = max(sliderUnlock - sliderLock, 0)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(t("hysteresis_band"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(Int(band)) dB")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundColor(.accentColor)
+            }
+            GeometryReader { geo in
+                let width = geo.size.width
+                let lockX = xPos(min(sliderLock, sliderUnlock), width)
+                let unlockX = xPos(max(sliderLock, sliderUnlock), width)
+                ZStack(alignment: .leading) {
+                    // 底轨
+                    Capsule().fill(Color.gray.opacity(0.12)).frame(height: 8)
+                    // 缓冲带：锁定端（橙）渐变至解锁端（绿），与滑块图标色一致
+                    Capsule()
+                        .fill(LinearGradient(colors: [.orange.opacity(0.45), .green.opacity(0.45)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(unlockX - lockX, 0), height: 8)
+                        .offset(x: lockX)
+                    // 两端阈值刻度
+                    bandTick.position(x: lockX, y: geo.size.height / 2)
+                    bandTick.position(x: unlockX, y: geo.size.height / 2)
+                }
+                .frame(height: 12)
+            }
+            .frame(height: 12)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var bandTick: some View {
+        Capsule().fill(Color.secondary).frame(width: 1.5, height: 12)
     }
 
     // MARK: 快捷操作
