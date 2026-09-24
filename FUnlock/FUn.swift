@@ -266,7 +266,10 @@ extension FUn {
         let (k, near) = lock.withLock {
             let isNear: Bool
             if unlockRSSI != SignalHysteresisEngine.unlockDisabled {
-                isNear = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
+                let nearClimb = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
+                let lockThreshold = lockRSSI == SignalHysteresisEngine.lockDisabled ? unlockRSSI : lockRSSI
+                let nearLock = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockThreshold))
+                isNear = nearClimb || nearLock
             } else if lockRSSI != SignalHysteresisEngine.lockDisabled {
                 isNear = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockRSSI))
             } else {
