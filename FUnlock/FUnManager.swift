@@ -1,99 +1,25 @@
-// BluetoothManager.swift
-// 核心状态机：收编所有锁屏/解锁决策逻辑
-// 使用 Combine 暴露状态，async/await 替代 Timer
+// FUnManager.swift
+// 状态中枢：收编所有锁屏/解锁状态、Combine 发布与系统事件分发入口。
+// 解锁流水线（门控 → 密码获取 → 注入 → 双保险验证 → 唤醒重试）已抽取为
+// UnlockOrchestrator（本类持有并委托）；系统事件与 FUn 设备事件的监听入口
+// 见 FUnManager+Events.swift；领域状态类型见 LockScreenState.swift。
+// 使用 Combine 暴露状态，async/await 替代 Timer。
 
 import Foundation
 import Combine
 import Cocoa
 
-
-// MARK: - 状态枚举
-
-enum ScreenState: Equatable, CustomStringConvertible {
-    case unlocked
-    case locked(reason: LockReason)
-    case screensaver
-    case displaySleeping
-
-    enum LockReason: Equatable {
-        case away, lost, manual, timeout
-    }
-
-    var description: String {
-        switch self {
-        case .unlocked: return "unlocked"
-        case .locked(let reason): return "locked(\(reason))"
-        case .screensaver: return "screensaver"
-        case .displaySleeping: return "displaySleeping"
-        }
-    }
-}
-
-enum SystemPowerState: Equatable, CustomStringConvertible {
-    case awake, sleeping
-
-    var description: String {
-        switch self {
-        case .awake: return "awake"
-        case .sleeping: return "sleeping"
-        }
-    }
-}
-
-enum LockIntent: Equatable {
-    case autoLock
-    case manualLock(deadline: Date)
-
-    var isManualLockActive: Bool {
-        if case .manualLock(let deadline) = self { return Date() < deadline }
-        return false
-    }
-}
-
-enum WakePhase: Equatable {
-    case idle, pending, succeeded, failed
-}
-
-enum MediaPlaybackState: Equatable {
-    case idle, wasPlaying, paused
-}
-
-// MARK: - 聚合状态
-
-struct LockScreenState: Equatable {
-    var screen: ScreenState = .unlocked
-    var system: SystemPowerState = .awake
-    var intent: LockIntent = .autoLock
-    var wake: WakePhase = .idle
-    var media: MediaPlaybackState = .idle
-    var unlockedAt: Date = .distantPast
-
-    var canAutoUnlock: Bool {
-        if intent.isManualLockActive { return false }
-        if system == .sleeping { return false }
-        if screen == .displaySleeping { return false }
-        return true
-    }
-
-    var isEffectivelyLocked: Bool {
-        switch screen {
-        case .locked, .screensaver, .displaySleeping: return true
-        case .unlocked: return false
-        }
-    }
-}
-
 // MARK: - FUnManager
 
 /// 全类 @MainActor 隔离：所有状态变更、`stateMachine`（@MainActor）交互与解锁注入
-/// 都在主线程串行执行。解锁路径上的延迟/并行 `Task` 闭包显式标注 `@MainActor`，
-/// 不依赖 `Task` 隐式继承 actor 上下文的实现细节，杜绝后台 Task 裸调主线程状态机。
+/// 都在主线程串行执行。解锁注入/验证路径由 `orchestrator`（@MainActor）承载，
+/// 延迟/并行 `Task` 闭包显式标注 `@MainActor`，不依赖 `Task` 隐式继承 actor 上下文的实现细节。
 @MainActor
 final class FUnManager: ObservableObject {
 
     // MARK: Published state
 
-    @Published private(set) var state = LockScreenState()
+    @Published var state = LockScreenState()
     @Published var rssi: Int? = nil
     @Published var connected: Bool = false
     @Published var discoveredDevices: [Device] = []
@@ -112,21 +38,17 @@ final class FUnManager: ObservableObject {
     private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
     private let downloader = UpdateDownloader()
     @Published private(set) var updateState: UpdateDownloader.State = .idle
-    private let prefs = ConfigStore.shared.defaults
-    private var wakeTask: Task<Void, Never>?
-    private var unlockTask: Task<Void, Never>?
-    private var intrudeCheckTask: Task<Void, Never>?
-    private var displayWakeRequested = false
-    private var consecutiveUnlockAttempts = 0
-    private let maxUnlockAttempts = 3
-    private var lastAXRevokedAlertTime: Date = .distantPast
+    let prefs = ConfigStore.shared.defaults
+    var intrudeCheckTask: Task<Void, Never>?
     private var mediaWasPlaying = false
-    /// FUn 是否正在执行自动解锁（用于区分手动解锁入侵）
-    private var isAutoUnlocking = false
+
+    /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
+    /// （在 init 末尾装配；强持有，orchestrator 以 unowned 反向引用本类）
+    private(set) var orchestrator: UnlockOrchestrator!
 
     // MARK: - 冷却与缓冲策略（可测试时间源）
-    private var nowProvider: () -> Date = { Date() }
-    private var now: Date { nowProvider() }
+    var nowProvider: () -> Date = { Date() }
+    var now: Date { nowProvider() }
     /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁
     var unlockCooldownDuration: TimeInterval = 5.0
     /// 自动锁屏后的缓冲时间（秒），缓冲期内不尝试自动解锁
@@ -136,53 +58,25 @@ final class FUnManager: ObservableObject {
     /// 上次成功解锁的时间（自动或手动解锁时更新）
     var lastUnlockTime: Date = .distantPast
 
-    // MARK: - 决策记录辅助
+    // MARK: - 决策记录辅助（锁 / 系统 / 用户；解锁类记录见 UnlockOrchestrator）
 
-    /// 节流：同一 reason 在窗口内只记录一次（防止诊断时间线刷屏）
-    private var lastRecordTime: [DecisionReason: Date] = [:]
-
-    private func recordUnlock(_ outcome: DecisionOutcome = .skipped, reason: DecisionReason?, detail: String = "") {
-        let snap = fun.signalSnapshot()
-        let effDetail = "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm（解锁阈值 \(fun.unlockRSSI) dBm）"
-        let combinedDetail = detail.isEmpty ? effDetail : "\(detail)（\(effDetail)）"
-        decisionLogger.record(category: .unlock, outcome: outcome, reason: reason,
-                              rssi: rssi, device: monitoredDeviceName,
-                              screen: state.screen.description, detail: combinedDetail)
-    }
-
-    /// 节流版记录：同一 reason 在 throttle 秒内只记录一次，超时或首次记录
-    private func recordUnlockThrottled(_ reason: DecisionReason, detail: String = "", throttle: TimeInterval = 30) {
-        let now = nowProvider()
-        if let last = lastRecordTime[reason], now.timeIntervalSince(last) < throttle {
-            return
-        }
-        lastRecordTime[reason] = now
-        recordUnlock(reason: reason, detail: detail)
-    }
-
-    private func recordLock(_ reason: DecisionReason, detail: String = "") {
+    func recordLock(_ reason: DecisionReason, detail: String = "") {
         decisionLogger.record(category: .lock, outcome: .success, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
                               screen: state.screen.description, detail: detail)
     }
 
-    private func recordSystem(_ reason: DecisionReason) {
+    func recordSystem(_ reason: DecisionReason) {
         decisionLogger.record(category: .system, outcome: .info, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
                               screen: state.screen.description)
     }
 
-    private func recordUser(_ reason: DecisionReason) {
+    func recordUser(_ reason: DecisionReason) {
         decisionLogger.record(category: .user, outcome: .success, reason: reason,
                               rssi: rssi, device: monitoredDeviceName,
                               screen: state.screen.description)
     }
-
-    // MARK: - 异常解锁频率检测（滑动窗口）
-    private var unlockAttemptTimestamps: [Date] = []
-    private let maxAttemptsInWindow = 10          // 窗口内最多允许10次
-    private let detectionWindow: TimeInterval = 300  // 5分钟窗口
-    private var lastAbnormalAlertTime: Date = .distantPast
 
     // MARK: Init
 
@@ -208,12 +102,14 @@ final class FUnManager: ObservableObject {
                 }
             }
         }
+
+        // 装配解锁流水线协调器（共用同一时间源，保证冷却/缓冲判定一致）
+        self.orchestrator = UnlockOrchestrator(manager: self, nowProvider: nowProvider)
     }
 
     deinit {
-        wakeTask?.cancel()
-        unlockTask?.cancel()
         intrudeCheckTask?.cancel()
+        // orchestrator 随本类释放，其 deinit 负责取消 wakeTask / unlockTask
     }
 
     // MARK: - 阈值同步
@@ -256,220 +152,24 @@ final class FUnManager: ObservableObject {
         fun.stopScanning()
     }
 
-    // MARK: - 系统事件入口
+    // MARK: - 核心：自动解锁（转发至 UnlockOrchestrator，保持对外签名 100% 兼容）
 
-    func onDisplaySleep() {
-        Log.sm.debug("[SM] displaySleep")
-        recordSystem(.displaySleep)
-        Log.sm.debug("EVENT: onDisplaySleep screen=\(self.state.screen) system=\(self.state.system)")
-        state.screen = .displaySleeping
+    func attemptAutoUnlock() {
+        orchestrator.attemptAutoUnlock()
     }
 
-    func onDisplayWake() {
-        Log.sm.debug("[SM] displayWake")
-        recordSystem(.displayWake)
-        Log.sm.debug("EVENT: onDisplayWake screen=\(self.state.screen) system=\(self.state.system)")
-        state.wake = .succeeded
-        wakeTask?.cancel()
-        wakeTask = nil
-        if state.screen == .displaySleeping {
-            state.screen = .locked(reason: .away)
-        }
-        attemptAutoUnlock()
-    }
+    // MARK: - 用户操作
 
-    func onSystemSleep() {
-        Log.sm.debug("[SM] systemSleep")
-        recordSystem(.systemSleep)
-        state.system = .sleeping
-        NSApp.setActivationPolicy(.regular)
-    }
-
-    func onSystemWake() {
-        Log.sm.debug("[SM] systemWake")
-        recordSystem(.systemWake)
-        // 延迟 1 秒等待蓝牙栈恢复
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
-            NSApp.setActivationPolicy(.accessory)
-            self.state.system = .awake
-            self.attemptAutoUnlock()
-        }
-    }
-
-    /// 用户主动干预（如手动唤醒屏幕）时调用，强制状态机回到 active
-    /// 注意：不清空失败计数与冷却（clearFailures: false），防止屏幕唤醒被用作绕过暴力破解保护的途径
-    func onUserIntervention() {
-        Log.sm.debug("[SM] userIntervention — force reset to active")
-        stateMachine.resetToActive(clearFailures: false)
-        wakeTask?.cancel()
-        wakeTask = nil
-        unlockTask?.cancel()
-        unlockTask = nil
-    }
-
-    func onUnlock() {
-        Log.sm.debug("[SM] userUnlocked")
-        state.screen = .unlocked
-        state.unlockedAt = Date()
-        state.intent = .autoLock
-        consecutiveUnlockAttempts = 0
-        lastUnlockTime = now
-        fun.refreshProximityGrace()
-        // 区分解锁来源：FUn 自动解锁的 unlockSuccess 已在 performInjectionAndVerify 记录，
-        // 这里只在真正手动解锁时记录 userUnlocked，避免自动解锁被误标为"用户手动解锁"
-        if !isAutoUnlocking {
-            recordUser(.userUnlocked)
-        }
-        recordUnlockSuccess()
-        // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
-        // 本方法已在 @MainActor 上执行，同步调用即可，无需再包一层 Task
-        stateMachine.resetToActive()
-
-        // 2 秒后检查是否为入侵（非 FUn 自动解锁）
-        // Task 是逃逸闭包，内部再读 self.isAutoUnlocking 会拿到 2 秒后的值，
-        // 因此必须在启动 Task 前同步捕获快照
-        let wasFUnUnlock = isAutoUnlocking
-        intrudeCheckTask?.cancel()
-        intrudeCheckTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
-            if !wasFUnUnlock {
-                if self.fun.unlockRSSI != FUn.UNLOCK_DISABLED {
-                    ScriptRunner.shared.runScript("intruded", rssi: self.rssi, deviceName: self.monitoredDeviceName)
-                    ScriptRunner.shared.logEvent("intruded", rssi: self.rssi)
-                }
-                self.resumeMediaIfNeeded()
-            }
-            self.checkUpdate()
-        }
-    }
-
-    func onScreensaverStart() {
-        Log.sm.debug("[SM] screensaverStart")
-        state.screen = .screensaver
-    }
-
-    func onScreensaverStop() {
-        Log.sm.debug("[SM] screensaverStop")
-        if state.screen == .screensaver {
-            state.screen = .locked(reason: .manual)
-            state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
-        }
-    }
-
-    /// 系统原生锁屏通知（Apple 菜单 → Lock Screen，或快捷键）
-    /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
-    func onSystemScreenLocked() {
-        Log.sm.debug("[SM] systemScreenLocked")
-        let isManualLock = !isSelfLocking
-        if isSelfLocking {
-            // FUnlock 自动锁屏，不标记为手动锁定
-            isSelfLocking = false
-            state.intent = .autoLock
-        } else {
-            // 用户手动锁屏（⌘+Ctrl+Q 等）→ 永久阻止自动解锁，直到手动解锁
-            state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
-        }
+    func lockNow() {
+        guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
+        // 手动锁定：永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
+        state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
         state.screen = .locked(reason: .manual)
-        state.unlockedAt = Date(timeIntervalSince1970: 0)
-        lastLockTime = now
-        // 在 state.screen 更新后记录，保证诊断日志的屏幕状态为锁屏后的 .locked(manual)，
-        // 与 onUnlock 记录 userUnlocked 的时机语义一致
-        if isManualLock { recordUser(.userLocked) }
-    }
-
-    // MARK: - FUn 设备事件
-
-    func onDeviceApproached() {
-        let snap = fun.signalSnapshot()
-        // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
-        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
-        guard enabled else { return }
-        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { return }
-        let smoothed = snap.effectiveRSSI
-        lockLog("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
-        timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
-
-        // 清除锁屏通知
-        SystemInteractionService.shared.clearLockNotification()
-
-        // 阶梯唤醒：平滑信号达到 preWakeThreshold（-60dBm）时唤醒显示器
-        if state.screen == .displaySleeping
-            && prefs.bool(forKey: "wakeOnProximity")
-            && !displayWakeRequested
-            && smoothed >= Double(fun.preWakeThreshold) {
-            displayWakeRequested = true
-            startWakeRetry()
-        }
-
-        // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 才尝试解锁（-70~-60 为预热带，只唤醒不解锁）
-        if smoothed >= Double(fun.unlockRSSI) {
-            attemptAutoUnlock()
-        }
-    }
-
-    func onDeviceLeft(reason: String) {
-        let snap = fun.signalSnapshot()
-        // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
-        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
-        let screenState = state.screen
-        let lockDisabled = fun.lockRSSI == FUn.LOCK_DISABLED
-        lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", snap.effectiveRSSI))")
-        guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
-        guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
-        guard !lockDisabled else { lockLog("[LOCK] onDeviceLeft blocked: lock disabled"); return }
-        // 锁冷静期：解锁成功后短时间内（proximityGracePeriod=5s）信号再弱也不锁，
-        // 覆盖 lost 快速锁屏路径（3 次 BLE 超时 → markSignalLost），防止刚解锁又秒锁
-        guard !fun.isWithinLockGracePeriod() else {
-            lockLog("[LOCK] onDeviceLeft blocked: within unlock grace period")
-            return
-        }
-
-        displayWakeRequested = false
-        state.screen = .displaySleeping
         lastLockTime = now
         checkAndPauseMedia()
-        isSelfLocking = true
-        let sys = SystemInteractionService.shared
-        sys.lockOrSaveScreen(useScreensaver: prefs.bool(forKey: "screensaver"),
-                             sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
-        sys.notifyLock(reason: reason)
-        ScriptRunner.shared.runScript(reason, rssi: rssi, deviceName: monitoredDeviceName)
-        ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)
-        let lockReason: DecisionReason = (reason == "lost") ? .lockedLost : .lockedAway
-        recordLock(lockReason)
-        iMessageNotifier.shared.send(.locked(reason: reason, rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
-        // P3: 形子模式遥测 — 记录自动锁屏事件
-        TelemetryLogger.shared.log(
-            event: .autoLock,
-            deviceModel: monitoredDeviceName,
-            rawRSSI: rssi ?? -100,
-            kalmanRSSI: snap.kalmanEstimate,
-            effectiveRSSI: snap.effectiveRSSI,
-            slope: snap.smoothedSlope,
-            isAnomalous: snap.lastSignalAnomalous
-        )
-
-    }
-
-    func onRSSIUpdated(rssi: Int?, active: Bool) {
-        self.rssi = rssi
-
-        // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值）
-        if let rssi = rssi, !displayWakeRequested,
-           state.screen == .displaySleeping,
-           prefs.bool(forKey: "wakeOnProximity") {
-            let smoothed = fun.smoothedRSSI(rssi)
-            if smoothed >= Double(fun.preWakeThreshold) {
-                displayWakeRequested = true
-                Log.sm.debug("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")
-                startWakeRetry()
-            }
-        }
+        SystemInteractionService.shared.lockOrSaveScreen(
+            useScreensaver: prefs.bool(forKey: "screensaver"),
+            sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
     }
 
     // MARK: - 设备发现
@@ -524,312 +224,9 @@ final class FUnManager: ObservableObject {
         connected = false
     }
 
-    // MARK: - 用户操作
-
-    func lockNow() {
-        guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
-        // 手动锁定：永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
-        state.screen = .locked(reason: .manual)
-        lastLockTime = now
-        checkAndPauseMedia()
-        SystemInteractionService.shared.lockOrSaveScreen(
-            useScreensaver: prefs.bool(forKey: "screensaver"),
-            sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
-    }
-
-    // MARK: - 注入前奏：解锁前置安全检查
-
-    /// 注入前奏：检查系统是否处于适合解锁的状态（系统休眠时禁止注入）
-    private func isSystemReadyForUnlock() -> Bool {
-        return state.system == .awake
-    }
-
-    // MARK: - 核心：自动解锁
-
-    func attemptAutoUnlock() {
-        let snap = fun.signalSnapshot()
-        let sys = SystemInteractionService.shared
-        let screenLocked = sys.isScreenLocked(screenState: state.screen)
-        timingLog("attemptAutoUnlock | presence=\(snap.presence) screen=\(state.screen) system=\(state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
-        Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(self.state.screen) wakeWO=\(self.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked)")
-        guard snap.presence else { Log.sm.info("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
-        guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.info("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
-        // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
-        // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
-        guard snap.effectiveRSSI >= Double(fun.unlockRSSI) else {
-            Log.sm.debug("SKIP: signal below unlock threshold (\(String(format: "%.1f", snap.effectiveRSSI)))")
-            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", snap.effectiveRSSI)) unlock=\(fun.unlockRSSI)")
-            recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm 低于解锁阈值 \(self.fun.unlockRSSI) dBm")
-            return
-        }
-        // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard stateMachine.canAttemptUnlock else { Log.sm.info("SKIP: state machine not ready (degraded/cooldown)"); timingLog("SKIP stateMachineBlocked"); recordUnlock(reason: .stateMachineBlocked); return }
-
-        // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
-        let sinceLock = now.timeIntervalSince(lastLockTime)
-        guard sinceLock >= lockBufferDuration else {
-            Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
-            timingLog("SKIP lockBufferActive sinceLock=\(String(format: "%.1f", sinceLock))s")
-            recordUnlock(reason: .lockBufferActive, detail: "\(String(format: "%.1f", sinceLock)) 秒前已锁定")
-            return
-        }
-
-        // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
-        if isUnlockCooldownActive() {
-            Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime)))s since last unlock)")
-            timingLog("SKIP unlockCooldownActive sinceUnlock=\(String(format: "%.1f", now.timeIntervalSince(lastUnlockTime)))s")
-            recordUnlock(reason: .unlockCooldownActive, detail: "距上次解锁 \(String(format: "%.1f", self.now.timeIntervalSince(self.lastUnlockTime))) 秒")
-            return
-        }
-
-        // Wi-Fi SSID 暂停：连接指定 Wi-Fi 时跳过自动解锁
-        if prefs.bool(forKey: "pauseOnWiFi") {
-            let targetSSID = prefs.string(forKey: "pauseOnWiFiSSID") ?? ""
-            if !targetSSID.isEmpty, let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
-                Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
-                recordUnlock(reason: .wifiPaused, detail: "WiFi '\(targetSSID)'")
-                return
-            }
-        }
-        // #5: 手动锁屏后不自动解锁（deadline 语义已含 60s/24h 区分，不依赖键是否缺失）
-        if state.intent.isManualLockActive {
-            Log.sm.debug("SKIP: manualLock active, waiting for manual unlock")
-            recordUnlockThrottled(.manualLockActive)
-            return
-        }
-        // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务
-        // 注入前奏：系统休眠中不注入密码
-        if state.screen == .displaySleeping && state.system == .awake
-            && prefs.bool(forKey: "wakeOnProximity")
-            && isSystemReadyForUnlock() {
-            Log.sm.debug("starting parallel wake + unlock")
-            timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", snap.effectiveRSSI))")
-            startWakeRetry()
-            // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
-            if snap.effectiveRSSI >= Double(fun.unlockRSSI) {
-                // 并行：等 0.8s 后尝试解锁，不等唤醒完成
-                unlockTask?.cancel()
-                unlockTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
-                    guard !Task.isCancelled else { return }
-                    guard let self else { return }
-                    timingLog("parallel unlock task fired after 0.8s")
-                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); recordUnlock(reason: .systemNotReady); return }
-                    self.tryUnlock()
-                }
-            } else {
-                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", snap.effectiveRSSI)) < unlockRSSI=\(self.fun.unlockRSSI)")
-            }
-            return
-        }
-
-        guard !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); timingLog("SKIP wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
-        guard self.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); timingLog("SKIP stillDisplaySleeping"); recordUnlock(reason: .displaySleeping); return }
-
-        // 屏幕已解锁：无需尝试解锁，直接早退，避免每轮 RSSI 轮询走到 guardFetchPassword 刷 screenNotLocked 噪音日志
-        // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
-        guard screenLocked else { Log.sm.debug("SKIP: screen already unlocked"); return }
-
-        // 屏幕已锁定等 0.3s
-        let delay: UInt64 = 300_000_000
-        unlockTask?.cancel()
-        unlockTask = Task { @MainActor in
-            Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
-            timingLog("delayed unlock task started | sleep 0.3s")
-            try? await Task.sleep(nanoseconds: UInt64(delay))
-            guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); timingLog("delayed unlock task cancelled"); return }
-            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); timingLog("SKIP systemNotReady in delayed task"); recordUnlock(reason: .systemNotReady); return }
-            Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
-            timingLog("delayed unlock task fired | tryUnlock")
-            self.tryUnlock()
-        }
-    }
-
-    // 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
-    private func tryUnlock() {
-        timingLog("tryUnlock enter")
-        guard let password = guardFetchPassword() else { return }
-        performInjectionAndVerify(password: password)
-    }
-
-    /// 前置门控 + 密码获取：任一检查失败即记录原因并返回 nil
-    private func guardFetchPassword() -> String? {
-        let sys = SystemInteractionService.shared
-        let sec = SecurityService.shared
-        let locked = sys.isScreenLocked(screenState: state.screen)
-        timingLog("guardFetchPassword | locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
-        logDebug(component: "FUnManager", "tryUnlock() START - screen=\(state.screen), locked=\(locked)")
-        Log.sm.debug("screen locked check: \(locked)")
-        guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
-
-        // 状态机门控：通过状态机确认解锁冷却和降级状态
-        let smAllowed = stateMachine.attemptUnlock()
-        guard smAllowed else { Log.sm.info("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return nil }
-
-        let sinceUnlock = now.timeIntervalSince1970 - state.unlockedAt.timeIntervalSince1970
-        guard sinceUnlock > 3 else {
-            Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
-            recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock)) 秒前解锁过")
-            return nil
-        }
-        let fetchResult = sec.fetchPassword(warn: true)
-        guard case .success(let password) = fetchResult, let password = password else {
-            if case .failure(let error) = fetchResult {
-                Log.sm.debug("SKIP: Keychain error - \(error)")
-                recordUnlock(reason: .keychainColdBoot, detail: "\(error)")
-            } else {
-                Log.sm.debug("SKIP: no password")
-                recordUnlock(reason: .noPassword)
-            }
-            return nil
-        }
-        logDebug(component: "FUnManager", "tryUnlock() password fetched")
-
-        // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
-        let secure = sys.isSecureToInject(screenState: state.screen)
-        logDebug(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(state.screen)")
-        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); return nil }
-        return password
-    }
-
-    /// 密码注入 + 乐观确认 + 双保险验证
-    private func performInjectionAndVerify(password: String) {
-        let sys = SystemInteractionService.shared
-        let snap = fun.signalSnapshot()
-        timingLog("performInjectionAndVerify | injecting password")
-        Log.sm.debug("typing password with Shift prelude")
-        self.state.unlockedAt = now
-        self.lastUnlockTime = now
-        // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
-        self.isAutoUnlocking = true
-        logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude")
-        let posted = sys.injectPasswordWithPrelude(password) {
-            self.state.screen != .unlocked
-            && sys.isSecureToInject(screenState: self.state.screen)
-        }
-        logDebug(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
-        Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
-        if !posted {
-            Log.sm.error("WARN: CGEvent post failed — Accessibility permission likely revoked")
-            // 注入失败，本次不算自动解锁，立即复位标记
-            self.isAutoUnlocking = false
-            recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
-            sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
-        } else {
-            Log.sm.debug("unlock attempt posted, waiting for dual verification")
-            // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
-            // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
-            Task { @MainActor [weak self] in
-                let sys = SystemInteractionService.shared
-                let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
-                guard let self else { return }
-                timingLog("verifyUnlock done | unlock=\(verification.unlock)")
-                // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
-                defer { self.isAutoUnlocking = false }
-                if verification.unlock {
-                    // 通知或 CGSession 确认解锁成功
-                    Log.sm.debug("dual verify: unlock confirmed")
-                    self.consecutiveUnlockAttempts = 0
-                    logDebug(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
-                    recordUnlock(.success, reason: .unlockSuccess)
-                    iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
-                    resumeMediaIfNeeded()
-                    ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: rssi, extraFields: self.unlockEventExtras(result: "success"))
-                    ScriptRunner.shared.runScript("unlocked", rssi: rssi, deviceName: monitoredDeviceName)
-                    ScriptRunner.shared.logEvent("unlocked", rssi: rssi)
-                    TelemetryLogger.shared.log(
-                        event: .autoUnlock,
-                        deviceModel: monitoredDeviceName,
-                        rawRSSI: rssi ?? -100,
-                        kalmanRSSI: snap.kalmanEstimate,
-                        effectiveRSSI: snap.effectiveRSSI,
-                        slope: snap.smoothedSlope,
-                        isAnomalous: snap.lastSignalAnomalous
-                    )
-                    Log.sm.debug("unlock complete")
-                    // 状态机在 @MainActor 上串行更新（本 Task 已标注 @MainActor），无需再包 Task
-                    self.stateMachine.handleUnlockSuccess()
-                } else {
-                    // 通知和 CGSession 都未确认解锁 → 可能密码错误
-                    let stillLocked = sys.isScreenLocked(screenState: self.state.screen)
-                    if stillLocked {
-                        self.consecutiveUnlockAttempts += 1
-                        self.recordUnlockAttempt()
-                        Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
-                        logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        self.stateMachine.handleUnlockFailure()
-                        let failExtras = self.unlockEventExtras(result: "fail")
-                        ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.rssi, extraFields: failExtras)
-                        logDebug(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
-                        if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
-                            recordUnlock(.blocked, reason: .passwordMismatch, detail: "失败次数过多")
-                            sys.showPasswordMismatchAlert()
-                            self.consecutiveUnlockAttempts = 0
-                        }
-                    } else {
-                        // CGSession 也显示已解锁（竞态下可能延迟发现）
-                        Log.sm.debug("dual verify: timeout but CGSession says unlocked")
-                        self.consecutiveUnlockAttempts = 0
-                        logDebug(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
-                        self.stateMachine.handleUnlockSuccess()
-                    }
-                }
-            }
-        }
-    }
-
-    /// 解锁事件扩展字段（乐观确认 / 双保险验证共用）
-    private func unlockEventExtras(result: String) -> [String: String] {
-        let snap = fun.signalSnapshot()
-        return [
-            "result": result,
-            "latencyMs": "0",
-            "source": "proximity",
-            "effectiveRSSI": String(format: "%.1f", snap.effectiveRSSI),
-            "device": monitoredDeviceName ?? "unknown"
-        ]
-    }
-
-    // MARK: - 显示器唤醒重试 (async/await 替代 Timer)
-
-    private func startWakeRetry() {
-        state.wake = .pending
-        state.screen = .locked(reason: .away)
-        timingLog("startWakeRetry begin")
-
-        wakeTask?.cancel()
-        wakeTask = Task { @MainActor in
-            // defer 兜底：无论取消/成功/失败，都释放 wake assertion 并复位唤醒请求标记，
-            // 防止 assertion 泄漏（显示器无法自动熄屏）与 displayWakeRequested 卡死（唤醒功能失效）
-            defer {
-                funlock_releaseWakeAssertion()
-                self.displayWakeRequested = false
-            }
-            for attempt in 0..<10 {
-                guard !Task.isCancelled else { return }
-                funlock_wakeDisplay()
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
-                timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.state.screen))")
-                // wakeDisplay() 不一定触发 screensDidWakeNotification，
-                // 直接检测屏幕是否已解锁
-                if state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) {
-                    state.wake = .succeeded
-                    timingLog("wake succeeded")
-                    self.attemptAutoUnlock()
-                    return
-                }
-            }
-            state.wake = .failed
-            timingLog("wake failed after 10 retries")
-            self.attemptAutoUnlock()
-        }
-    }
-
     // MARK: - Now Playing（委托 SystemInteractionService）
 
-    private func checkAndPauseMedia() {
+    func checkAndPauseMedia() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
         state.media = .idle
         SystemInteractionService.shared.checkAndPauseMedia(enabled: true) { [weak self] playing in
@@ -838,7 +235,7 @@ final class FUnManager: ObservableObject {
         }
     }
 
-    private func resumeMediaIfNeeded() {
+    func resumeMediaIfNeeded() {
         guard prefs.bool(forKey: "pauseItunes") else { return }
         guard state.media == .wasPlaying else { return }
         SystemInteractionService.shared.resumeMediaIfNeeded(wasPlaying: mediaWasPlaying, enabled: true)
@@ -869,46 +266,8 @@ final class FUnManager: ObservableObject {
             self.fun.invalidateAllDeviceTimers()
             funlock_releaseWakeAssertion()
         }
-        wakeTask?.cancel()
-        unlockTask?.cancel()
+        orchestrator.cancelPendingTasks()
         intrudeCheckTask?.cancel()
-    }
-
-    // MARK: - UI 辅助
-
-    /// 记录一次解锁尝试（失败时调用），滑动窗口检测异常频率
-    private func recordUnlockAttempt() {
-        let now = Date()
-        let snap = fun.signalSnapshot()
-        unlockAttemptTimestamps.append(now)
-        // 清理窗口外的记录
-        unlockAttemptTimestamps = unlockAttemptTimestamps.filter {
-            now.timeIntervalSince($0) < detectionWindow
-        }
-        // 检测异常：窗口内失败次数达到阈值
-        if unlockAttemptTimestamps.count >= maxAttemptsInWindow {
-            let timeSinceLastAlert = now.timeIntervalSince(lastAbnormalAlertTime)
-            if timeSinceLastAlert > 3600 {  // 1小时内最多告警一次
-                SystemInteractionService.shared.showAbnormalUnlockAlert(
-                    count: unlockAttemptTimestamps.count, window: Int(detectionWindow))
-                // P3: 形子模式遥测 — 记录异常解锁告警
-                TelemetryLogger.shared.log(
-                    event: .abnormalAlert,
-                    deviceModel: self.monitoredDeviceName,
-                    rawRSSI: self.rssi ?? -100,
-                    kalmanRSSI: snap.kalmanEstimate,
-                    effectiveRSSI: snap.effectiveRSSI,
-                    slope: snap.smoothedSlope,
-                    isAnomalous: true
-                )
-                lastAbnormalAlertTime = now
-            }
-        }
-    }
-
-    /// 成功解锁后清除失败记录
-    private func recordUnlockSuccess() {
-        unlockAttemptTimestamps.removeAll()
     }
 
     // MARK: - 冷却与缓冲检查
@@ -931,4 +290,3 @@ final class FUnManager: ObservableObject {
         connected = newValue
     }
 }
-

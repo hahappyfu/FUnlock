@@ -72,6 +72,10 @@
 		BP0000020000000100000001 /* BLEPeripheralHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BP0000010000000100000001 /* BLEPeripheralHandler.swift */; };
 		LC0000020000000100000001 /* FUnLockCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = LC0000010000000100000001 /* FUnLockCoordinator.swift */; };
 		SP0000020000000100000001 /* FUnSignalProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000010000000100000001 /* FUnSignalProcessor.swift */; };
+		LS0000020000000100000001 /* LockScreenState.swift in Sources */ = {isa = PBXBuildFile; fileRef = LS0000010000000100000001 /* LockScreenState.swift */; };
+		FM0000020000000100000001 /* FUnManager+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = FM0000010000000100000001 /* FUnManager+Events.swift */; };
+		UO0000020000000100000001 /* UnlockOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = UO0000010000000100000001 /* UnlockOrchestrator.swift */; };
+		UA0000020000000100000001 /* UnlockOrchestrator+AutoUnlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -164,6 +168,10 @@
 		BP0000010000000100000001 /* BLEPeripheralHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEPeripheralHandler.swift; sourceTree = "<group>"; };
 		LC0000010000000100000001 /* FUnLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnLockCoordinator.swift; sourceTree = "<group>"; };
 		SP0000010000000100000001 /* FUnSignalProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnSignalProcessor.swift; sourceTree = "<group>"; };
+		LS0000010000000100000001 /* LockScreenState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenState.swift; sourceTree = "<group>"; };
+		FM0000010000000100000001 /* FUnManager+Events.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FUnManager+Events.swift"; sourceTree = "<group>"; };
+		UO0000010000000100000001 /* UnlockOrchestrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockOrchestrator.swift; sourceTree = "<group>"; };
+		UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UnlockOrchestrator+AutoUnlock.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -259,6 +267,10 @@
 				BP0000010000000100000001 /* BLEPeripheralHandler.swift */,
 				LC0000010000000100000001 /* FUnLockCoordinator.swift */,
 				SP0000010000000100000001 /* FUnSignalProcessor.swift */,
+				LS0000010000000100000001 /* LockScreenState.swift */,
+				FM0000010000000100000001 /* FUnManager+Events.swift */,
+				UO0000010000000100000001 /* UnlockOrchestrator.swift */,
+				UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -469,6 +481,10 @@
 				BP0000020000000100000001 /* BLEPeripheralHandler.swift in Sources */,
 				LC0000020000000100000001 /* FUnLockCoordinator.swift in Sources */,
 				SP0000020000000100000001 /* FUnSignalProcessor.swift in Sources */,
+				LS0000020000000100000001 /* LockScreenState.swift in Sources */,
+				FM0000020000000100000001 /* FUnManager+Events.swift in Sources */,
+				UO0000020000000100000001 /* UnlockOrchestrator.swift in Sources */,
+				UA0000020000000100000001 /* UnlockOrchestrator+AutoUnlock.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
