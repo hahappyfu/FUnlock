@@ -71,8 +71,8 @@ protocol FUnDelegate: AnyObject {
 /// - Timer 操作与 `@Published`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
 /// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
 class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate, @unchecked Sendable {
-    static let UNLOCK_DISABLED = 1
-    static let LOCK_DISABLED = -100
+    static let UNLOCK_DISABLED = SignalHysteresisEngine.unlockDisabled
+    static let LOCK_DISABLED = SignalHysteresisEngine.lockDisabled
     let bleQueue = DispatchQueue(label: "com.funlock.ble")
     private let lock = UnfairLock()
     var centralMgr : CBCentralManager!
@@ -109,24 +109,19 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     private let smoothedRSSIAlpha: Double = 0.3
     // MARK: 阶梯唤醒阈值（由解锁阈值 - 用户偏移派生）
     /// 默认唤醒提前量（dB）
-    static let defaultWakeAdvance = 20
+    static let defaultWakeAdvance = SignalHysteresisEngine.defaultWakeAdvance
     /// 默认预解锁触发量（dB）
-    static let defaultPreUnlockTrigger = 10
+    static let defaultPreUnlockTrigger = SignalHysteresisEngine.defaultPreUnlockTrigger
     /// 偏移量允许范围（dB）
-    static let offsetRange = 0...20
+    static let offsetRange = SignalHysteresisEngine.offsetRange
     /// 将偏移量钳制到允许范围（UI 可能输入越界值）
     static func clampOffset(_ value: Int) -> Int {
-        min(max(value, offsetRange.lowerBound), offsetRange.upperBound)
-    }
-    /// 读取偏移设置，越界/缺失时回退默认值
-    private static func offsetSetting(_ key: String, default dft: Int) -> Int {
-        let value = ConfigStore.shared.object(forKey: key) as? Int ?? dft
-        return clampOffset(value)
+        SignalHysteresisEngine.clampOffset(value)
     }
     /// 预备唤醒阈值（dBm）：解锁阈值往更远方向提前 wakeAdvance（UI 可填，默认 20）
     var preWakeThreshold: Int {
         guard unlockRSSI != Self.UNLOCK_DISABLED else { return unlockRSSI }
-        let advance = Self.offsetSetting("wakeAdvance", default: Self.defaultWakeAdvance)
+        let advance = SignalHysteresisEngine.offsetSetting("wakeAdvance", default: Self.defaultWakeAdvance)
         return unlockRSSI - advance
     }
     /// 预解锁触发阈值（dBm）：解锁阈值往更远方向提前 preUnlockTrigger（UI 可填，默认 10），
@@ -134,7 +129,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     /// 真正解锁由信号达到 unlockRSSI 决定
     var unlockStairThreshold: Int {
         guard unlockRSSI != Self.UNLOCK_DISABLED else { return unlockRSSI }
-        let trigger = Self.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
+        let trigger = SignalHysteresisEngine.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
         return unlockRSSI - trigger
     }
     var lastReceiveTime: Date = Date()
@@ -519,7 +514,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     /// 是否处于锁冷静期（距最近解锁/靠近 < proximityGracePeriod）
     func isWithinLockGracePeriod(now: Date = Date()) -> Bool {
         let last = lock.withLock { lastProximityEventTime }
-        return now.timeIntervalSince(last) < proximityGracePeriod
+        return SignalHysteresisEngine.isWithinLockGracePeriod(
+            lastUnlockTime: last, gracePeriod: proximityGracePeriod, now: now)
     }
 
     func invalidateAllTimers() {
@@ -555,19 +551,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     /// 方案 C：按下降斜率计算锁屏超时 —— 陡降（slope ≤ -fastSlopeThreshold）→ fastLockTimeout；
     /// 缓降/平稳（slope ≥ -mildSlopeThreshold）→ base；中间线性插值
     static func lockTimeout(slope: Double, base: TimeInterval = 5.0) -> TimeInterval {
-        if slope <= -fastSlopeThreshold {
-            return fastLockTimeout
-        } else if slope >= -mildSlopeThreshold {
-            return base
-        } else {
-            let t = (-slope - mildSlopeThreshold) / (fastSlopeThreshold - mildSlopeThreshold)
-            return fastLockTimeout + (base - fastLockTimeout) * t
-        }
+        SignalHysteresisEngine.lockTimeout(slope: slope, base: base)
     }
 
     /// 方案 A：信号是否处于接近窗口（有效信号进入 [threshold-window, threshold)）
     static func isNearThreshold(_ effectiveRSSI: Double, threshold: Double) -> Bool {
-        effectiveRSSI >= threshold - proximityPollWindow && effectiveRSSI < threshold
+        SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: threshold)
     }
 
     private func startLockTimer() {
@@ -637,7 +626,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         checkProximity(rssi: rssi, effectiveRSSI: decision.effectiveRSSI)
 
         // 4. 锁定决策（基于 effectiveRSSI）
-        applyLockTimer(effectiveRSSI: decision.effectiveRSSI)
+        applyLockTimer(rssi: rssi, effectiveRSSI: decision.effectiveRSSI)
 
         // 5. 心跳 + 信号超时
         ensureHeartbeat()
@@ -706,22 +695,23 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func checkProximity(rssi: Int, effectiveRSSI: Double) {
-        let unlockThreshold = unlockRSSI == Self.UNLOCK_DISABLED ? lockRSSI : unlockRSSI
         // 用 effectiveRSSI（与 applyLockTimer 同源）判断解锁，避免原始 RSSI 尖峰导致振荡
-        let signal = effectiveRSSI
+        let decision = SignalHysteresisEngine.checkProximity(
+            rssi: Double(rssi), effectiveRSSI: effectiveRSSI,
+            unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
         var shouldNotifyClose = false
 
         // 调试日志：追踪 presence 判断条件
         let debugInfo: (isMonitored: Bool, presence: Bool, uuidCount: Int) = lock.withLock {
             (monitoredUUID != nil, presence, monitoredUUIDs.count)
         }
-        throttledBleLog("checkProximity", interval: 1.0, "[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", signal)) threshold=\(unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
+        throttledBleLog("checkProximity", interval: 1.0, "[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", effectiveRSSI)) threshold=\(decision.unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
 
         let dispRSSI: Double = lock.withLock {
             let disp = displayRSSI
             let wasPresent = presence
-            if signal >= Double(unlockThreshold) && !wasPresent {
-                Log.sm.debug("Device is close (eff=\(String(format: "%.1f", signal)))")
+            if decision.isClose && !wasPresent {
+                Log.sm.debug("Device is close (eff=\(String(format: "%.1f", effectiveRSSI)))")
                 presence = true
                 shouldNotifyClose = true
                 lastProximityEventTime = Date()
@@ -732,7 +722,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         let activeMode = lock.withLock { activeModeTimer != nil }
 
-        if signal >= Double(unlockThreshold) {
+        if decision.isClose {
             if shouldNotifyClose {
                 // P1: 记录解锁事件
                 SignalDataStore.shared.record(
@@ -754,9 +744,12 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    private func applyLockTimer(effectiveRSSI: Double) {
-        let threshold = Double(lockRSSI == Self.LOCK_DISABLED ? unlockRSSI : lockRSSI)
-        if effectiveRSSI >= threshold {
+    private func applyLockTimer(rssi: Int, effectiveRSSI: Double) {
+        let decision = SignalHysteresisEngine.checkProximity(
+            rssi: Double(rssi), effectiveRSSI: effectiveRSSI,
+            unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
+        let threshold = Double(decision.lockThreshold)
+        if !decision.isAway {
             lock.withLock {
                 proximityTimer?.invalidate()
                 proximityTimer = nil
@@ -766,9 +759,13 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             lockLog("[LOCK] applyLockTimer eff=\(String(format: "%.1f", effectiveRSSI)) threshold=\(Int(threshold)) presence=\(curPresence) hasTimer=\(curTimer != nil)")
             if curPresence && curTimer == nil {
                 // 冷静期：刚解锁后不立即触发锁定，防止 effectiveRSSI 衰减导致振荡
-                let elapsed = Date().timeIntervalSince(lastProximityEventTime)
+                let lastUnlock = lastProximityEventTime
+                let now = Date()
+                let elapsed = now.timeIntervalSince(lastUnlock)
                 lockLog("[LOCK] graceElapsed=\(String(format: "%.1f", elapsed))s gracePeriod=\(self.proximityGracePeriod)s")
-                if elapsed < self.proximityGracePeriod {
+                if SignalHysteresisEngine.isWithinLockGracePeriod(
+                    lastUnlockTime: lastUnlock,
+                    gracePeriod: self.proximityGracePeriod, now: now) {
                     lockLog("[LOCK] BLOCKED by proximityGracePeriod")
                     Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
                     return
