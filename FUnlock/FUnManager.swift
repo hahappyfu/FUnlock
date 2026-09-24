@@ -1,12 +1,12 @@
 // FUnManager.swift
-// 状态中枢：收编所有锁屏/解锁状态、Combine 发布与系统事件分发入口。
+// 状态中枢：收编所有锁屏/解锁状态、@Observable 响应式发布与系统事件分发入口。
 // 解锁流水线（门控 → 密码获取 → 注入 → 双保险验证 → 唤醒重试）已抽取为
 // UnlockOrchestrator（本类持有并委托）；系统事件与 FUn 设备事件的监听入口
 // 见 FUnManager+Events.swift；领域状态类型见 LockScreenState.swift。
-// 使用 Combine 暴露状态，async/await 替代 Timer。
+// 使用 Observation 宏暴露状态，async/await 替代 Timer。
 
 import Foundation
-import Combine
+import Observation
 import Cocoa
 
 // MARK: - FUnManager
@@ -14,19 +14,20 @@ import Cocoa
 /// 全类 @MainActor 隔离：所有状态变更、`stateMachine`（@MainActor）交互与解锁注入
 /// 都在主线程串行执行。解锁注入/验证路径由 `orchestrator`（@MainActor）承载，
 /// 延迟/并行 `Task` 闭包显式标注 `@MainActor`，不依赖 `Task` 隐式继承 actor 上下文的实现细节。
+@Observable
 @MainActor
-final class FUnManager: ObservableObject {
+final class FUnManager {
 
-    // MARK: Published state
+    // MARK: Observable state
 
-    @Published var state = LockScreenState()
-    @Published var rssi: Int? = nil
-    @Published var connected: Bool = false
-    @Published var discoveredDevices: [Device] = []
-    @Published var monitoredDeviceName: String? = nil
-    @Published var lockRSSI: Int = -80
-    @Published var unlockRSSI: Int = -60
-    @Published var thresholdVersion: Int = 0
+    var state = LockScreenState()
+    var rssi: Int? = nil
+    var connected: Bool = false
+    var discoveredDevices: [Device] = []
+    var monitoredDeviceName: String? = nil
+    var lockRSSI: Int = -80
+    var unlockRSSI: Int = -60
+    var thresholdVersion: Int = 0
 
     // MARK: Dependencies
 
@@ -37,9 +38,11 @@ final class FUnManager: ObservableObject {
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
     private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
     private let downloader = UpdateDownloader()
-    @Published private(set) var updateState: UpdateDownloader.State = .idle
+    private(set) var updateState: UpdateDownloader.State = .idle
     let prefs = ConfigStore.shared.defaults
-    var intrudeCheckTask: Task<Void, Never>?
+    /// 后台探测任务的取消句柄，纯内部簿记状态，不参与视图渲染，
+    /// 且需在非隔离的 `deinit` 中访问，故显式排除在 @Observable 跟踪之外。
+    @ObservationIgnored var intrudeCheckTask: Task<Void, Never>?
     private var mediaWasPlaying = false
 
     /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
@@ -184,8 +187,8 @@ final class FUnManager: ObservableObject {
 
     func onDeviceUpdated(_ device: Device) {
         if let idx = discoveredDevices.firstIndex(where: { $0.uuid == device.uuid }) {
-            // Trigger @Published manually for in-place NSObject mutation
-            objectWillChange.send()
+            // Device 为引用类型，就地改字段不会触发 @Observable 通知；
+            // discoveredDevices 当前唯一消费方（OverviewView.startScan）靠 Timer 主动轮询，不依赖该通知。
             discoveredDevices[idx].rssi = device.rssi
             discoveredDevices[idx].manufacture = device.manufacture
             discoveredDevices[idx].model = device.model

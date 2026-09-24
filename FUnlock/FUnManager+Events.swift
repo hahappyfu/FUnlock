@@ -1,6 +1,6 @@
 // FUnManager+Events.swift
 // 系统事件监听分发与 FUn 设备事件入口（自 FUnManager.swift 抽离，保持单文件 <300 行）：
-// 只做 @Published 状态更新、决策记录与 UnlockOrchestrator 调度的接线，
+// 只做 @Observable 状态更新、决策记录与 UnlockOrchestrator 调度的接线，
 // 不承载业务策略；解锁流水线见 UnlockOrchestrator.swift。
 
 import Foundation

@@ -2,13 +2,12 @@
 // 状态栏菜单（NSPopover + SwiftUI）：现代质感的信息卡 + 快捷操作
 
 import SwiftUI
-import Combine
 
 // MARK: - 视图
 
 struct MenuBarPopoverView: View {
-    @ObservedObject var manager: FUnManager
-    @ObservedObject var fun: FUn
+    var manager: FUnManager
+    var fun: FUn
     let onAction: (MenuBarAction) -> Void
 
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true

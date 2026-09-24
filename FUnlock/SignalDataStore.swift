@@ -1,8 +1,9 @@
 // SignalDataStore.swift
-// 信号采样数据仓库：环形缓冲 + Combine 节流驱动 UI
+// 信号采样数据仓库：环形缓冲 + Combine 节流喂给 @Observable 快照属性，驱动 UI
 
 import Foundation
 import Combine
+import Observation
 
 /// 单个采样点
 struct SignalSample: Identifiable {
@@ -17,8 +18,9 @@ struct SignalSample: Identifiable {
 }
 
 /// 全局信号数据仓库
-/// @unchecked Sendable 依据：ring 由 NSLock 保护，@Published 属性仅主线程读写
-final class SignalDataStore: ObservableObject, @unchecked Sendable {
+/// @unchecked Sendable 依据：ring 由 NSLock 保护，@Observable 跟踪属性仅主线程读写
+@Observable
+final class SignalDataStore: @unchecked Sendable {
     static let shared = SignalDataStore()
 
     /// 底层环形缓冲（高频写入，不触发 UI）
@@ -28,14 +30,14 @@ final class SignalDataStore: ObservableObject, @unchecked Sendable {
     private let lock = NSLock()
 
     /// 节流后暴露给 UI 的快照（~1 秒刷新一次）
-    @Published private(set) var samples: [SignalSample] = []
+    private(set) var samples: [SignalSample] = []
 
     private var cancellable: AnyCancellable?
     private let uiThrottle: TimeInterval = 1.0
 
     /// 阈值参考线数据（由 FUn 设置后保持不变）
-    @Published var unlockThreshold: Double = -60
-    @Published var lockThreshold: Double = -80
+    var unlockThreshold: Double = -60
+    var lockThreshold: Double = -80
 
     private init() {
         // 底层 ring 变化 → 节流 → 批量更新 samples
@@ -74,7 +76,7 @@ final class SignalDataStore: ObservableObject, @unchecked Sendable {
         lock.unlock()
     }
 
-    /// 清空所有数据（UI @Published 更新在主线程执行）
+    /// 清空所有数据（UI 快照更新在主线程执行）
     @MainActor
     func clear() {
         lock.lock()

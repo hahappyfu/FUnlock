@@ -3,8 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ConfigSettingsView: View {
-    @ObservedObject var manager: FUnManager
-    @StateObject private var profileManager = ProfileManager.shared
+    var manager: FUnManager
+    @State private var profileManager = ProfileManager.shared
 
     @State private var showAddProfile = false
     @State private var showDeleteProfile = false

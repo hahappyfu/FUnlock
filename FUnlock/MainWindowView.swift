@@ -32,8 +32,8 @@ enum MenuTab: String, CaseIterable {
 }
 
 struct MainWindowView: View {
-    @ObservedObject var manager: FUnManager
-    @ObservedObject var fun: FUn
+    var manager: FUnManager
+    var fun: FUn
 
     @State private var selectedTab: MenuTab = .overview
     @State private var showCalibration = false
@@ -117,7 +117,7 @@ struct MainWindowView: View {
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
             refreshPermissions()
         }
-        .onReceive(manager.$connected) { connected in
+        .onChange(of: manager.connected) { connected in
             guard let prev = previousConnected, prev != connected else {
                 previousConnected = connected
                 return

@@ -2,7 +2,6 @@
 // 信号诊断仪表盘 — P1 可观测性升级
 
 import SwiftUI
-import Combine
 
 // MARK: - 图表模式
 
@@ -15,8 +14,8 @@ enum ChartMode: String, CaseIterable {
 
 struct StatsView: View {
     @Binding var isPresented: Bool
-    @ObservedObject private var dataStore = SignalDataStore.shared
-    @ObservedObject private var logger = DecisionLogger.shared
+    private var dataStore = SignalDataStore.shared
+    private var logger = DecisionLogger.shared
 
     @State private var chartMode: ChartMode = .signal
 

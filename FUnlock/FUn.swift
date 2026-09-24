@@ -1,6 +1,6 @@
 import Foundation
 @preconcurrency import CoreBluetooth
-import Combine
+import Observation
 import os
 
 func lockLog(_ msg: String) {
@@ -70,9 +70,10 @@ protocol FUnDelegate: AnyObject {
 ///   （devices / monitoredUUID / presence / pipeline 等）统一由 `lock`（UnfairLock）保护；
 ///   同一把 `lock` 传入 BLEScanner / BLEPeripheralHandler，三方在锁内直接读写共享字段
 ///   以保持 startMonitor / unbindAllState 等跨对象复位的原子性；
-/// - Timer 操作与 `@Published`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
+/// - Timer 操作与 `@Observable`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
 /// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
-class FUn: NSObject, ObservableObject, @unchecked Sendable, BLEScannerHost {
+@Observable
+class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     static let UNLOCK_DISABLED = SignalHysteresisEngine.unlockDisabled
     static let LOCK_DISABLED = SignalHysteresisEngine.lockDisabled
     let bleQueue = DispatchQueue(label: "com.funlock.ble")
@@ -96,8 +97,8 @@ class FUn: NSObject, ObservableObject, @unchecked Sendable, BLEScannerHost {
         set { scanner.monitoredUUID = newValue }
     }
     var presence = false
-    @Published var lockRSSI = -80
-    @Published var unlockRSSI = -60
+    var lockRSSI = -80
+    var unlockRSSI = -60
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
     private var powerWarn = true

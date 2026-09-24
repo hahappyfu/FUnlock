@@ -2,11 +2,10 @@
 // 总览页：信号盘 + 可视化阈值条 + 设备管理 + 快捷操作
 
 import SwiftUI
-import Combine
 
 struct OverviewView: View {
-    @ObservedObject var manager: FUnManager
-    @ObservedObject var fun: FUn
+    var manager: FUnManager
+    var fun: FUn
     @Binding var showCalibration: Bool
 
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
@@ -76,12 +75,12 @@ struct OverviewView: View {
             wakeAdvance = thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
             preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
         }
-        .onReceive(manager.$lockRSSI) { newValue in
+        .onChange(of: manager.lockRSSI) { newValue in
             if Int(sliderLock) != newValue && !isSliderDragging {
                 sliderLock = Double(newValue)
             }
         }
-        .onReceive(manager.$unlockRSSI) { newValue in
+        .onChange(of: manager.unlockRSSI) { newValue in
             let expected = (newValue == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
             if Int(sliderUnlock) != expected && !isSliderDragging {
                 sliderUnlock = Double(expected)

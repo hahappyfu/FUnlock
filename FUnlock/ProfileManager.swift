@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 struct Profile: Identifiable, Codable, Hashable {
     let id: String
@@ -10,12 +11,13 @@ struct Profile: Identifiable, Codable, Hashable {
     static let `default` = Profile(id: "default", name: "默认", lockRSSI: -80, unlockRSSI: -60, enabled: true)
 }
 
+@Observable
 @MainActor
-final class ProfileManager: ObservableObject {
+final class ProfileManager {
     static let shared = ProfileManager()
 
-    @Published var profiles: [Profile] = []
-    @Published var activeProfileID: String = "default"
+    var profiles: [Profile] = []
+    var activeProfileID: String = "default"
 
     private let profilesKey = "profiles"
     private let activeKey = "activeProfileID"

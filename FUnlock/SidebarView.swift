@@ -5,7 +5,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Binding var selectedTab: MenuTab
-    @ObservedObject var manager: FUnManager
+    var manager: FUnManager
 
     private enum SidebarGroup: String, CaseIterable {
         case common = "sidebar_group_common"

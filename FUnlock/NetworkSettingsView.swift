@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct NetworkSettingsView: View {
-    @ObservedObject var fun: FUn
+    var fun: FUn
     @AppStorage("pauseOnWiFi", store: ConfigStore.shared.defaults) private var pauseOnWiFi = false
     @AppStorage("pauseOnWiFiSSID", store: ConfigStore.shared.defaults) private var pauseOnWiFiSSID = ""
     @AppStorage("passiveMode", store: ConfigStore.shared.defaults) private var passiveMode = false

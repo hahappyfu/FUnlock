@@ -18,8 +18,8 @@ extension DecisionCategory {
 }
 
 struct DiagnosticsView: View {
-    @ObservedObject var manager: FUnManager
-    @ObservedObject var logger: DecisionLogger
+    var manager: FUnManager
+    var logger: DecisionLogger
     let onNavigate: (MenuTab) -> Void
 
     @State private var filter: DecisionCategory?

@@ -3,7 +3,7 @@
 // 内存环形缓冲 + JSON Lines 持久化，供「诊断」Tab 与后续数据驱动调参使用。
 
 import Foundation
-import Combine
+import Observation
 
 // MARK: - 事件模型
 
@@ -103,8 +103,9 @@ struct DecisionEvent: Codable, Equatable, Identifiable {
 
 // MARK: - 记录器
 
+@Observable
 @MainActor
-final class DecisionLogger: ObservableObject {
+final class DecisionLogger {
     static let shared = DecisionLogger()
 
     /// 内存环形缓冲容量
@@ -116,7 +117,7 @@ final class DecisionLogger: ObservableObject {
     /// 测试覆盖：非 nil 时读写该目录，避免污染用户真实决策日志
     var testLogDirectory: URL?
 
-    @Published private(set) var events: [DecisionEvent] = []
+    private(set) var events: [DecisionEvent] = []
 
     private var ring = RingBuffer<DecisionEvent>(capacity: DecisionLogger.capacity)
     private let queue = DispatchQueue(label: "com.funlock.decisions", qos: .utility)

@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct CalibrationWizardView: View {
-    @ObservedObject var manager: FUnManager
+    var manager: FUnManager
     @Binding var isPresented: Bool
 
     @State private var step = 0          // 0=欢迎, 1=解锁倒计时, 2=解锁采样, 3=锁定倒计时, 4=锁定采样, 5=结果
