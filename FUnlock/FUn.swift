@@ -1,5 +1,5 @@
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import Combine
 import os
 
@@ -7,21 +7,35 @@ func lockLog(_ msg: String) {
     logDebug(component: "Lock", msg)
 }
 
-private let bleLogThrottleLock = NSLock()
-private var bleLogLastTime: [String: Date] = [:]
+/// 日志节流器：内部锁保护时间戳字典，消除裸全局可变状态
+private final class BLELogThrottler: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastTime: [String: Date] = [:]
+
+    /// 距上次记录超过 interval 时返回 true 并更新时间戳
+    func shouldLog(key: String, interval: TimeInterval) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        if let last = lastTime[key], now.timeIntervalSince(last) < interval { return false }
+        lastTime[key] = now
+        return true
+    }
+}
+
+private let bleLogThrottler = BLELogThrottler()
 private func throttledBleLog(_ key: String, interval: TimeInterval = 1.0, _ msg: String) {
-    bleLogThrottleLock.lock()
-    defer { bleLogThrottleLock.unlock() }
-    let now = Date()
-    if let last = bleLogLastTime[key], now.timeIntervalSince(last) < interval { return }
-    bleLogLastTime[key] = now
+    guard bleLogThrottler.shouldLog(key: key, interval: interval) else { return }
     Log.ble.debug("\(msg)")
 }
 
-let DeviceInformation = CBUUID(string:"180A")
-let ManufacturerName = CBUUID(string:"2A29")
-let ModelName = CBUUID(string:"2A24")
-let ExposureNotification = CBUUID(string:"FD6F")
+/// BLE 服务/特征 UUID 命名空间
+enum BLEUUIDs {
+    static let deviceInformation = CBUUID(string: "180A")
+    static let manufacturerName = CBUUID(string: "2A29")
+    static let modelName = CBUUID(string: "2A24")
+    static let exposureNotification = CBUUID(string: "FD6F")
+}
 
 /// 接近阈值窗口（dBm）：有效信号进入 [threshold-window, threshold) 时启用快速轮询
 let proximityPollWindow = 15.0
@@ -935,7 +949,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
         if (scanMode) {
             if let uuids = advertisementData["kCBAdvDataServiceUUIDs"] as? [CBUUID] {
                 for uuid in uuids {
-                    if uuid == ExposureNotification {
+                    if uuid == BLEUUIDs.exposureNotification {
                         return
                     }
                 }
@@ -986,7 +1000,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     {
         peripheral.delegate = self
         if scanMode {
-            peripheral.discoverServices([DeviceInformation])
+            peripheral.discoverServices([BLEUUIDs.deviceInformation])
         }
         let shouldActivate: Bool = lock.withLock {
             peripheral == monitoredPeripheral && !passiveMode
@@ -1098,8 +1112,8 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
                     didDiscoverServices error: Error?) {
         if let services = peripheral.services {
             for service in services {
-                if service.uuid == DeviceInformation {
-                    peripheral.discoverCharacteristics([ManufacturerName, ModelName], for: service)
+                if service.uuid == BLEUUIDs.deviceInformation {
+                    peripheral.discoverCharacteristics([BLEUUIDs.manufacturerName, BLEUUIDs.modelName], for: service)
                 }
             }
         }
@@ -1111,7 +1125,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     {
         if let chars = service.characteristics {
             for chara in chars {
-                if chara.uuid == ManufacturerName || chara.uuid == ModelName {
+                if chara.uuid == BLEUUIDs.manufacturerName || chara.uuid == BLEUUIDs.modelName {
                     peripheral.readValue(for:chara)
                 }
             }
@@ -1126,13 +1140,13 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
             let str: String? = String(data: value, encoding: .utf8)
             if let s = str {
                 if let device = lock.withLock({ devices[peripheral.identifier] }) {
-                    if characteristic.uuid == ManufacturerName {
+                    if characteristic.uuid == BLEUUIDs.manufacturerName {
                         device.manufacture = s
                         DispatchQueue.main.async {
                             self.delegate?.updateDevice(device: device)
                         }
                     }
-                    if characteristic.uuid == ModelName {
+                    if characteristic.uuid == BLEUUIDs.modelName {
                         device.model = s
                         DispatchQueue.main.async {
                             self.delegate?.updateDevice(device: device)
@@ -1149,7 +1163,7 @@ class FUn: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDel
     func peripheral(_ peripheral: CBPeripheral,
                     didModifyServices invalidatedServices: [CBService])
     {
-        peripheral.discoverServices([DeviceInformation])
+        peripheral.discoverServices([BLEUUIDs.deviceInformation])
     }
     //MARK:CBPeripheralDelegate end -
 

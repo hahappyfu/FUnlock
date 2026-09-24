@@ -9,9 +9,9 @@ enum DebugLog {
     static var path: String { logFileURL.path }
 
     /// 测试覆盖：非 nil 时写该目录，避免污染用户真实日志
-    static var testLogDirectory: URL?
+    nonisolated(unsafe) static var testLogDirectory: URL?
     /// 单文件滚动上限（测试可调小）
-    static var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
+    nonisolated(unsafe) static var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
 
     static var logDirectory: URL {
         if let testDir = testLogDirectory { return testDir }
