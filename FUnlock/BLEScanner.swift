@@ -24,14 +24,7 @@ protocol BLEScannerHost: AnyObject {
 }
 
 /// BLE 中央管理器：扫描/设备列表生命周期与 CBCentralManager 代理。
-/// 外设连接与 RSSI 轮询（含 CBPeripheralDelegate）见 `BLEPeripheralHandler.swift`。
-/// 线程契约（@unchecked Sendable 依据）：
-/// - CoreBluetooth 回调与定时器回调严格运行在串行 `queue`（宿主传入的 bleQueue）上；
-/// - 跨线程共享状态（devices / monitoredUUID / monitoredPeripheral / thresholdRSSI / 扫描模式）
-///   统一由与宿主共享的 `lock`（UnfairLock）保护；宿主在锁内直接读写这些字段，
-///   以保持 startMonitor / unbindAllState 等跨对象复位的原子性；
-/// - Timer 操作与向 `bleDelegate` 的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程；
-/// - 信号滤波、在场/锁定判定与心跳状态机属于宿主（FUn），本类只负责采集与上报。
+/// 线程契约：CoreBluetooth 与定时器运行在 queue 上；共享状态由 lock 保护；向 bleDelegate 走 Task {@MainActor}。
 final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable {
     let queue: DispatchQueue
     let lock: UnfairLock
@@ -152,6 +145,14 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         for t in timers { t.invalidate() }
     }
 
+    /// 锁内按 id 取设备并转为不可变快照，供统一派发点复用
+    func snapshotLocked(for deviceId: UUID) -> DeviceSnapshot? {
+        lock.withLock {
+            guard let device = devices[deviceId] else { return nil }
+            return device.toSnapshot(isMonitored: monitoredUUID == deviceId)
+        }
+    }
+
     /// 设备发现超时计时器：超时后移除设备并通知宿主 UI
     func resetScanTimer(device: Device, timeout: TimeInterval) {
         device.scanTimer?.invalidate()
@@ -254,11 +255,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     let deviceId = peripheral.identifier
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
-                        let snapshot: DeviceSnapshot? = self.lock.withLock {
-                            guard let device = self.devices[deviceId] else { return nil }
-                            return device.toSnapshot(isMonitored: self.monitoredUUID == deviceId)
-                        }
-                        if let snapshot {
+                        if let snapshot = self.snapshotLocked(for: deviceId) {
                             self.host?.bleDelegate?.newDevice(device: snapshot)
                         }
                     }
@@ -277,16 +274,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     // 节流窗口内，只更新数据不派发 UI
                 } else {
                     lastUIUpdateTime[peripheral.identifier] = now
-                    // 闭包只捕获 peripheral.identifier（Sendable）；device 在闭包内按 id 锁内取值，
-                    // 并立刻转为不可变快照再派发，杜绝堆引用跨 Actor 共享
                     let deviceId = peripheral.identifier
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
-                        let snapshot: DeviceSnapshot? = self.lock.withLock {
-                            guard let device = self.devices[deviceId] else { return nil }
-                            return device.toSnapshot(isMonitored: self.monitoredUUID == deviceId)
-                        }
-                        if let snapshot {
+                        if let snapshot = self.snapshotLocked(for: deviceId) {
                             self.host?.bleDelegate?.updateDevice(device: snapshot)
                         }
                     }
