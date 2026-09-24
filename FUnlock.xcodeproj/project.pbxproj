@@ -65,6 +65,8 @@
 		5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB83070CD04DF366146E88B /* ConfigStore.swift */; };
 		7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E695C91A38887907EE91F891 /* ConfigStoreTests.swift */; };
 		IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000002 /* IMMessageComposerTests.swift */; };
+		DB0000020000000100000001 /* Device.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0000010000000100000001 /* Device.swift */; };
+		DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = DS0000010000000100000001 /* DeviceSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -150,6 +152,8 @@
 		3FB83070CD04DF366146E88B /* ConfigStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
 		E695C91A38887907EE91F891 /* ConfigStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStoreTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000002 /* IMMessageComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposerTests.swift; sourceTree = "<group>"; };
+		DB0000010000000100000001 /* Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Device.swift; sourceTree = "<group>"; };
+		DS0000010000000100000001 /* DeviceSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -238,6 +242,8 @@
 				AA0000DD0000001A /* IMMessageComposer.swift */,
 				AA0000DD0000001B /* IMSettingsCard.swift */,
 				3FB83070CD04DF366146E88B /* ConfigStore.swift */,
+				DB0000010000000100000001 /* Device.swift */,
+				DS0000010000000100000001 /* DeviceSnapshot.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -441,6 +447,8 @@
 				AA0000DD0000000A /* IMMessageComposer.swift in Sources */,
 				AA0000DD0000000B /* IMSettingsCard.swift in Sources */,
 				5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */,
+				DB0000020000000100000001 /* Device.swift in Sources */,
+				DS0000020000000100000001 /* DeviceSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
