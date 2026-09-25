@@ -175,7 +175,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var settingsWindow: NSWindow!
     private var popover: NSPopover?
-    private var outsideClickMonitor: Any?
 
     // MARK: - 核心依赖
 
@@ -489,6 +488,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.image = NSImage(named: "StatusBarDisconnected")
             button.target = self
             button.action = #selector(toggleMenuBarPopover(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.toolTip = "Funlock"
         }
 
@@ -499,43 +499,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let popover = NSPopover()
         popover.contentViewController = hosting
         popover.behavior = .transient
-        popover.contentSize = hosting.view.fittingSize
         self.popover = popover
-
-        // 点击菜单外部任意位置（桌面 / 其他 App / 其他菜单栏图标）自动收起
-        // transient 在 status bar 附属 popover 上有失效场景，此兜底保证行为一致
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            Task { @MainActor in
-                self?.closePopoverIfClickedOutside()
-            }
-        }
-    }
-
-    /// 点击位置不在 popover 窗口内则自动收起（状态栏按钮区域除外，交给按钮 toggle）
-    @MainActor private func closePopoverIfClickedOutside() {
-        guard let popover, popover.isShown,
-              let window = popover.contentViewController?.view.window else { return }
-        let point = NSEvent.mouseLocation
-        if let button = statusItem.button, let barWindow = button.window {
-            let btnFrame = button.convert(button.bounds, to: nil)
-            let btnScreenFrame = NSRect(x: barWindow.frame.origin.x + btnFrame.minX,
-                                        y: barWindow.frame.origin.y + btnFrame.minY,
-                                        width: btnFrame.width, height: btnFrame.height)
-            if btnScreenFrame.contains(point) { return }
-        }
-        guard !window.frame.contains(point) else { return }
-        popover.performClose(nil)
     }
 
     // MARK: - 状态栏 Popover
 
     @MainActor @objc func toggleMenuBarPopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
-        if let popover, popover.isShown {
+        logDebug(component: "AppDelegate", "[POPOVER] toggleMenuBarPopover clicked! sender=\(String(describing: sender))")
+        guard let popover = self.popover else { return }
+        if popover.isShown {
             popover.performClose(nil)
         } else {
-            popover?.contentSize = (popover?.contentViewController?.view.fittingSize) ?? NSSize(width: 282, height: 300)
-            popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            let fit = popover.contentViewController?.view.fittingSize ?? .zero
+            let targetHeight = fit.height > 100 ? fit.height : 360
+            popover.contentSize = NSSize(width: 282, height: targetHeight)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
