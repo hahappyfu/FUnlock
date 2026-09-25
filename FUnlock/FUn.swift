@@ -1,6 +1,5 @@
 import Foundation
 @preconcurrency import CoreBluetooth
-import Observation
 import os
 
 func lockLog(_ msg: String) {
@@ -74,7 +73,6 @@ protocol FUnDelegate: AnyObject {
 ///   以保持 startMonitor / unbindAllState 等跨对象复位的原子性；
 /// - Timer 操作与 `@Observable`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
 /// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
-@Observable
 class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     static let UNLOCK_DISABLED = SignalHysteresisEngine.unlockDisabled
     static let LOCK_DISABLED = SignalHysteresisEngine.lockDisabled

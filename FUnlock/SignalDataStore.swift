@@ -24,15 +24,19 @@ final class SignalDataStore: @unchecked Sendable {
     static let shared = SignalDataStore()
 
     /// 底层环形缓冲（高频写入，不触发 UI）
+    @ObservationIgnored
     private var ring = RingBuffer<SignalSample>(capacity: 300)
 
     /// 互斥锁：保护 ring 的跨线程访问（BLE 回调线程写、主线程 Timer 读）
+    @ObservationIgnored
     private let lock = NSLock()
 
     /// 节流后暴露给 UI 的快照（~1 秒刷新一次）
     private(set) var samples: [SignalSample] = []
 
+    @ObservationIgnored
     private var cancellable: AnyCancellable?
+    @ObservationIgnored
     private let uiThrottle: TimeInterval = 1.0
 
     /// 阈值参考线数据（由 FUn 设置后保持不变）
