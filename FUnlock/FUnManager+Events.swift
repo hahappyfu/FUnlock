@@ -134,7 +134,7 @@ extension FUnManager {
     func onDeviceApproached() {
         let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
-        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
+        let enabled = ConfigStore.shared.bool(forKey: "enabled", default: true)
         guard enabled else { return }
         guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { return }
         let smoothed = snap.effectiveRSSI
@@ -162,7 +162,7 @@ extension FUnManager {
     func onDeviceLeft(reason: String) {
         let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
-        let enabled = prefs.object(forKey: "enabled") == nil || prefs.bool(forKey: "enabled")
+        let enabled = ConfigStore.shared.bool(forKey: "enabled", default: true)
         let screenState = state.screen
         let lockDisabled = fun.lockRSSI == FUn.LOCK_DISABLED
         lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", snap.effectiveRSSI))")

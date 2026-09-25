@@ -62,7 +62,11 @@ struct MenuBarPopoverView: View {
         var main: String { t("mb_signal_\(rawValue)") }
 
         var proximity: String {
-            t("mb_signal_\(["excellent": "very_close", "good": "close", "weak": "far"][rawValue]!)")
+            switch self {
+            case .excellent: return t("mb_signal_very_close")
+            case .good: return t("mb_signal_close")
+            case .weak: return t("mb_signal_far")
+            }
         }
 
         /// 信号格数：档位内按子档细分（越近格数越多）

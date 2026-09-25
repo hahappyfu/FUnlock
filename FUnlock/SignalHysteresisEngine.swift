@@ -73,17 +73,26 @@ enum SignalHysteresisEngine {
 
     // MARK: - 靠近 / 离开判定
 
+    /// 解析实际生效的锁定阈值（当 lockRSSI 处于禁用哨兵时回退到 unlockRSSI）
+    static func resolvedLockThreshold(unlockRSSI: Int, lockRSSI: Int) -> Int {
+        lockRSSI == lockDisabled ? unlockRSSI : lockRSSI
+    }
+
     /// 双阈值迟滞判定：靠近（有效信号 ≥ 解锁阈值）与离开（有效信号 < 锁定阈值）之间为保持区。
     /// 判定统一基于 effectiveRSSI（与锁计时器同源），避免原始 RSSI 尖峰导致振荡。
-    /// - Parameter rssi: 原始信号采样（不参与判定；保留以衔接调用方的日志与采样记录）
-    static func checkProximity(rssi: Double, effectiveRSSI: Double, unlockRSSI: Int, lockRSSI: Int) -> ProximityDecision {
+    static func checkProximity(effectiveRSSI: Double, unlockRSSI: Int, lockRSSI: Int) -> ProximityDecision {
         let unlockThreshold = unlockRSSI == unlockDisabled ? lockRSSI : unlockRSSI
-        let lockThreshold = lockRSSI == lockDisabled ? unlockRSSI : lockRSSI
+        let lockThreshold = resolvedLockThreshold(unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
         return ProximityDecision(
             unlockThreshold: unlockThreshold,
             lockThreshold: lockThreshold,
             isClose: effectiveRSSI >= Double(unlockThreshold),
             isAway: effectiveRSSI < Double(lockThreshold)
         )
+    }
+
+    @discardableResult
+    static func checkProximity(rssi: Double, effectiveRSSI: Double, unlockRSSI: Int, lockRSSI: Int) -> ProximityDecision {
+        checkProximity(effectiveRSSI: effectiveRSSI, unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
     }
 }

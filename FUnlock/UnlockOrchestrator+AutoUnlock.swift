@@ -81,6 +81,7 @@ extension UnlockOrchestrator {
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
+                    guard !self.manager.state.intent.isManualLockActive else { Log.sm.debug("SKIP: manualLock active in parallel wake task"); return }
                     timingLog("parallel unlock task fired after 0.8s")
                     guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); self.recordUnlock(reason: .systemNotReady); return }
                     self.tryUnlock()
@@ -107,6 +108,7 @@ extension UnlockOrchestrator {
             try? await Task.sleep(nanoseconds: UInt64(delay))
             guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); timingLog("delayed unlock task cancelled"); return }
             guard let self else { return }
+            guard !self.manager.state.intent.isManualLockActive else { Log.sm.debug("SKIP: manualLock active in delayed unlock task"); return }
             guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); timingLog("SKIP systemNotReady in delayed task"); self.recordUnlock(reason: .systemNotReady); return }
             Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen))")
             timingLog("delayed unlock task fired | tryUnlock")

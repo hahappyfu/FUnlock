@@ -51,8 +51,7 @@ extension FUn {
             let shouldLose: Bool = self.lock.withLock {
                 // 输入活动且 lockOnIdle 开启时，不判定信号丢失（与 applyLockTimer 行为一致），
                 // 仅重置超时计数与衰减基准，避免打字/用鼠标时因信号超时误锁
-                let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
-                    || ConfigStore.shared.bool(forKey: "lockOnIdle")
+                let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
                 if lockOnIdle && self.isUserInputActive {
                     self.signalLostCount = 0
                     self.lastReceiveTime = Date()
@@ -76,13 +75,14 @@ extension FUn {
     /// 信号丢失（3 次连续超时）统一复位：清在场标志、有效信号复位到无信号档（-100）、
     /// 通知 UI（rssi 置 nil，与总览「无信号」判据一致），避免菜单栏残留冻结的旧信号值
     func markSignalLost() {
-        let wasPresent = lock.withLock { self.presence }
-        lock.withLock {
+        let wasPresent = lock.withLock {
+            let was = presence
             presence = false
             signalLostCount = 0
             if effectiveRSSI > -100.0 {
                 effectiveRSSI = -100.0
             }
+            return was
         }
         Log.sm.debug("Device is lost (3 consecutive timeouts)")
         Task { @MainActor [weak self] in
@@ -135,7 +135,7 @@ extension FUn {
             }
             guard !shouldStop else { return }
             let eff = self.getEffectiveRSSI()
-            let threshold = Double(self.lockRSSI == Self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            let threshold = Double(SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: self.unlockRSSI, lockRSSI: self.lockRSSI))
             let hasTimer = self.lock.withLock { self.proximityTimer != nil }
             // 冷静期：刚解锁后不立即触发锁定
             let graceElapsed = Date().timeIntervalSince(self.lastProximityEventTime)
@@ -205,10 +205,9 @@ extension FUn {
         let timeout = Self.lockTimeout(slope: slope, base: proximityTimeout)
         let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
-            let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
-                || ConfigStore.shared.bool(forKey: "lockOnIdle")
+            let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
             let nowEff = self.getEffectiveRSSI()
-            let nowThreshold = Double(self.lockRSSI == Self.LOCK_DISABLED ? self.unlockRSSI : self.lockRSSI)
+            let nowThreshold = Double(SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: self.unlockRSSI, lockRSSI: self.lockRSSI))
             let nowPresence = self.lock.withLock { self.presence }
             lockLog("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
             if nowEff >= nowThreshold {
@@ -276,8 +275,7 @@ extension FUn {
                     Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
                     return
                 }
-                let lockOnIdle = ConfigStore.shared.object(forKey: "lockOnIdle") == nil
-                    || ConfigStore.shared.bool(forKey: "lockOnIdle")
+                let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
                 if lockOnIdle && isUserInputActive {
                     lockLog("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
                     Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")

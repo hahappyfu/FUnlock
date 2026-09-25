@@ -61,6 +61,11 @@ final class ConfigStore: @unchecked Sendable {
     func removeObject(forKey key: String) { defaults.removeObject(forKey: key) }
     func object(forKey key: String) -> Any? { defaults.object(forKey: key) }
     func bool(forKey key: String) -> Bool { defaults.bool(forKey: key) }
+    /// 读取布尔配置，当键缺失（未设置）时回退到指定的默认值（如 default: true）
+    func bool(forKey key: String, default defaultVal: Bool) -> Bool {
+        guard let obj = defaults.object(forKey: key) else { return defaultVal }
+        return (obj as? Bool) ?? defaults.bool(forKey: key)
+    }
     func string(forKey key: String) -> String? { defaults.string(forKey: key) }
 
     // MARK: - 全量设置导出/导入

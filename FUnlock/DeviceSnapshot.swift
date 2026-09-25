@@ -3,7 +3,7 @@ import Foundation
 /// 设备不可变纯值快照：跨线程 / 跨 Actor 传递与 UI 消费的唯一形态。
 /// 由 `Device.toSnapshot(isMonitored:)` 生成，替代引用类型跨并发域共享。
 public struct DeviceSnapshot: Sendable, Identifiable, Hashable, Equatable {
-    public let id: UUID
+    public var id: UUID { uuid }
     public let uuid: UUID
     public let name: String
     public let rssi: Int
@@ -13,8 +13,7 @@ public struct DeviceSnapshot: Sendable, Identifiable, Hashable, Equatable {
     public let macAddr: String?
     public let isMonitored: Bool
 
-    public init(id: UUID, uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, macAddr: String? = nil, isMonitored: Bool = false) {
-        self.id = id
+    public init(id: UUID? = nil, uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, macAddr: String? = nil, isMonitored: Bool = false) {
         self.uuid = uuid
         self.name = name
         self.rssi = rssi
