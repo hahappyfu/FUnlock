@@ -117,7 +117,7 @@ struct MainWindowView: View {
         .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
             refreshPermissions()
         }
-        .onChange(of: manager.connected) { connected in
+        .onChange(of: manager.connected) { _, connected in
             guard let prev = previousConnected, prev != connected else {
                 previousConnected = connected
                 return

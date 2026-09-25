@@ -23,7 +23,7 @@ struct ConfigSettingsView: View {
                             Text(profile.name).tag(profile.id)
                         }
                     }
-                    .onChange(of: profileManager.activeProfileID) { id in
+                    .onChange(of: profileManager.activeProfileID) { _, id in
                         profileManager.setActive(id)
                         profileManager.applyActiveProfile(to: manager)
                     }

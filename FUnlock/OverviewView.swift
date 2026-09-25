@@ -75,12 +75,12 @@ struct OverviewView: View {
             wakeAdvance = thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
             preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
         }
-        .onChange(of: manager.lockRSSI) { newValue in
+        .onChange(of: manager.lockRSSI) { _, newValue in
             if Int(sliderLock) != newValue && !isSliderDragging {
                 sliderLock = Double(newValue)
             }
         }
-        .onChange(of: manager.unlockRSSI) { newValue in
+        .onChange(of: manager.unlockRSSI) { _, newValue in
             let expected = (newValue == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
             if Int(sliderUnlock) != expected && !isSliderDragging {
                 sliderUnlock = Double(expected)

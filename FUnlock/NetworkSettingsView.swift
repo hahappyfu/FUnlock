@@ -40,7 +40,7 @@ struct NetworkSettingsView: View {
                         Label(t("passive_mode"), systemImage: "antenna.radiowaves.left.and.right")
                         Text(t("passive_mode_desc")).font(.caption).foregroundColor(.secondary)
                     }
-                    .onChange(of: passiveMode) { v in fun.setPassiveMode(v) }
+                    .onChange(of: passiveMode) { _, v in fun.setPassiveMode(v) }
                 }
             }
             .formStyle(.grouped)

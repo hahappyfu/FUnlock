@@ -18,7 +18,7 @@ struct BasicSettingsView: View {
                         Label(t("launch_at_login"), systemImage: "arrow.up.circle")
                         Text(t("launch_at_login_desc")).font(.caption).foregroundColor(.secondary)
                     }
-                    .onChange(of: launchAtLogin) { v in
+                    .onChange(of: launchAtLogin) { _, v in
                         if #available(macOS 13.0, *) {
                             do {
                                 if v { try SMAppService.mainApp.register() }
