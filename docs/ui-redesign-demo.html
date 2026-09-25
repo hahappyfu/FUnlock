@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUnlock macOS 14+ 现代 UI 交互 Demo · 完整功能对齐</title>
+<style>
+  :root {
+    --bg-desktop: #1c1c1e;
+    --mac-accent: #007aff;
+    --mac-green: #34c759;
+    --mac-orange: #ff9500;
+    --mac-red: #ff3b30;
+    --sidebar-bg: rgba(246, 246, 246, 0.75);
+    --window-bg: #ffffff;
+    --border-color: rgba(0, 0, 0, 0.08);
+    --text-primary: #1d1d1f;
+    --text-secondary: #86868b;
+    --apple-spring: cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --sidebar-bg: rgba(40, 40, 40, 0.78);
+      --window-bg: #1e1e1e;
+      --border-color: rgba(255, 255, 255, 0.1);
+      --text-primary: #f5f5f7;
+      --text-secondary: #98989d;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: radial-gradient(circle at 50% 15%, #1f2d3d, #0b0f14);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+    color: var(--text-primary);
+    user-select: none;
+  }
+
+  .demo-toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(25px);
+    padding: 8px 18px;
+    border-radius: 30px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 13px;
+  }
+  .demo-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.75);
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s var(--apple-spring);
+  }
+  .demo-btn.active, .demo-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+  }
+
+  .desktop-screen {
+    width: 1060px;
+    height: 720px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    background: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80') center/cover;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+  }
+
+  /* macOS 菜单栏 */
+  .mac-menubar {
+    height: 30px;
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(25px) saturate(180%);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 13px;
+    color: #111;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    z-index: 100;
+    position: relative;
+  }
+  .mac-menubar .apple-icon { margin-right: 18px; font-weight: 700; cursor: pointer; }
+  .mac-menubar .app-title { font-weight: 600; margin-right: 18px; }
+  .mac-menubar .right-status { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .funlock-status-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .funlock-status-btn:hover, .funlock-status-btn.open {
+    background: rgba(0, 0, 0, 0.12);
+  }
+
+  /* 状态栏 Popover (严格保留原有全部功能 + 苹果现代控制中心风格) */
+  .menu-popover {
+    position: absolute;
+    top: 36px;
+    right: 50px;
+    width: 310px;
+    background: rgba(246, 246, 246, 0.82);
+    backdrop-filter: blur(35px) saturate(200%);
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+    padding: 12px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #1d1d1f;
+    animation: popIn 0.25s var(--apple-spring);
+  }
+  @keyframes popIn {
+    0% { transform: scale(0.96) translateY(-6px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  /* 状态英雄卡 */
+  .hero-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.04);
+  }
+  .hero-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .device-meta { display: flex; align-items: center; gap: 9px; }
+  .device-badge-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #007aff, #5856d6);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+  }
+  .device-texts .dev-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
+  .device-texts .dev-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* 信号柱状图（还原原版的 5 格精确指示器 + 现代动画） */
+  .signal-bars-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 2.5px;
+    height: 14px;
+  }
+  .sig-bar {
+    width: 3.5px;
+    background: rgba(52, 199, 89, 0.25);
+    border-radius: 1.5px;
+    transition: all 0.3s var(--apple-spring);
+  }
+  .sig-bar.active { background: var(--mac-green); }
+  .bar-1 { height: 4px; }
+  .bar-2 { height: 6px; }
+  .bar-3 { height: 9px; }
+  .bar-4 { height: 11px; }
+  .bar-5 { height: 14px; }
+
+  /* 状态胶囊 */
+  .screen-state-badge {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--mac-green);
+    background: rgba(52, 199, 89, 0.1);
+    padding: 3px 8px;
+    border-radius: 12px;
+  }
+  .status-pulse {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--mac-green);
+    animation: glow 1.8s infinite;
+  }
+  @keyframes glow {
+    0%, 100% { opacity: 0.6; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  /* 功能操作行（保留原有所有项目） */
+  .menu-section {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.04);
+  }
+  .menu-action-row {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.08s var(--apple-spring);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .menu-action-row:last-child { border-bottom: none; }
+  .menu-action-row:hover { background: rgba(0, 0, 0, 0.05); }
+  .menu-action-row:active { transform: scale(0.985); }
+  .menu-action-row .icon-lead {
+    font-size: 14px;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+  }
+  .menu-action-row .row-title { flex: 1; font-weight: 500; }
+  .menu-action-row .shortcut-key { font-size: 11px; color: var(--text-secondary); }
+
+  /* 模拟更新进度的动效 */
+  .update-progress-pill {
+    font-size: 11px;
+    padding: 2px 7px;
+    background: rgba(0, 122, 255, 0.12);
+    color: var(--mac-accent);
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  /* 主设置窗口 */
+  .mac-window {
+    position: absolute;
+    top: 50px;
+    left: 40px;
+    width: 980px;
+    height: 620px;
+    background: var(--window-bg);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+  }
+
+  .window-toolbar {
+    height: 48px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(20px);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .traffic-lights { display: flex; gap: 8px; margin-right: 20px; }
+  .traffic-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-red { background: #ff5f56; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green { background: #27c93f; }
+  .toolbar-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+
+  .window-split { display: flex; flex: 1; overflow: hidden; }
+
+  /* 侧边栏 */
+  .sidebar {
+    width: 220px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(25px);
+    border-right: 1px solid var(--border-color);
+    padding: 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .sidebar-section-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 6px 10px 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .sidebar-nav-item.active { background: var(--mac-accent); color: white; }
+  .sidebar-nav-item:not(.active):hover { background: rgba(0, 0, 0, 0.05); }
+
+  .content-pane { flex: 1; padding: 22px 28px; overflow-y: auto; background: var(--window-bg); }
+  .pane-header h2 { font-size: 19px; font-weight: 700; margin-bottom: 2px; }
+  .pane-header .sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; }
+
+  .ui-card {
+    background: #fbfbfd;
+    border: 1px solid #e5e5ea;
+    border-radius: 11px;
+    padding: 15px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+
+  /* 迟滞安全带 */
+  .safezone-container {
+    background: white; padding: 16px; border-radius: 9px; border: 1px solid #e5e5ea;
+  }
+  .zone-scale {
+    position: relative; height: 32px; background: #eef1f5; border-radius: 7px; margin: 24px 0 12px; overflow: hidden;
+  }
+  .zone-safe-fill {
+    position: absolute; left: 30%; width: 35%; height: 100%;
+    background: repeating-linear-gradient(
+      -45deg, rgba(52, 199, 89, 0.18), rgba(52, 199, 89, 0.18) 6px, rgba(52, 199, 89, 0.3) 6px, rgba(52, 199, 89, 0.3) 12px
+    );
+    border-left: 2px solid var(--mac-green); border-right: 2px solid var(--mac-orange);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #1b7a37;
+  }
+  .scale-marker { position: absolute; top: -20px; font-size: 11px; font-weight: 600; }
+  .marker-unlock { left: 65%; color: var(--mac-green); }
+  .marker-lock { left: 30%; color: var(--mac-orange); }
+
+  /* 扫描设备行 */
+  .device-row {
+    display: flex; align-items: center; padding: 9px 12px; background: white; border-radius: 8px; border: 1px solid #e5e5ea; margin-bottom: 6px; cursor: pointer;
+  }
+  .device-row.paired { border-color: var(--mac-accent); background: #f4f8ff; }
+  .dev-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .dev-badge { font-size: 10px; background: var(--mac-accent); color: white; padding: 1px 6px; border-radius: 10px; }
+  .dev-meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .dev-rssi-pill { margin-left: auto; padding: 3px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; background: #f2f2f7; }
+
+  /* Swift Charts 图表模拟 */
+  .chart-card {
+    height: 200px; background: white; border-radius: 10px; border: 1px solid #e5e5ea; padding: 14px; display: flex; flex-direction: column;
+  }
+  .chart-svg { width: 100%; height: 140px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+  <div class="demo-toolbar">
+    <span>🍎 FUnlock 功能完整性与交互动效检验：</span>
+    <button class="demo-btn active" onclick="togglePopover()">展开/收起 菜单栏悬浮窗 (Popover)</button>
+    <button class="demo-btn" onclick="simulateCheckUpdate()">🔄 测试检查更新流程</button>
+    <button class="demo-btn" onclick="switchTab('overview')">设备概览</button>
+    <button class="demo-btn" onclick="switchTab('stats')">信号统计波形 (Swift Charts)</button>
+    <button class="demo-btn" onclick="simulateRSSI()">🎲 模拟信号强度波动</button>
+  </div>
+
+  <div class="desktop-screen">
+    <!-- macOS 顶部菜单栏 -->
+    <div class="mac-menubar">
+      <span class="apple-icon"></span>
+      <span class="app-title">FUnlock</span>
+      <span style="color:#555; margin-right:16px;">文件</span>
+      <span style="color:#555; margin-right:16px;">编辑</span>
+      <span style="color:#555; margin-right:16px;">视图</span>
+      <span style="color:#555;">帮助</span>
+
+      <div class="right-status">
+        <span style="font-size:12px; color:#333;">周四 20:00</span>
+        <!-- 状态栏菜单图标 -->
+        <div class="funlock-status-btn open" id="menubarBtn" onclick="togglePopover()">
+          <span style="font-size:13px;">🔓</span>
+          <span style="font-size:11px; font-weight:700; color:#34c759;" id="menubarRssiText">-58 dBm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 菜单栏 Popover (严格保留原版所有功能) -->
+    <div class="menu-popover" id="popover">
+      <!-- 1. 英雄状态卡：设备名、图标、状态、5 格信号柱、实时数值 -->
+      <div class="hero-card">
+        <div class="hero-header">
+          <div class="device-meta">
+            <div class="device-badge-icon" id="deviceIcon">⌚️</div>
+            <div class="device-texts">
+              <div class="dev-name" id="popoverDeviceName">Apple Watch Ultra</div>
+              <div class="dev-desc" id="signalDesc">已绑定 · 近 (良好)</div>
+            </div>
+          </div>
+          <div class="screen-state-badge" id="screenBadge">
+            <div class="status-pulse"></div>
+            <span id="screenStateText">已解锁</span>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <span style="font-size:11px; color:var(--text-secondary);">实时有效信号</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <!-- 原版 5 格信号柱动效 -->
+            <div class="signal-bars-row" id="barsContainer">
+              <div class="sig-bar bar-1 active"></div>
+              <div class="sig-bar bar-2 active"></div>
+              <div class="sig-bar bar-3 active"></div>
+              <div class="sig-bar bar-4 active"></div>
+              <div class="sig-bar bar-5"></div>
+            </div>
+            <span style="font-size:12px; font-weight:700;" id="popoverRssiVal">-58 dBm</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 总开关：启用自动解锁 -->
+      <div class="menu-section">
+        <div class="menu-action-row" onclick="toggleEnable()">
+          <span class="icon-lead" id="enableIcon" style="color:var(--mac-green);">🟢</span>
+          <span class="row-title">自动解锁总开关</span>
+          <span class="update-progress-pill" id="enablePill">已开启</span>
+        </div>
+      </div>
+
+      <!-- 3. 核心功能操作组 (完整对齐原版 MenuBarAction 枚举) -->
+      <div class="menu-section">
+        <!-- 动作 1：设置 -->
+        <div class="menu-action-row" onclick="switchTab('overview')">
+          <span class="icon-lead">⚙️</span>
+          <span class="row-title">打开设置...</span>
+          <span class="shortcut-key">⌘,</span>
+        </div>
+        <!-- 动作 2：修改锁屏密码 -->
+        <div class="menu-action-row" onclick="alert('触发修改锁屏密码弹窗（SecurityService）')">
+          <span class="icon-lead">🔑</span>
+          <span class="row-title">修改锁屏密码...</span>
+        </div>
+        <!-- 动作 3：检查更新 (带 checking/downloading/latest 状态机) -->
+        <div class="menu-action-row" onclick="simulateCheckUpdate()">
+          <span class="icon-lead" id="updateIcon">🔄</span>
+          <span class="row-title" id="updateTitle">检查更新</span>
+          <span class="update-progress-pill" id="updateBadge" style="display:none;">已是最新</span>
+        </div>
+        <!-- 动作 4：信号统计仪表盘 -->
+        <div class="menu-action-row" onclick="switchTab('stats')">
+          <span class="icon-lead">📊</span>
+          <span class="row-title">信号与统计仪表盘</span>
+          <span class="shortcut-key">⌘S</span>
+        </div>
+      </div>
+
+      <!-- 4. 系统控制组 -->
+      <div class="menu-section">
+        <!-- 动作 5：立即锁屏 -->
+        <div class="menu-action-row" onclick="alert('执行立即锁屏（SystemInteractionService.shared.lockOrSaveScreen）')">
+          <span class="icon-lead">🔒</span>
+          <span class="row-title" style="color:var(--mac-orange);">立即锁屏</span>
+          <span class="shortcut-key">⌃⌘Q</span>
+        </div>
+        <!-- 动作 6：退出 -->
+        <div class="menu-action-row" onclick="alert('退出应用（NSApp.terminate）')">
+          <span class="icon-lead">🚪</span>
+          <span class="row-title">退出 FUnlock</span>
+          <span class="shortcut-key">⌘Q</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主设置窗口 -->
+    <div class="mac-window" id="mainWindow">
+      <div class="window-toolbar">
+        <div class="traffic-lights">
+          <div class="traffic-dot dot-red"></div>
+          <div class="traffic-dot dot-yellow"></div>
+          <div class="traffic-dot dot-green"></div>
+        </div>
+        <span class="toolbar-title" id="toolbarTitle">设备与概览</span>
+      </div>
+
+      <div class="window-split">
+        <div class="sidebar">
+          <div class="sidebar-section-title">核心功能</div>
+          <div class="sidebar-nav-item active" id="nav-overview" onclick="switchTab('overview')">
+            <span>🧭 设备与概览</span>
+          </div>
+          <div class="sidebar-nav-item" id="nav-stats" onclick="switchTab('stats')">
+            <span>📈 信号统计波形</span>
+          </div>
+          <div class="sidebar-nav-item" id="nav-basic" onclick="switchTab('basic')">
+            <span>⚙️ 基本设置</span>
+          </div>
+
+          <div class="sidebar-section-title">高级控制</div>
+          <div class="sidebar-nav-item" id="nav-network" onclick="switchTab('network')">
+            <span>📶 Wi-Fi 信任白名单</span>
+          </div>
+          <div class="sidebar-nav-item" id="nav-config" onclick="switchTab('config')">
+            <span>🎛 场景自动化</span>
+          </div>
+          <div class="sidebar-nav-item" id="nav-diag" onclick="switchTab('diagnostics')">
+            <span>🩺 系统诊断</span>
+          </div>
+        </div>
+
+        <div class="content-pane">
+          <!-- 概览面板 -->
+          <div id="pane-overview">
+            <div class="pane-header">
+              <h2>设备感应与迟滞安全带</h2>
+              <div class="sub">双阈值防误锁技术 · 靠近自动解锁，离场安全锁屏</div>
+            </div>
+
+            <div class="ui-card">
+              <div class="card-title">
+                <span>🛡</span>
+                <span>双阈值迟滞安全区 (Hysteresis Safe-Zone)</span>
+              </div>
+              <div class="safezone-container">
+                <div class="zone-scale">
+                  <div class="scale-marker marker-lock">锁定: -80 dBm</div>
+                  <div class="scale-marker marker-unlock">解锁: -60 dBm</div>
+                  <div class="zone-safe-fill">
+                    <span>缓冲防误锁区间 (20 dB)</span>
+                  </div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:#888;">
+                  <span>-100 dBm (远)</span>
+                  <span>-70 dBm (正常工作区)</span>
+                  <span>-40 dBm (贴近)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ui-card">
+              <div class="card-title">
+                <span>📡</span>
+                <span>周围 BLE 设备列表 (不可变 DeviceSnapshot 绑定)</span>
+              </div>
+              <div class="device-row paired">
+                <span style="font-size:20px; margin-right:10px;">⌚️</span>
+                <div class="dev-main">
+                  <div class="dev-name">
+                    <span>Apple Watch Ultra</span>
+                    <span class="dev-badge">当前绑定</span>
+                  </div>
+                  <div class="dev-meta">UUID: 8F2B...E04A · 0.5s 高频轮询</div>
+                </div>
+                <div class="dev-rssi-pill" style="color:var(--mac-green); background:#e6f9ed;" id="listRssiPill">-58 dBm</div>
+              </div>
+              <div class="device-row">
+                <span style="font-size:20px; margin-right:10px;">📱</span>
+                <div class="dev-main">
+                  <div class="dev-name">iPhone 16 Pro</div>
+                  <div class="dev-meta">UUID: A14C...993D</div>
+                </div>
+                <div class="dev-rssi-pill">-72 dBm</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 统计图表面板 -->
+          <div id="pane-stats" style="display:none;">
+            <div class="pane-header">
+              <h2>信号质量与决策波形 (Swift Charts)</h2>
+              <div class="sub">基于 RingBuffer 实时捕获与卡尔曼滤波平滑</div>
+            </div>
+            <div class="chart-card">
+              <svg class="chart-svg" viewBox="0 0 600 140">
+                <defs>
+                  <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#007aff" stop-opacity="0.35"/>
+                    <stop offset="100%" stop-color="#007aff" stop-opacity="0.0"/>
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="35" x2="600" y2="35" stroke="#34c759" stroke-dasharray="4,4" stroke-width="1.5" />
+                <line x1="0" y1="95" x2="600" y2="95" stroke="#ff9500" stroke-dasharray="4,4" stroke-width="1.5" />
+                <path d="M 0 75 Q 80 40, 160 50 T 320 30 T 480 65 T 600 45 L 600 140 L 0 140 Z" fill="url(#areaGrad)"/>
+                <path d="M 0 75 Q 80 40, 160 50 T 320 30 T 480 65 T 600 45" fill="none" stroke="#007aff" stroke-width="2.5"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let popoverOpen = true;
+    let isEnabled = true;
+    let currentRssi = -58;
+
+    function togglePopover() {
+      popoverOpen = !popoverOpen;
+      document.getElementById('popover').style.display = popoverOpen ? 'flex' : 'none';
+      document.getElementById('menubarBtn').classList.toggle('open', popoverOpen);
+    }
+
+    function toggleEnable() {
+      isEnabled = !isEnabled;
+      document.getElementById('enableIcon').innerText = isEnabled ? '🟢' : '⚪️';
+      document.getElementById('enablePill').innerText = isEnabled ? '已开启' : '已暂停';
+      document.getElementById('enablePill').style.color = isEnabled ? 'var(--mac-green)' : 'var(--text-secondary)';
+      document.getElementById('enablePill').style.background = isEnabled ? 'rgba(52, 199, 89, 0.12)' : 'rgba(0,0,0,0.06)';
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.sidebar-nav-item').forEach(el => el.classList.remove('active'));
+      const activeNav = document.getElementById('nav-' + tabId);
+      if (activeNav) activeNav.classList.add('active');
+
+      const isOverview = tabId === 'overview';
+      document.getElementById('pane-overview').style.display = isOverview ? 'block' : 'none';
+      document.getElementById('pane-stats').style.display = tabId === 'stats' ? 'block' : 'none';
+      document.getElementById('toolbarTitle').innerText = isOverview ? '设备与概览' : (tabId === 'stats' ? '信号统计波形' : '基本设置');
+    }
+
+    function simulateCheckUpdate() {
+      const badge = document.getElementById('updateBadge');
+      const icon = document.getElementById('updateIcon');
+      const title = document.getElementById('updateTitle');
+      badge.style.display = 'inline-block';
+      badge.innerText = '检查中...';
+      badge.style.color = 'var(--mac-accent)';
+      icon.innerText = '⏳';
+      title.innerText = '正在检查更新...';
+
+      setTimeout(() => {
+        badge.innerText = '已是最新 (v2.8.37)';
+        badge.style.color = 'var(--mac-green)';
+        icon.innerText = '✅';
+        title.innerText = '检查更新';
+      }, 1200);
+    }
+
+    function simulateRSSI() {
+      const delta = (Math.random() - 0.5) * 18;
+      currentRssi = Math.min(-45, Math.max(-95, Math.round(currentRssi + delta)));
+      const text = currentRssi + ' dBm';
+      document.getElementById('menubarRssiText').innerText = text;
+      document.getElementById('popoverRssiVal').innerText = text;
+      document.getElementById('listRssiPill').innerText = text;
+
+      // 动态更新 5 格信号柱
+      const bars = document.querySelectorAll('#barsContainer .sig-bar');
+      const activeCount = currentRssi > -60 ? 5 : (currentRssi > -70 ? 4 : (currentRssi > -80 ? 3 : 2));
+      bars.forEach((b, idx) => {
+        b.classList.toggle('active', idx < activeCount);
+      });
+
+      document.getElementById('signalDesc').innerText = currentRssi > -60 ? '已绑定 · 很近 (极佳)' : (currentRssi > -75 ? '已绑定 · 较近 (良好)' : '已绑定 · 较远');
+    }
+  </script>
+</body>
+</html>
