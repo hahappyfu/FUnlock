@@ -133,6 +133,7 @@
 "calibration_samples_collected" = "Collected ";
 "calibration_samples_unit" = " samples";
 "calibration_seconds_unit" = "seconds";
+"calibration_no_signal_retry" = "No signal detected - move closer to your device and try again";
 
 // AppDelegate
 "default_paired_device" = "Paired Device";
@@ -310,6 +311,8 @@
 "mb_locked" = "Locked";
 "mb_disconnected" = "Disconnected";
 "mb_enable" = "Enable Funlock";
+"mb_switch_on" = "On";
+"mb_switch_off" = "Off";
 "mb_update_failed" = "Update failed";
 "mb_signal_excellent" = "Excellent signal";
 "mb_signal_very_close" = "Very close";

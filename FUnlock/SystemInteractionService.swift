@@ -47,6 +47,13 @@ final class SystemInteractionService: Sendable {
         return false
     }
 
+    /// ScreenSaver.Engine 是否正在运行（审计修复 #3）：
+    /// 屏保激活时会话未锁（CGSSessionScreenIsLocked 缺失），仅凭 CGSession 判"已解锁"
+    /// 会把屏保期间的注入失败误报为解锁成功（失败计数被清零、degraded 保护被绕过）
+    private var isScreenSaverRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").isEmpty
+    }
+
     /// 判断 CGSession 字典是否表示屏幕已解锁。
     /// macOS 解锁时 CGSSessionScreenIsLocked key 缺失（nil）或为 0，锁定时为 1。
     /// 因此"非锁定"（key 缺失或 0）即视为已解锁；nil 字典（无会话信息）保守判未解锁。
@@ -95,10 +102,16 @@ final class SystemInteractionService: Sendable {
     }
 
     /// Wake the display before password injection
+    /// 审计修复 #8：本方法在 @MainActor 注入路径被同步调用，Thread.sleep 会冻结主线程。
+    /// 最小治理：保留同步签名与阻塞等待（唤醒后需短暂延时让显示器点亮才能接收按键），
+    /// 阻塞窗口约 0.2s（从 0.3 缩短；fakeKeyStrokes 的 display-off 唤醒路径是唯一调用方，
+    /// 唤醒+等待逻辑只保留这一处）。后续改造方向：方法 async 化改用 Task.sleep，
+    /// 由调用方在后台上下文等待——但 performInjectionAndVerify 同步依赖注入返回值，
+    /// 需连同调用链一起改造，本轮不动。
     func wakeDisplay() {
         logBoth("SystemInteraction", "PASSWORD: waking display before injection", fileMsg: "wakeDisplay: waking display")
         funlock_wakeDisplay()
-        Thread.sleep(forTimeInterval: 0.3)
+        Thread.sleep(forTimeInterval: 0.2)
     }
 
     // MARK: - Screen Control (Lock)
@@ -227,11 +240,12 @@ final class SystemInteractionService: Sendable {
             return false
         }
 
-        // Escape special characters for AppleScript string
+        // Escape special characters for AppleScript string.
+        // 审计修复 #6：双引号字符串内单引号无需转义，旧代码产生的 `\'` 是非法转义序列，
+        // 含单引号的密码在 L3 必然编译失败，故只处理反斜杠与双引号
         let escaped = string
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "'", with: "\\'")
 
         let script = """
         tell application "System Events"
@@ -300,6 +314,10 @@ final class SystemInteractionService: Sendable {
     /// Send a Shift key prelude, wait 300ms, then inject password.
     /// The Shift key activates the login window text field before password injection.
     /// Returns true if at least one password event was posted.
+    /// 审计修复 #8：此处 Thread.sleep 冻结主线程约 0.3s（Shift 前奏到密码注入的必要间隔）。
+    /// 最小治理：保留同步签名与阻塞等待；display-off 唤醒等待不在本方法叠加
+    /// （fakeKeyStrokes 内的 wakeDisplay 已统一处理，避免双重唤醒双 sleep）。
+    /// 后续改造方向同 wakeDisplay：需与调用链一起 async 化。
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) -> Bool {
         logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + 300ms delay", fileMsg: "injectPasswordWithPrelude() START")
 
@@ -393,9 +411,12 @@ final class SystemInteractionService: Sendable {
         }
 
         while Date() < deadline {
+            // 审计修复 #7：响应任务取消，取消后立即退出而非跑满 deadline
+            guard !Task.isCancelled else { return false }
             // 检查 CGSession
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-                if Self.sessionDictIndicatesUnlocked(dict) {
+                // 审计修复 #3：解锁判定还需屏保未运行（屏保激活时会话未锁，不能视为已解锁）
+                if Self.sessionDictIndicatesUnlocked(dict) && !isScreenSaverRunning {
                     logDebug(component: "SystemInteraction", "waitForUnlockNotification: unlocked via CGSession")
                     return true
                 }
@@ -405,7 +426,12 @@ final class SystemInteractionService: Sendable {
             }
             // 唤醒信号检测到后用更短间隔轮询（50ms），否则200ms
             let interval: UInt64 = wakeFlag.isSet ? 50_000_000 : 200_000_000
-            try? await Task.sleep(nanoseconds: interval)
+            do {
+                try await Task.sleep(nanoseconds: interval)
+            } catch {
+                // 审计修复 #7：CancellationError 立即返回，不再吞掉后继续轮询
+                return false
+            }
         }
         logDebug(component: "SystemInteraction", "waitForUnlockNotification: timeout (\(timeout)s)")
         return false
@@ -416,8 +442,11 @@ final class SystemInteractionService: Sendable {
     func checkScreenUnlocked(timeout: TimeInterval = 2.0) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            // 审计修复 #7：响应任务取消，取消后立即退出而非跑满 deadline
+            guard !Task.isCancelled else { return false }
             if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-                if Self.sessionDictIndicatesUnlocked(dict) {
+                // 审计修复 #3：解锁判定还需屏保未运行（屏保激活时会话未锁，不能视为已解锁）
+                if Self.sessionDictIndicatesUnlocked(dict) && !isScreenSaverRunning {
                     logDebug(component: "SystemInteraction", "checkScreenUnlocked: screen unlocked via CGSession")
                     return true
                 }
@@ -425,7 +454,12 @@ final class SystemInteractionService: Sendable {
                 // CGSession 为 nil 表示无会话信息，不视为解锁，继续轮询
                 logDebug(component: "SystemInteraction", "checkScreenUnlocked: CGSession nil → 继续轮询")
             }
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            do {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            } catch {
+                // 审计修复 #7：CancellationError 立即返回，不再吞掉后继续轮询
+                return false
+            }
         }
         logDebug(component: "SystemInteraction", "checkScreenUnlocked: timeout (\(timeout)s)")
         return false

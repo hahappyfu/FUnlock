@@ -101,6 +101,20 @@ class FUnlockStateMachineTests: XCTestCase {
         XCTAssertEqual(sm.currentState, .preWaking, "preWaking → unlocking 应被拒绝")
     }
 
+    func testTransitionCooldownToUnlocking() {
+        sm.transition(to: .preWaking)
+        sm.transition(to: .readyToUnlock)
+        sm.transition(to: .unlocking)
+        sm.transition(to: .cooldown)
+        sm.transition(to: .unlocking)
+        XCTAssertEqual(sm.currentState, .unlocking, "cooldown → unlocking 应成功（失败冷却后再次尝试解锁）")
+    }
+
+    func testTransitionReturnsSuccess() {
+        XCTAssertTrue(sm.transition(to: .preWaking), "合法转移应返回 true")
+        XCTAssertFalse(sm.transition(to: .unlocking), "非法转移应返回 false（可观测）")
+    }
+
     // MARK: - attemptUnlock
 
     func testAttemptUnlockFromActiveSucceeds() {
@@ -124,14 +138,17 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testAttemptUnlockAfterCooldownExpires() {
-        _ = sm.attemptUnlock()
-        let expectation = XCTestExpectation(description: "cooldown expires")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.1) {
-            let allowed = self.sm.attemptUnlock()
-            XCTAssertTrue(allowed, "冷却期过后应允许解锁")
-            expectation.fulfill()
-        }
-        wait(for: [expectation], timeout: 6.0)
+        // 注入时间源模拟冷却流逝，替代真实等待 5.1s（同文件 *TimeSourceTests 的示范做法）
+        var currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let sm = FUnlockStateMachine(nowProvider: { currentTime })
+
+        XCTAssertTrue(sm.attemptUnlock(), "首次应允许解锁")
+        // 真实流程：解锁尝试后会经成功/失败处理离开 unlocking（.unlocking→.unlocking 自转移已被拒绝）
+        sm.handleUnlockSuccess()
+
+        // 模拟时间推进 5.1 秒（超过 5 秒冷却）
+        currentTime = currentTime.addingTimeInterval(5.1)
+        XCTAssertTrue(sm.attemptUnlock(), "冷却期过后应允许解锁")
     }
 
     func testThreeFailuresTriggerDegraded() {
@@ -227,6 +244,8 @@ class FUnlockStateMachineTimeSourceTests: XCTestCase {
 
         let allowed = sm.attemptUnlock()
         XCTAssertTrue(allowed, "首次应允许解锁")
+        // 真实流程：解锁尝试后经成功处理离开 unlocking（.unlocking→.unlocking 自转移已被拒绝）
+        sm.handleUnlockSuccess()
 
         // 模拟时间推进 3 秒（未超过 5 秒冷却）
         currentTime = currentTime.addingTimeInterval(3.0)
@@ -253,6 +272,29 @@ class FUnlockStateMachineTimeSourceTests: XCTestCase {
         // 11 秒后冷却结束
         currentTime = currentTime.addingTimeInterval(2.0)
         XCTAssertFalse(sm.isInCooldown, "11 秒后冷却应结束")
+    }
+
+    func testAttemptUnlockBlockedByFailureCooldown() {
+        var currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let sm = FUnlockStateMachine(nowProvider: { currentTime })
+
+        sm.handleUnlockFailure()
+        // 5 秒防抖已过，但 10 秒失败冷却期内 attemptUnlock 仍应拒绝（与 canAttemptUnlock 门控内聚）
+        currentTime = currentTime.addingTimeInterval(6.0)
+        XCTAssertFalse(sm.attemptUnlock(), "失败冷却期内 attemptUnlock 应被拒绝")
+    }
+
+    func testAttemptUnlockFromCooldownAfterFailureCooldownExpires() {
+        var currentTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let sm = FUnlockStateMachine(nowProvider: { currentTime })
+
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .cooldown, "1 次失败后应为 cooldown")
+
+        // 11 秒后失败冷却结束，cooldown → unlocking 转移应成功
+        currentTime = currentTime.addingTimeInterval(11.0)
+        XCTAssertTrue(sm.attemptUnlock(), "失败冷却结束后应允许解锁")
+        XCTAssertEqual(sm.currentState, .unlocking, "冷却结束后 attemptUnlock 应转入 unlocking")
     }
 }
 

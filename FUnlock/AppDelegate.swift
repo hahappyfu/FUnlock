@@ -20,6 +20,8 @@ extension Notification.Name {
 
 class InputActivityMonitor {
     private var hidManager: IOHIDManager?
+    /// start() 时实际调度的 RunLoop，stop() 据此精确反注册
+    private var scheduledRunLoop: CFRunLoop?
     private var _lastInputTime: Date = Date.distantPast
     private var lock = os_unfair_lock()
     var activityWindow: TimeInterval = 15
@@ -45,15 +47,28 @@ class InputActivityMonitor {
             kIOHIDDeviceUsagePageKey: 0x0D,
             kIOHIDDeviceUsageKey: 0x04
         ]
-        IOHIDManagerSetDeviceMatchingMultiple(hidManager, [keyboard, trackpad] as CFArray)
+        // 鼠标（Generic Desktop / Mouse）：不匹配则纯鼠标操作永不刷新输入时间戳，
+        // lockOnIdle 开启时会被误判为长时间无输入而锁屏
+        let mouse: [String: Any] = [
+            kIOHIDDeviceUsagePageKey: 0x01,
+            kIOHIDDeviceUsageKey: 0x02
+        ]
+        IOHIDManagerSetDeviceMatchingMultiple(hidManager, [keyboard, trackpad, mouse] as CFArray)
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterInputValueCallback(hidManager, inputCallback, ctx)
-        IOHIDManagerScheduleWithRunLoop(hidManager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        // CFRunLoopGetCurrent() 桥接为 IUO，显式标注类型收敛为非可选，避免下游 API 传参告警
+        let runLoop: CFRunLoop = CFRunLoopGetCurrent()
+        scheduledRunLoop = runLoop
+        IOHIDManagerScheduleWithRunLoop(hidManager, runLoop, CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerOpen(hidManager, IOOptionBits(0))
     }
 
     func stop() {
         if let mgr = hidManager {
+            if let runLoop = scheduledRunLoop {
+                IOHIDManagerUnscheduleFromRunLoop(mgr, runLoop, CFRunLoopMode.defaultMode.rawValue)
+            }
+            scheduledRunLoop = nil
             IOHIDManagerClose(mgr, IOOptionBits(0))
             hidManager = nil
         }
@@ -176,6 +191,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var settingsWindow: NSWindow!
     private var popover: NSPopover?
 
+    /// 状态栏图标离散态（unlocked / connected / disconnected）：
+    /// updateRSSI 每次快轮询采样都会调用 updateStatusBarIcon，但可视态只在离散档位间切换，
+    /// 缓存上一次绘制的态、仅在变化时重绘位图，避免高频 lockFocus 合成造成的 CPU/GPU 开销。
+    private enum MenuBarIconState {
+        case unlocked, connected, disconnected
+    }
+    private var cachedMenuBarIconState: MenuBarIconState?
+
     // MARK: - 核心依赖
 
     lazy var fun = FUn()
@@ -225,9 +248,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     /// 根据连接状态和屏幕状态更新菜单栏图标
+    /// 仅当离散态（unlocked / connected / disconnected）变化时才 lockFocus 重绘位图，
+    /// 平稳在场期（每 0.5s 快轮询都会调用）直接跳过，消除无谓的每采样图形合成。
     @MainActor private func updateStatusBarIcon() {
         guard let button = statusItem.button else { return }
+        let next: MenuBarIconState
         if manager.state.screen == .unlocked {
+            next = .unlocked
+        } else if manager.connected {
+            next = .connected
+        } else {
+            next = .disconnected
+        }
+        guard next != cachedMenuBarIconState else { return }
+        cachedMenuBarIconState = next
+        switch next {
+        case .unlocked:
             // 已解锁：用绿色渲染连接图标
             let img = NSImage(named: "StatusBarConnected")?.copy() as? NSImage
             img?.isTemplate = false
@@ -237,11 +273,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             img?.unlockFocus()
             button.image = img
             button.toolTip = "Funlock — Unlocked"
-        } else if manager.connected {
+        case .connected:
             // 已连接但锁屏：默认模板图标
             button.image = NSImage(named: "StatusBarConnected")
             button.toolTip = "Funlock — Connected"
-        } else {
+        case .disconnected:
             // 未连接
             button.image = NSImage(named: "StatusBarDisconnected")
             button.toolTip = "Funlock — Disconnected"
@@ -275,8 +311,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         } else if id == FUnlockStateMachine.degradedNotificationID {
             // 点击降级通知 → 重置失败计数，恢复自动解锁
+            // 审计修复 #9：锁定态下的点击可能来自屏幕前的物理接触者，不得重置降级；
+            // 仅当 CGSession 显示会话未锁定时才执行恢复
             DispatchQueue.main.async { [weak self] in
-                self?.manager?.stateMachine.resetToActive()
+                guard let self else { return }
+                let dict = CGSessionCopyCurrentDictionary() as? [String: Any]
+                if SystemInteractionService.sessionDictIndicatesUnlocked(dict) {
+                    self.manager?.stateMachine.resetToActive()
+                } else {
+                    logDebug(component: "AppDelegate", "degraded notification tap ignored: session locked")
+                }
             }
         } else {
             NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
@@ -392,18 +436,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - 用户主动干预监听
 
-    /// 监听屏幕唤醒通知，用户主动干预时强制状态机回到 active
-    func setupUserInterventionObserver() {
-        NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.screensDidWakeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.manager.onUserIntervention()
-            }
-        }
-    }
+    // 审计修复 #4/#10：原独立的 screensDidWake 干预观察者已移除，
+    // 用户手动唤醒的干预逻辑合并进 FUnManager.onDisplayWake（按固定顺序执行：
+    // 先 attemptAutoUnlock 再 onUserIntervention），消除"先调度解锁任务、
+    // 后被干预取消"的竞态；程序自唤醒（FUn 预唤醒）则完全跳过干预。
 
     @objc private func handleGlobalHotKey() {
         DispatchQueue.main.async { [weak self] in
@@ -543,32 +579,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
-        // 转发系统通知 → FUnManager
+        // 转发系统通知 → FUnManager。
+        // sink 闭包直接调用 @MainActor 方法：DistributedNotificationCenter 交付线程不保证主线程
+        // （NSWorkspace/NotificationCenter 亦无编译期保证），统一 receive(on:) 收敛到主队列后再触发
         let nc = NSWorkspace.shared.notificationCenter
         nc.publisher(for: NSWorkspace.screensDidSleepNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onDisplaySleep(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.screensDidWakeNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onDisplayWake(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.willSleepNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onSystemSleep(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         nc.publisher(for: NSWorkspace.didWakeNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onSystemWake(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
 
         let dnc = DistributedNotificationCenter.default
         dnc.publisher(for: NSNotification.Name("com.apple.screenIsUnlocked"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onUnlock(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screenIsLocked"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onSystemScreenLocked(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstart"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onScreensaverStart(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.screensaver.didstop"))
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.manager.onScreensaverStop(); self?.updateStatusBarIcon() }
             .store(in: &cancellables)
         dnc.publisher(for: NSNotification.Name("com.apple.security.loginwindow.passwordChanged"))
@@ -579,6 +625,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         // 应用失活（点击桌面 / 切换到其他 App）时自动收起状态栏菜单
         NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.closeMenuBarPopover() }
             .store(in: &cancellables)
     }
@@ -617,8 +664,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 注册全局快捷键 ⌘⇧L（lock screen）
         setupGlobalHotKey()
 
-        // 监听用户主动干预（手动唤醒屏幕）→ 强制状态机恢复 active
-        setupUserInterventionObserver()
+        // 用户主动干预监听已合并进 onDisplayWake（审计修复 #4/#10，见类内注释）
     }
 
     func setupSettingsWindow() {
@@ -627,7 +673,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "Funlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
-        settingsWindow.contentMinSize = NSSize(width: 560, height: 420)
+        settingsWindow.contentMinSize = NSSize(width: 560, height: 460)
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()
     }

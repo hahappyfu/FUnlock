@@ -39,10 +39,13 @@ enum SystemPowerState: Equatable, CustomStringConvertible {
 
 enum LockIntent: Equatable {
     case autoLock
+    /// deadline 为「最终兜底」过期时间（防配置错误永久卡死），正常恢复路径是 onUnlock 重置为 .autoLock
     case manualLock(deadline: Date)
 
+    /// 手动锁屏后无条件阻止自动解锁（不依赖 deadline 过期），直到 onUnlock 重置 intent；
+    /// deadline 仅作兜底标记保留，不参与判定
     var isManualLockActive: Bool {
-        if case .manualLock(let deadline) = self { return Date() < deadline }
+        if case .manualLock = self { return true }
         return false
     }
 }
@@ -64,13 +67,6 @@ struct LockScreenState: Equatable {
     var wake: WakePhase = .idle
     var media: MediaPlaybackState = .idle
     var unlockedAt: Date = .distantPast
-
-    var canAutoUnlock: Bool {
-        if intent.isManualLockActive { return false }
-        if system == .sleeping { return false }
-        if screen == .displaySleeping { return false }
-        return true
-    }
 
     var isEffectivelyLocked: Bool {
         switch screen {

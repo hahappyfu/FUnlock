@@ -111,6 +111,8 @@ final class UnlockOrchestrator {
         guard sinceUnlock > 3 else {
             Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
             recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock)) 秒前解锁过")
+            // attemptUnlock 已置 .unlocking，SKIP 出口回落 active，避免状态卡死
+            m.stateMachine.transition(to: .active)
             return nil
         }
         let fetchResult = SecurityService.shared.fetchPassword(warn: true)
@@ -122,6 +124,7 @@ final class UnlockOrchestrator {
                 Log.sm.debug("SKIP: no password")
                 recordUnlock(reason: .noPassword)
             }
+            m.stateMachine.transition(to: .active)
             return nil
         }
         logDebug(component: "FUnManager", "tryUnlock() password fetched")
@@ -129,7 +132,7 @@ final class UnlockOrchestrator {
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: m.state.screen)
         logDebug(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(m.state.screen)")
-        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); return nil }
+        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); m.stateMachine.transition(to: .active); return nil }
         return password
     }
 
@@ -140,8 +143,6 @@ final class UnlockOrchestrator {
         let snap = m.fun.signalSnapshot()
         timingLog("performInjectionAndVerify | injecting password")
         Log.sm.debug("typing password with Shift prelude")
-        m.state.unlockedAt = now
-        m.lastUnlockTime = now
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
         logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude")
@@ -153,8 +154,9 @@ final class UnlockOrchestrator {
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         guard posted else {
             Log.sm.error("WARN: CGEvent post failed — Accessibility permission likely revoked")
-            // 注入失败，本次不算自动解锁，立即复位标记
+            // 注入失败，本次不算自动解锁，立即复位标记；状态回落 active，允许下次尝试
             isAutoUnlocking = false
+            m.stateMachine.transition(to: .active)
             recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
             sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
             return
@@ -162,7 +164,8 @@ final class UnlockOrchestrator {
         Log.sm.debug("unlock attempt posted, waiting for dual verification")
         // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
         // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
-        Task { @MainActor [weak self] in
+        // 验证任务挂入 unlockTask，cancelPendingTasks 可取消在途验证
+        unlockTask = Task { @MainActor [weak self] in
             let sys = SystemInteractionService.shared
             let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
             guard let self else { return }
@@ -172,6 +175,9 @@ final class UnlockOrchestrator {
             if verification.unlock {
                 // 通知或 CGSession 确认解锁成功
                 Log.sm.debug("dual verify: unlock confirmed")
+                // 乐观时间戳移到验证通过后：注入失败不再误触发 3s 防抖与 5s 冷却
+                self.manager.state.unlockedAt = self.now
+                self.manager.lastUnlockTime = self.now
                 self.consecutiveUnlockAttempts = 0
                 logDebug(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
                 self.recordUnlock(.success, reason: .unlockSuccess)
@@ -253,7 +259,7 @@ final class UnlockOrchestrator {
 
     /// 记录一次解锁尝试（失败时调用），滑动窗口检测异常频率
     func recordUnlockAttempt() {
-        let now = Date()
+        let now = nowProvider()
         let snap = manager.fun.signalSnapshot()
         unlockAttemptTimestamps.append(now)
         // 清理窗口外的记录

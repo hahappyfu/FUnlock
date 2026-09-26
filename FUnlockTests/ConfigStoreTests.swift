@@ -65,4 +65,73 @@ final class ConfigStoreTests: XCTestCase {
         store.set("hello", forKey: "strKey")
         XCTAssertEqual(store.get("strKey", fallback: ""), "hello")
     }
+
+    /// 布尔默认值测试：未配置时正确返回业务默认值（enabled/lockOnIdle 为 true，其余为 false）
+    func testBoolDefaultValues() {
+        XCTAssertTrue(store.bool(forKey: "enabled"), "enabled 键未配置时应默认返回 true")
+        XCTAssertTrue(store.bool(forKey: "lockOnIdle"), "lockOnIdle 键未配置时应默认返回 true")
+        XCTAssertFalse(store.bool(forKey: "passiveMode"), "passiveMode 键未配置时应默认返回 false")
+    }
+
+    /// 导出与导入测试：基本类型与 Data(base64) 正确还原，并能正确更新
+    func testExportAndImportAllSettings() {
+        store.set("iPhone 15", forKey: "deviceName")
+        store.set(-65, forKey: "unlockRSSI")
+        store.set(-80, forKey: "lockRSSI")
+        store.set(true, forKey: "enabled")
+
+        guard let json = store.exportAllSettings() else {
+            XCTFail("exportAllSettings 应成功生成 JSON")
+            return
+        }
+
+        // 创建另一个隔离 store 导入
+        let newSuite = "ConfigStoreTests-Import-\(UUID().uuidString)"
+        defer { UserDefaults.standard.removePersistentDomain(forName: newSuite) }
+        let newStore = ConfigStore(suiteName: newSuite)
+
+        let stats = newStore.importAllSettings(json: json)
+        XCTAssertNotNil(stats, "导入合法 JSON 应返回成功统计")
+        XCTAssertEqual(newStore.defaults.string(forKey: "deviceName"), "iPhone 15")
+        XCTAssertEqual(newStore.defaults.integer(forKey: "unlockRSSI"), -65)
+        XCTAssertEqual(newStore.defaults.integer(forKey: "lockRSSI"), -80)
+        XCTAssertTrue(newStore.bool(forKey: "enabled"))
+    }
+
+    /// 导入阈值防御校验：非法负迟滞（lock >= unlock）导入时自动钳制为 lock < unlock
+    func testImportSettingsThresholdSanitization() {
+        let maliciousDict: [String: String] = [
+            "unlockRSSI": "-70",
+            "lockRSSI": "-50", // 非法：锁定阈值反而比解锁阈值更近
+            "deviceName": "TestPhone",
+            "_exportedKeys": "unlockRSSI,lockRSSI,deviceName"
+        ]
+        let data = try! JSONEncoder().encode(maliciousDict)
+        let json = String(data: data, encoding: .utf8)!
+
+        let stats = store.importAllSettings(json: json)
+        XCTAssertNotNil(stats)
+        let importedUnlock = store.defaults.integer(forKey: "unlockRSSI")
+        let importedLock = store.defaults.integer(forKey: "lockRSSI")
+        XCTAssertEqual(importedUnlock, -70)
+        XCTAssertLessThan(importedLock, importedUnlock, "导入时锁定阈值必须被强制钳制在解锁阈值以下（lock < unlock）")
+    }
+
+    /// 导入时 keysToRemove 只能删除已知业务 key，无法删除未授权的恶意 key
+    func testImportCannotDeleteArbitraryKeys() {
+        let secretKey = "super_secret_internal_key"
+        store.defaults.set("important_data", forKey: secretKey)
+
+        let fakeDict: [String: String] = [
+            "deviceName": "MyDevice",
+            "_exportedKeys": "deviceName,\(secretKey)" // 试图通过伪造 exportedKeys 删除敏感 key
+        ]
+        let data = try! JSONEncoder().encode(fakeDict)
+        let json = String(data: data, encoding: .utf8)!
+
+        let stats = store.importAllSettings(json: json)
+        XCTAssertNotNil(stats)
+        XCTAssertEqual(store.defaults.string(forKey: secretKey), "important_data",
+                       "importAllSettings 必须过滤非 exportableKeys，防止恶意擦除任意 key")
+    }
 }

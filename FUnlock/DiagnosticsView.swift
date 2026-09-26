@@ -219,7 +219,7 @@ struct DiagnosticsView: View {
         switch hint {
         case .lowerUnlockThreshold:
             let current = manager.unlockRSSI
-            let next = current == FUn.UNLOCK_DISABLED ? -95 : max(current - 5, -100)
+            let next = SignalHysteresisEngine.stepUnlockThreshold(current: current, delta: -5)
             manager.setUnlockRSSI(next)
         case .openAccessibilitySettings:
             SystemInteractionService.shared.openAccessibilitySettings()
@@ -299,36 +299,44 @@ struct DiagnosticsView: View {
         guard panel.runModal() == .OK, let dest = panel.url else { return }
 
         let tmpDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        do {
-            try fm.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-            for src in candidates {
-                let dst = tmpDir.appendingPathComponent(src.lastPathComponent)
-                try? fm.copyItem(at: src, to: dst)
+        // 移出主线程：文件拷贝 + 同步 zip 打包（Process.waitUntilExit 会阻塞到子进程结束）
+        // 放到后台 Task，避免大日志时 UI 假死；完成后切回 @MainActor 弹结果对话框。
+        Task.detached(priority: .userInitiated) {
+            do {
+                try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+                for src in candidates {
+                    let dst = tmpDir.appendingPathComponent(src.lastPathComponent)
+                    try? FileManager.default.copyItem(at: src, to: dst)
+                }
+                if FileManager.default.fileExists(atPath: dest.path) { try? FileManager.default.removeItem(at: dest) }
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+                let fileNames = try FileManager.default.contentsOfDirectory(atPath: tmpDir.path)
+                task.arguments = ["-j", dest.path] + fileNames
+                task.currentDirectoryURL = tmpDir
+                try task.run()
+                task.waitUntilExit()
+                guard task.terminationStatus == 0 else { throw NSError(domain: "zip", code: Int(task.terminationStatus)) }
+                try? FileManager.default.removeItem(at: tmpDir)
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = t("export_diagnostics")
+                    alert.informativeText = dest.path
+                    alert.alertStyle = .informational
+                    alert.addButton(withTitle: t("ok"))
+                    alert.runModal()
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: tmpDir)
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = t("export_diagnostics")
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: t("ok"))
+                    alert.runModal()
+                }
             }
-            if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-            let fileNames = try fm.contentsOfDirectory(atPath: tmpDir.path)
-            task.arguments = ["-j", dest.path] + fileNames
-            task.currentDirectoryURL = tmpDir
-            try task.run()
-            task.waitUntilExit()
-            guard task.terminationStatus == 0 else { throw NSError(domain: "zip", code: Int(task.terminationStatus)) }
-            try? fm.removeItem(at: tmpDir)
-            let alert = NSAlert()
-            alert.messageText = t("export_diagnostics")
-            alert.informativeText = dest.path
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: t("ok"))
-            alert.runModal()
-        } catch {
-            try? fm.removeItem(at: tmpDir)
-            let alert = NSAlert()
-            alert.messageText = t("export_diagnostics")
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: t("ok"))
-            alert.runModal()
         }
     }
 

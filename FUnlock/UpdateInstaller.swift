@@ -38,6 +38,7 @@ enum UpdateInstaller {
             throw InstallError.teamIdMismatch
         }
 
+        let updateDir = appPath.deletingLastPathComponent()
         let script = """
         #!/bin/bash
         sleep 2
@@ -56,10 +57,10 @@ enum UpdateInstaller {
                 rm -rf "$STAGING"           # 复制失败，清理 staging，旧版保留不动
             fi
         fi
-        rm -rf /tmp/FUnlock-update
+        rm -rf "\(updateDir.path)"
         """
 
-        let scriptPath = "/tmp/FUnlock-update/install.sh"
+        let scriptPath = updateDir.appendingPathComponent("install.sh").path
         do {
             try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
         } catch {

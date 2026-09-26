@@ -13,7 +13,10 @@ import os
 /// - 轮询状态（activeModeTimer / connectionTimer / stableCount / activePollInterval /
 ///   lastEstimatedRSSI / lastReadAt）与扫描器共享状态统一由与宿主共用的 `lock`（UnfairLock）保护，
 ///   宿主在锁内直接读写这些字段，以保持 startMonitor / unbindAllState 等跨对象复位的原子性；
-/// - Timer 操作在主 RunLoop；对宿主的回调经由 `scanner.host`（BLEScannerHost）。
+/// - Device 字段（manufacture/model/rssi 等）的修改与比较统一在锁内完成；
+/// - Timer 注册在主 RunLoop；invalidate 派发回主线程（Timer 必须在其注册线程 invalidate），
+///   fire block 内的自停/置换用 block 参数并配 `===` 身份校验，防过期 fire 误伤新状态；
+/// - 对宿主的回调经由 `scanner.host`（BLEScannerHost）。
 final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sendable {
     private let lock: UnfairLock
     private weak var scanner: BLEScanner?
@@ -48,11 +51,21 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         guard p.state == .disconnected else { return }
         Log.ble.debug("Connecting")
         scanner.centralMgr.connect(p, options: nil)
-        connectionTimer?.invalidate()
-        let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] _ in
+        // 旧 connectionTimer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
+        let oldTimer: Timer? = lock.withLock {
+            let t = connectionTimer
+            connectionTimer = nil
+            return t
+        }
+        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+        let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] timer in
+            guard let self = self else { return }
+            // 过期 fire 丢弃：didConnect 已置换/清空计时器（60s 边界防误 cancel 刚建立的连接）
+            let isCurrent = self.lock.withLock { self.connectionTimer === timer }
+            guard isCurrent else { return }
             if p.state == .connecting {
                 Log.ble.error("Connection timeout")
-                self?.scanner?.centralMgr.cancelPeripheralConnection(p)
+                self.scanner?.centralMgr.cancelPeripheralConnection(p)
             }
         })
         RunLoop.main.add(connTimer, forMode: .common)
@@ -60,21 +73,32 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     }
 
     private func restartActiveModeTimer(peripheral: CBPeripheral) {
-        let pollInterval: TimeInterval = lock.withLock {
-            activeModeTimer?.invalidate()
-            return activePollInterval
+        // 置换旧 timer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
+        let (pollInterval, oldTimer): (TimeInterval, Timer?) = lock.withLock {
+            let t = activeModeTimer
+            activeModeTimer = nil
+            return (activePollInterval, t)
         }
+        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
 
-        let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] _ in
-            guard let self = self else { return }
+        let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            // 过期 fire 丢弃：本 timer 已被置换（restartActiveModeTimer）
+            let isCurrent = self.lock.withLock { self.activeModeTimer === timer }
+            guard isCurrent else { return }
             let lastRead = self.lock.withLock { self.lastReadAt }
             if Date().timeIntervalSince1970 > lastRead + 10 {
                 Log.ble.info("Falling back to passive mode")
                 self.scanner?.centralMgr.cancelPeripheralConnection(peripheral)
+                // 自停用 block 参数（主线程 fire 内 invalidate，符合契约）；
+                // 仅当本 timer 仍为当前轮询定时器时才清空引用
                 self.lock.withLock {
-                    self.activeModeTimer?.invalidate()
-                    self.activeModeTimer = nil
+                    if self.activeModeTimer === timer { self.activeModeTimer = nil }
                 }
+                timer.invalidate()
                 self.scanner?.scanForPeripherals()
             } else if peripheral.state == .connected {
                 peripheral.readRSSI()
@@ -88,12 +112,14 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
 
     /// 只取消主动模式与连接计时器，保留心跳和信号超时链用于检测离场
     func invalidateAllTimers() {
-        lock.withLock {
-            activeModeTimer?.invalidate()
-            activeModeTimer = nil
-            connectionTimer?.invalidate()
-            connectionTimer = nil
+        // 锁内取引用并清空；invalidate 派发回主线程（本方法可被 bleQueue 调用）
+        let timers: [Timer] = lock.withLock {
+            var collected: [Timer] = []
+            if let t = activeModeTimer { collected.append(t); activeModeTimer = nil }
+            if let t = connectionTimer { collected.append(t); connectionTimer = nil }
+            return collected
         }
+        for t in timers { DispatchQueue.main.async { t.invalidate() } }
     }
 
     // MARK: - 中央管理器转发
@@ -122,18 +148,22 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard let scanner = scanner else { return }
         peripheral.delegate = self
-        if scanner.scanMode {
-            peripheral.discoverServices([BLEUUIDs.deviceInformation])
+        // scanMode 与 monitoredPeripheral 比较统一锁内快照（修复锁外读/锁外比较竞态）
+        let (shouldDiscover, shouldActivate): (Bool, Bool) = lock.withLock {
+            (scanner.scanMode, peripheral == scanner.monitoredPeripheral && !scanner.passiveMode)
         }
-        let shouldActivate: Bool = lock.withLock {
-            peripheral == scanner.monitoredPeripheral && !scanner.passiveMode
+        if shouldDiscover {
+            peripheral.discoverServices([BLEUUIDs.deviceInformation])
         }
         if shouldActivate {
             Log.ble.debug("Connected")
-            lock.withLock {
-                connectionTimer?.invalidate()
+            // didConnect 置换 connectionTimer：锁内取引用并清空，invalidate 派发回主线程
+            let oldTimer: Timer? = lock.withLock {
+                let t = connectionTimer
                 connectionTimer = nil
+                return t
             }
+            if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
             // 优化 4：主动模式已连接，停掉全局扫描
             scanner.centralMgr.stopScan()
             peripheral.readRSSI()
@@ -143,7 +173,9 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard let scanner = scanner else { return }
         Log.ble.debug("didDisconnectPeripheral: \(peripheral.identifier)")
-        if peripheral == scanner.monitoredPeripheral {
+        // monitoredPeripheral 比较在锁内（修复锁外比较竞态）
+        let isMonitored = lock.withLock { peripheral == scanner.monitoredPeripheral }
+        if isMonitored {
             invalidateAllTimers()
             // 不立即锁屏 — BLE 连接可能因干扰短暂断开
             // 由心跳衰减机制判断：设备真正离开后 ~10 秒锁屏
@@ -212,10 +244,12 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             restartActiveModeTimer(peripheral: peripheral)
         }
 
-        let shouldStartActiveMode = lock.withLock { activeModeTimer == nil && !scanner.passiveMode }
+        let (shouldStartActiveMode, scanModeOn) = lock.withLock {
+            (activeModeTimer == nil && !scanner.passiveMode, scanner.scanMode)
+        }
         if shouldStartActiveMode {
             Log.ble.debug("Entering active mode")
-            if !scanner.scanMode {
+            if !scanModeOn {
                 scanner.centralMgr.stopScan()
             }
             restartActiveModeTimer(peripheral: peripheral)
@@ -254,29 +288,28 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         if let value = characteristic.value {
             let str: String? = String(data: value, encoding: .utf8)
             if let s = str {
-                if let device = lock.withLock({ scanner.devices[peripheral.identifier] }) {
-                    // 闭包只捕获 peripheral.identifier（Sendable），device 在闭包内按 id 取锁内快照
-                    let deviceId = peripheral.identifier
+                let deviceId = peripheral.identifier
+                // Device 字段修改与 monitoredPeripheral 比较统一在锁内完成
+                // （修复锁外写/锁内读竞态）；快照派发在锁外（锁内已转纯值）
+                let changed: Bool = lock.withLock {
+                    guard let device = scanner.devices[deviceId] else { return false }
                     if characteristic.uuid == BLEUUIDs.manufacturerName {
                         device.manufacture = s
-                        Task { @MainActor [weak self] in
-                            guard let self = self, let scanner = self.scanner else { return }
-                            if let snapshot = scanner.snapshotLocked(for: deviceId) {
-                                scanner.host?.bleDelegate?.updateDevice(device: snapshot)
-                            }
-                        }
                     }
                     if characteristic.uuid == BLEUUIDs.modelName {
                         device.model = s
-                        Task { @MainActor [weak self] in
-                            guard let self = self, let scanner = self.scanner else { return }
-                            if let snapshot = scanner.snapshotLocked(for: deviceId) {
-                                scanner.host?.bleDelegate?.updateDevice(device: snapshot)
-                            }
-                        }
                     }
                     if device.model != nil && device.manufacture != nil && device.peripheral != scanner.monitoredPeripheral {
                         scanner.centralMgr.cancelPeripheralConnection(peripheral)
+                    }
+                    return true
+                }
+                guard changed else { return }
+                // 闭包只捕获 peripheral.identifier（Sendable），快照在锁内按 id 生成
+                Task { @MainActor [weak self] in
+                    guard let self = self, let scanner = self.scanner else { return }
+                    if let snapshot = scanner.snapshotLocked(for: deviceId) {
+                        scanner.host?.bleDelegate?.updateDevice(device: snapshot)
                     }
                 }
             }

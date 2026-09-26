@@ -1,8 +1,13 @@
 // Resolve MAC address and device name of BLE device from SQLite database at /Library/Bluetooth introduced in Monterey.
 
+import Foundation
 import SQLite3
 
-// 连接状态：connect() 首调初始化后仅读取；nonisolated(unsafe) 表示已人工确认调用方线程约定
+// 连接状态：connect() 首调初始化，之后仅读取。
+// leDbLock 保护 inited / db_paired / db_other 三个全局句柄：BLE 回调线程与扫描线程
+// 可能并发首次调用，无锁则会重复 sqlite3_open 覆盖句柄（旧句柄泄漏 + 半初始化状态可读）。
+// nonisolated(unsafe) 在此成立的前提即为下列写读全部收在 leDbLock 临界区内。
+private let leDbLock = NSLock()
 nonisolated(unsafe) private var inited = false
 nonisolated(unsafe) private var db_paired: OpaquePointer?
 nonisolated(unsafe) private var db_other: OpaquePointer?
@@ -92,6 +97,10 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
 }
 
 func getLEDeviceInfoFromUUID(_ uuid: String) -> LEDeviceInfo? {
+    // NSLock 不可重入：在入口一次性加锁，覆盖 connect() 的句柄初始化与其后两次查询，
+    // 保证「首调 open」与「读句柄」在并发下互斥
+    leDbLock.lock()
+    defer { leDbLock.unlock() }
     connect()
     return getPairedDeviceFromUUID(uuid) ?? getOtherDeviceFromUUID(uuid);
 }

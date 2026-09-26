@@ -4,7 +4,7 @@ import CoreBluetooth
 /// BLE 扫描发现的设备实体（CoreBluetooth 底层引用类型）。
 /// 跨并发域传递请改用不可变纯值快照 `DeviceSnapshot`（见 `toSnapshot(isMonitored:)`）。
 class Device: NSObject {
-    let uuid : UUID!
+    let uuid: UUID
     var peripheral : CBPeripheral?
     var manufacture : String?
     var model : String?
@@ -73,7 +73,6 @@ extension Device {
     /// - Parameter isMonitored: 是否处于监控列表，由持有监控状态的一端提供。
     func toSnapshot(isMonitored: Bool) -> DeviceSnapshot {
         DeviceSnapshot(
-            id: uuid,
             uuid: uuid,
             name: description,
             rssi: rssi,

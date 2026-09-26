@@ -74,42 +74,35 @@ struct StatsView: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    // 信号图表区域（macOS 13+）
+                    // 信号图表（Swift Charts 自 macOS 13 起可用，部署目标 macOS 14 恒定满足）
                     if !dataStore.samples.isEmpty {
-                        if #available(macOS 13.0, *) {
-                            Section {
-                                HStack {
-                                    Text(t("stats_signal_diagnostics"))
-                                        .font(.subheadline.bold())
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Picker("", selection: $chartMode) {
-                                        ForEach(ChartMode.allCases, id: \.self) { mode in
-                                            Text(t(mode.rawValue)).tag(mode)
-                                        }
+                        Section {
+                            HStack {
+                                Text(t("stats_signal_diagnostics"))
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Picker("", selection: $chartMode) {
+                                    ForEach(ChartMode.allCases, id: \.self) { mode in
+                                        Text(t(mode.rawValue)).tag(mode)
                                     }
-                                    .pickerStyle(.segmented)
-                                    .frame(width: 160)
                                 }
-
-                                switch chartMode {
-                                case .signal:
-                                    SignalChartView(samples: dataStore.samples,
-                                                    unlockThreshold: dataStore.unlockThreshold,
-                                                    lockThreshold: dataStore.lockThreshold)
-                                case .slope:
-                                    SlopeChartView(samples: dataStore.samples)
-                                }
-
-                                HStack {
-                                    Spacer()
-                                    chartLegend
-                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 160)
                             }
-                        } else {
-                            // macOS 12 fallback：简易 RSSI 文本列表
-                            Section {
-                                fallbackSignalList
+
+                            switch chartMode {
+                            case .signal:
+                                SignalChartView(samples: dataStore.samples,
+                                                unlockThreshold: dataStore.unlockThreshold,
+                                                lockThreshold: dataStore.lockThreshold)
+                            case .slope:
+                                SlopeChartView(samples: dataStore.samples)
+                            }
+
+                            HStack {
+                                Spacer()
+                                chartLegend
                             }
                         }
                     }
@@ -152,36 +145,6 @@ struct StatsView: View {
         }
         .onAppear { if logger.events.isEmpty { logger.loadHistory() } }
         .frame(width: 440, height: 560)
-    }
-
-    // MARK: - macOS 12 fallback（无 Charts 时显示文本摘要）
-
-    private var fallbackSignalList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(t("stats_signal_diagnostics"))
-                .font(.subheadline.bold())
-                .foregroundColor(.secondary)
-            let recent = dataStore.samples.suffix(10)
-            ForEach(Array(recent.enumerated()), id: \.element.id) { _, sample in
-                HStack {
-                    Text(sample.timestamp, format: .dateTime.hour().minute().second())
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 65, alignment: .leading)
-                    Text("\(t("stats_raw")): \(Int(sample.rawRSSI))")
-                        .font(.caption)
-                        .frame(width: 60, alignment: .leading)
-                    Text("\(t("stats_kalman")): \(Int(sample.kalmanEstimate))")
-                        .font(.caption)
-                        .frame(width: 65, alignment: .leading)
-                    if let event = sample.event {
-                        Image(systemName: event == "unlocked" ? "lock.open.fill" : "lock.fill")
-                            .font(.caption2)
-                            .foregroundColor(event == "unlocked" ? .green : .orange)
-                    }
-                    Spacer()
-                }
-            }
-        }
     }
 
     // MARK: - 图例
@@ -321,12 +284,12 @@ struct SignalChartView: View {
             // 事件标记
             ForEach(samples.filter { $0.event != nil }) { sample in
                 RuleMark(x: .value("事件", sample.timestamp))
-                    .foregroundStyle(sample.event == "unlocked" ? .green : .orange)
+                    .foregroundStyle(sample.isUnlockEvent ? .green : .orange)
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
                     .annotation(position: .top, spacing: 4) {
-                        Image(systemName: sample.event == "unlocked" ? "lock.open.fill" : "lock.fill")
+                        Image(systemName: sample.isUnlockEvent ? "lock.open.fill" : "lock.fill")
                             .font(.caption2)
-                            .foregroundColor(sample.event == "unlocked" ? .green : .orange)
+                            .foregroundColor(sample.isUnlockEvent ? .green : .orange)
                     }
             }
         }

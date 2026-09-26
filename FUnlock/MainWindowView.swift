@@ -45,6 +45,8 @@ struct MainWindowView: View {
     @State private var toastMessage: String? = nil
     @State private var toastIcon = ""
     @State private var toastColor: Color = .green
+    /// 当前 toast 的世代标识：连续 showToast 时旧延迟任务据此放弃收尾，避免提前关闭新 toast
+    @State private var currentToastID = UUID()
     @State private var previousConnected: Bool? = nil
 
     /// 权限状态（仅 UI 展示用，不影响解锁逻辑；每 5 秒刷新一次）
@@ -177,7 +179,11 @@ struct MainWindowView: View {
         toastMessage = message
         toastIcon = icon
         toastColor = color
+        let toastID = UUID()
+        currentToastID = toastID
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            // 已被后续 toast 覆盖：旧任务的到期收尾直接丢弃，交由最新世代的定时器关闭
+            guard currentToastID == toastID else { return }
             withAnimation { toastMessage = nil }
         }
     }

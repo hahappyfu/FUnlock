@@ -257,12 +257,12 @@ struct CalibrationWizardView: View {
 
     private var suggestedUnlock: Int {
         let v = avgUnlock - 2
-        return min(max(v, -95), -30)
+        return SignalHysteresisEngine.clampRSSI(v)
     }
 
     private var suggestedLock: Int {
         let v = avgLock - 2
-        return min(max(v, -95), -30)
+        return SignalHysteresisEngine.clampRSSI(v)
     }
 
     // MARK: - 流程控制
@@ -323,7 +323,13 @@ struct CalibrationWizardView: View {
             let totalMs = duration * 10
             for i in 0..<totalMs {
                 guard !Task.isCancelled else { return }
-                if let rssi = manager.rssi {
+                // 改采有效判定源 effectiveRSSI（与实际靠近/离开判定同源，避免 displayRSSI 收敛延迟导致均值偏高）
+                let snap = manager.fun.signalSnapshot()
+                if snap.presence {
+                    let eff = Int(snap.effectiveRSSI.rounded())
+                    samples.append(eff)
+                    currentRSSI = eff
+                } else if let rssi = manager.rssi {
                     samples.append(rssi)
                     currentRSSI = rssi
                 }
@@ -347,14 +353,15 @@ struct CalibrationWizardView: View {
         countdownTask?.cancel()
         samples = []
         currentRSSI = nil
-        errorMessage = "未检测到信号，请靠近设备后重试"
+        errorMessage = t("calibration_no_signal_retry")
         step = 0
     }
 
     private func applyValues() {
-        let lock = max(min(suggestedLock, -30), -95)
-        let unlock = max(min(suggestedUnlock, -30), -95)
-        let finalUnlock = max(unlock, lock + 5)
+        let lock = SignalHysteresisEngine.clampRSSI(suggestedLock)
+        let unlock = SignalHysteresisEngine.clampRSSI(suggestedUnlock)
+        // 统一使用全局迟滞标准 lockUnlockDelayGap (10dB)，确保迟滞保护完整
+        let finalUnlock = max(unlock, lock + lockUnlockDelayGap)
         manager.setUnlockRSSI(finalUnlock)
         manager.setLockRSSI(lock)
         isPresented = false

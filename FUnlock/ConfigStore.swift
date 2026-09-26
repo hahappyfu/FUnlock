@@ -60,8 +60,26 @@ final class ConfigStore: @unchecked Sendable {
     func set(_ value: Data, forKey key: String) { defaults.set(value, forKey: key) }
     func removeObject(forKey key: String) { defaults.removeObject(forKey: key) }
     func object(forKey key: String) -> Any? { defaults.object(forKey: key) }
-    func bool(forKey key: String) -> Bool { defaults.bool(forKey: key) }
-    /// 读取布尔配置，当键缺失（未设置）时回退到指定的默认值（如 default: true）
+
+    /// 业务布尔默认值表：统一全项目业务默认值（如 enabled/lockOnIdle 默认 true）
+    static func defaultBool(for key: String) -> Bool {
+        switch key {
+        case "enabled", "lockOnIdle":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// 读取布尔配置：键缺失时自动回退业务默认值（防裸读 false 与 UI 默认 true 的双语义冲突）
+    func bool(forKey key: String) -> Bool {
+        guard let obj = defaults.object(forKey: key) else {
+            return ConfigStore.defaultBool(for: key)
+        }
+        return (obj as? Bool) ?? defaults.bool(forKey: key)
+    }
+
+    /// 读取布尔配置，当键缺失（未设置）时回退到显式指定的默认值
     func bool(forKey key: String, default defaultVal: Bool) -> Bool {
         guard let obj = defaults.object(forKey: key) else { return defaultVal }
         return (obj as? Bool) ?? defaults.bool(forKey: key)
@@ -118,7 +136,7 @@ final class ConfigStore: @unchecked Sendable {
         let keysToRemove = (dict[ConfigStore.exportedKeysKey]?
             .split(separator: ",").map(String.init)) ?? []
         var removed = 0
-        for key in keysToRemove where key != ConfigStore.exportedKeysKey {
+        for key in keysToRemove where key != ConfigStore.exportedKeysKey && knownKeys.contains(key) {
             if defaults.object(forKey: key) != nil {
                 defaults.removeObject(forKey: key)
                 removed += 1
@@ -131,6 +149,19 @@ final class ConfigStore: @unchecked Sendable {
             let value = ConfigStore.decodeSettingValue(raw)
             defaults.set(value, forKey: key)
             applied += 1
+        }
+
+        // 阈值范围与序关系校验：防止导入非法负迟滞（lock >= unlock）或越界配置
+        if let u = defaults.object(forKey: "unlockRSSI") as? Int, u != SignalHysteresisEngine.unlockDisabled {
+            let clampedU = SignalHysteresisEngine.clampRSSI(u)
+            if clampedU != u { defaults.set(clampedU, forKey: "unlockRSSI") }
+            if let l = defaults.object(forKey: "lockRSSI") as? Int, l != SignalHysteresisEngine.lockDisabled {
+                let clampedL = min(SignalHysteresisEngine.clampRSSI(l), clampedU - 1)
+                if clampedL != l { defaults.set(clampedL, forKey: "lockRSSI") }
+            }
+        } else if let l = defaults.object(forKey: "lockRSSI") as? Int, l != SignalHysteresisEngine.lockDisabled {
+            let clampedL = SignalHysteresisEngine.clampRSSI(l)
+            if clampedL != l { defaults.set(clampedL, forKey: "lockRSSI") }
         }
         return SettingsImportStats(applied: applied, removed: removed)
     }

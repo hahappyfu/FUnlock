@@ -9,6 +9,32 @@
 import Foundation
 import Cocoa
 
+/// pauseOnWiFi 门控的当前 SSID 结果缓存：`WiFiMonitor.currentSSID` 走 CoreWLAN 同步 XPC
+/// 查询，在自动解锁的关键时机于主线程直读可能阻塞数十毫秒。缓存 5 秒内的读取结果，
+/// 频繁门控（每次 attemptAutoUnlock）复用，避免解锁路径卡顿。
+/// 与 FUn.swift 的 bleLogThrottler 同源设计（私有 final class + 自带锁 + 文件级单例，
+/// 杜绝裸全局可变竞争）；缓存的是「当前 SSID 读取值」，与目标 SSID 无关，故改目标无需失效。
+private final class PauseOnWiFiSSIDCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: (ssid: String?, timestamp: Date)?
+
+    /// 命中且未过期返回 (true, 缓存值)；否则返回 (false, nil)，由调用方重读并回填。
+    func value(now: Date, maxAge: TimeInterval) -> (fresh: Bool, ssid: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let c = cached, now.timeIntervalSince(c.timestamp) < maxAge { return (true, c.ssid) }
+        return (false, nil)
+    }
+
+    func store(_ ssid: String?, now: Date) {
+        lock.lock()
+        defer { lock.unlock() }
+        cached = (ssid, now)
+    }
+}
+
+private let pauseOnWiFiSSIDCache = PauseOnWiFiSSIDCache()
+
 extension UnlockOrchestrator {
 
     // MARK: - 核心：自动解锁
@@ -53,10 +79,21 @@ extension UnlockOrchestrator {
         // Wi-Fi SSID 暂停：连接指定 Wi-Fi 时跳过自动解锁
         if m.prefs.bool(forKey: "pauseOnWiFi") {
             let targetSSID = m.prefs.string(forKey: "pauseOnWiFiSSID") ?? ""
-            if !targetSSID.isEmpty, let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
-                Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
-                recordUnlock(reason: .wifiPaused, detail: "WiFi '\(targetSSID)'")
-                return
+            if !targetSSID.isEmpty {
+                // 复用 5s 内的当前 SSID 缓存，避免解锁关键时机在主线程同步 CoreWLAN XPC 查询阻塞数十毫秒
+                let hit = pauseOnWiFiSSIDCache.value(now: now, maxAge: 5)
+                let currentSSID: String?
+                if hit.fresh {
+                    currentSSID = hit.ssid
+                } else {
+                    currentSSID = WiFiMonitor.shared.currentSSID
+                    pauseOnWiFiSSIDCache.store(currentSSID, now: now)
+                }
+                if let currentSSID, currentSSID == targetSSID {
+                    Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
+                    recordUnlock(reason: .wifiPaused, detail: "WiFi '\(targetSSID)'")
+                    return
+                }
             }
         }
         // #5: 手动锁屏后不自动解锁（deadline 语义已含 60s/24h 区分，不依赖键是否缺失）
@@ -82,6 +119,8 @@ extension UnlockOrchestrator {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
                     guard !self.manager.state.intent.isManualLockActive else { Log.sm.debug("SKIP: manualLock active in parallel wake task"); return }
+                    // 「只唤醒不解锁」开关同样约束并行解锁任务（与主路径 wakeWithoutUnlocking 门控一致）
+                    guard !self.manager.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking in parallel wake task"); timingLog("SKIP wakeWithoutUnlocking in parallel task"); self.recordUnlock(reason: .wakeWithoutUnlocking); return }
                     timingLog("parallel unlock task fired after 0.8s")
                     guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); self.recordUnlock(reason: .systemNotReady); return }
                     self.tryUnlock()

@@ -20,7 +20,11 @@ enum KeychainError: Error, CustomStringConvertible {
 
 final class SecurityService: Sendable {
     static let shared = SecurityService()
-    private init() {}
+    let serviceName: String
+
+    init(serviceName: String = Bundle.main.bundleIdentifier ?? "FUnlock") {
+        self.serviceName = serviceName
+    }
 
     // MARK: - Keychain
 
@@ -31,7 +35,7 @@ final class SecurityService: Sendable {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
+            String(kSecAttrService): serviceName,
             String(kSecAttrLabel): "FUnlock",
             String(kSecAttrAccessible): kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             String(kSecValueData): pw,
@@ -53,7 +57,7 @@ final class SecurityService: Sendable {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
+            String(kSecAttrService): serviceName,
             String(kSecReturnData): true as CFBoolean,
             String(kSecMatchLimit): kSecMatchLimitOne,
         ]
@@ -98,21 +102,34 @@ final class SecurityService: Sendable {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
-            String(kSecAttrService): Bundle.main.bundleIdentifier ?? "FUnlock",
+            String(kSecAttrService): serviceName,
         ]
         SecItemDelete(query as CFDictionary)
     }
 
     // MARK: - Password Change Detection
 
+    /// CGSession 当前会话是否处于锁定态（审计修复 #5 的前置校验）
+    private var isSessionLocked: Bool {
+        guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return dict["CGSSessionScreenIsLocked"] as? Int == 1
+    }
+
     /// Handle system password change notification: clear old password and prompt user
+    /// 审计修复 #5：com.apple.security.loginwindow.passwordChanged 为无认证分布式通知，
+    /// 任意本地进程可伪造广播。两层防护：
+    /// 1) 会话未锁定时直接忽略（伪造通知无法在用户正常使用时静默触发删除/弹窗）；
+    /// 2) 删除密码前先经用户确认弹窗，确认后才删除并引导重输（拒绝则保留旧密码，
+    ///    旧密码失效导致的解锁失败由状态机 degraded 保护兜底）
     @MainActor
     func handlePasswordChanged() {
+        guard isSessionLocked else {
+            Log.sm.debug("passwordChanged ignored: session not locked")
+            return
+        }
         if case .failure = fetchPassword() { return }
         if case .success(nil) = fetchPassword() { return }
-        Log.sm.debug("system password changed, clearing stored password")
-        deletePassword()
-
+        Log.sm.debug("system password changed, asking user confirmation before clearing")
         let alert = NSAlert()
         alert.messageText = t("password_changed_title")
         alert.informativeText = t("password_changed_info")
@@ -122,6 +139,8 @@ final class SecurityService: Sendable {
         alert.window.title = "Funlock"
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
+            Log.sm.debug("user confirmed password change, clearing stored password")
+            deletePassword()
             askPassword()
         }
     }

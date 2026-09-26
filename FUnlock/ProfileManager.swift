@@ -8,7 +8,8 @@ struct Profile: Identifiable, Codable, Hashable {
     var unlockRSSI: Int
     var enabled: Bool
 
-    static let `default` = Profile(id: "default", name: "默认", lockRSSI: -80, unlockRSSI: -60, enabled: true)
+    /// 内置默认档位；名称走本地化（key `profile_default` 各语言均已就位）
+    static let `default` = Profile(id: "default", name: t("profile_default"), lockRSSI: -80, unlockRSSI: -60, enabled: true)
 }
 
 @Observable
@@ -98,11 +99,18 @@ final class ProfileManager {
                 skipped += 1
                 continue
             }
-            if let idx = profiles.firstIndex(where: { $0.id == p.id }) {
-                profiles[idx] = p
+            // 阈值范围与序关系校验与钳制
+            var sanitized = p
+            let clampedUnlock = SignalHysteresisEngine.clampRSSI(p.unlockRSSI)
+            let clampedLock = SignalHysteresisEngine.clampRSSI(p.lockRSSI)
+            sanitized.unlockRSSI = clampedUnlock
+            sanitized.lockRSSI = min(clampedLock, clampedUnlock - 1)
+
+            if let idx = profiles.firstIndex(where: { $0.id == sanitized.id }) {
+                profiles[idx] = sanitized
                 updated += 1
             } else {
-                profiles.append(p)
+                profiles.append(sanitized)
                 added += 1
             }
         }

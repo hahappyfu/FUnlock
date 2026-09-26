@@ -40,12 +40,15 @@ final class iMessageNotifier: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// 测试注入点：配置存储（默认 ConfigStore.shared）
+    var configStore: ConfigStore = .shared
+
     /// 开关 / 收件人读取（复用现有 Keys enum）
     private var enabled: Bool {
-        ConfigStore.shared.bool(forKey: Keys.enabled)
+        configStore.bool(forKey: Keys.enabled)
     }
     private var recipient: String? {
-        ConfigStore.shared.string(forKey: Keys.recipient)
+        configStore.string(forKey: Keys.recipient)
     }
 
     /// 语义化事件发送：锁屏/解锁时由 FUnManager 调用。失败静默丢弃（锁时不打扰用户）。

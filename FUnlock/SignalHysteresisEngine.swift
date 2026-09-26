@@ -24,6 +24,25 @@ enum SignalHysteresisEngine {
     /// 锁定禁用哨兵值：lockRSSI 等于此值时不单独设锁定阈值，回退使用解锁阈值
     static let lockDisabled = -100
 
+    // MARK: - 阈值范围与钳制（全项目唯一定义）
+
+    /// RSSI 阈值允许范围（dBm）
+    static let rssiRange: ClosedRange<Int> = -95...(-30)
+
+    /// 钳制 RSSI 阈值到允许范围
+    static func clampRSSI(_ value: Int) -> Int {
+        min(max(value, rssiRange.lowerBound), rssiRange.upperBound)
+    }
+
+    /// 步进调节解锁阈值（供诊断页等调用）：
+    /// current 为 UNLOCK_DISABLED 时返回 -95，否则按 delta 步进并钳制在 [lowerBound, upperBound]
+    static func stepUnlockThreshold(current: Int, delta: Int) -> Int {
+        if current == unlockDisabled {
+            return rssiRange.lowerBound
+        }
+        return clampRSSI(current + delta)
+    }
+
     // MARK: - 阶梯唤醒偏移
 
     /// 默认唤醒提前量（dB）
@@ -47,14 +66,17 @@ enum SignalHysteresisEngine {
     // MARK: - 动态锁屏超时
 
     /// 方案 C：按下降斜率计算锁屏超时 —— 陡降（slope ≤ -fastSlopeThreshold）→ fastLockTimeout；
-    /// 缓降/平稳（slope ≥ -mildSlopeThreshold）→ base；中间线性插值
+    /// 缓降/平稳（slope ≥ -mildSlopeThreshold）→ base；中间线性插值。
+    /// 插值 t 以快速档边界为 0（slope=-8）、缓降边界为 1（slope=-1）：
+    /// t = (slope + fastSlopeThreshold) / (fastSlopeThreshold - mildSlopeThreshold)，
+    /// 陡降拿短超时、缓降拿长超时，且两边界处连续无跳变
     static func lockTimeout(slope: Double, base: TimeInterval = 5.0) -> TimeInterval {
         if slope <= -fastSlopeThreshold {
             return fastLockTimeout
         } else if slope >= -mildSlopeThreshold {
             return base
         } else {
-            let t = (-slope - mildSlopeThreshold) / (fastSlopeThreshold - mildSlopeThreshold)
+            let t = (slope + fastSlopeThreshold) / (fastSlopeThreshold - mildSlopeThreshold)
             return fastLockTimeout + (base - fastLockTimeout) * t
         }
     }

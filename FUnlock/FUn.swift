@@ -71,7 +71,10 @@ protocol FUnDelegate: AnyObject {
 ///   （devices / monitoredUUID / presence / pipeline 等）统一由 `lock`（UnfairLock）保护；
 ///   同一把 `lock` 传入 BLEScanner / BLEPeripheralHandler，三方在锁内直接读写共享字段
 ///   以保持 startMonitor / unbindAllState 等跨对象复位的原子性；
-/// - Timer 操作与 `@Observable`（lockRSSI/unlockRSSI）读写收敛在主 RunLoop 与主线程；
+/// - lockRSSI / unlockRSSI / thresholdRSSI 经 computed 访问器自动走 lock
+///   （UnfairLock 不可重入，锁内上下文须直接读 `_lockRSSI` / `_unlockRSSI` 私有存储）；
+/// - Timer 统一注册在主 RunLoop；invalidate 必须在其注册线程执行——置换路径
+///   在锁内取引用并清空字段，invalidate 派发回主线程（fire block 内自停直接主线程调用）；
 /// - 向 `delegate`（@MainActor 协议）的派发统一走 `Task { @MainActor [weak self] }` 跨回主线程。
 class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     static let UNLOCK_DISABLED = SignalHysteresisEngine.unlockDisabled
@@ -97,16 +100,30 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         set { scanner.monitoredUUID = newValue }
     }
     var presence = false
-    var lockRSSI = -80
-    var unlockRSSI = -60
+    /// 解锁阈值（dBm）：主线程写（设置界面）/ bleQueue 判定读，统一走 lock 保护的私有存储——
+    /// computed getter/setter 自带锁，外部裸读写无需改调用点。
+    /// 注意：UnfairLock 不可重入，锁内上下文直接访问 `_unlockRSSI`（如 scannerPollingContext）。
+    var unlockRSSI: Int {
+        get { lock.withLock { _unlockRSSI } }
+        set { lock.withLock { _unlockRSSI = newValue } }
+    }
+    private(set) var _unlockRSSI = -60
+    /// 锁定阈值（dBm）：与 unlockRSSI 同模式，computed 访问器自带锁（锁内用 `_lockRSSI`）
+    var lockRSSI: Int {
+        get { lock.withLock { _lockRSSI } }
+        set { lock.withLock { _lockRSSI = newValue } }
+    }
+    private(set) var _lockRSSI = -80
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
     private var powerWarn = true
-    /// 设备发现入库的最低信号门限（AppDelegate 从偏好写入；读写转发到 BLEScanner，
-    /// 修复此前独立存储导致偏好写入被丢弃、扫描侧仍用默认值的问题）
+    /// 设备发现入库的最低信号门限（AppDelegate 从偏好写入；读写转发到 BLEScanner 并统一走 lock，
+    /// 修复此前独立存储导致偏好写入被丢弃、扫描侧仍用默认值的问题）。
+    /// 默认 -100：与最低可配置解锁阈值（-100）对齐——此前默认 -90 会导致解锁阈值放宽到 -100 时
+    /// 可解锁设备先被列表门限过滤、永不出现
     var thresholdRSSI: Int {
-        get { scanner.thresholdRSSI }
-        set { scanner.thresholdRSSI = newValue }
+        get { lock.withLock { scanner.thresholdRSSI } }
+        set { lock.withLock { scanner.thresholdRSSI = newValue } }
     }
     // 管道状态 (替代旧的散装字段)
     var pipeline = SignalPipeline()
@@ -144,8 +161,11 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     }
 
     func startMonitor(uuid: UUID) {
-        // 快照需要在锁外操作的旧 peripheral
-        let oldPeripheral: CBPeripheral? = lock.withLock {
+        // 共享状态复位与 Timer 引用置换在锁内原子完成；需锁外操作的旧引用（peripheral）取出后，
+        // Timer 的 invalidate 派发回主线程（Timer 注册在主 RunLoop，invalidate 必须在其注册线程执行）
+        let oldPeripheral: CBPeripheral?
+        let oldTimers: [Timer]
+        (oldPeripheral, oldTimers) = lock.withLock {
             let old = scanner.monitoredUUID != uuid ? scanner.monitoredPeripheral : nil
 
             // 重置所有共享状态
@@ -155,10 +175,13 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             // 避免"设备从未靠近"（如忘带手表）时因 presence 残留触发锁屏
             presence = false
             scanner.monitoredPeripheral = nil
-            scanner.handler.activeModeTimer?.invalidate()
+            var timers: [Timer] = []
+            if let t = scanner.handler.activeModeTimer { timers.append(t) }
             scanner.handler.activeModeTimer = nil
-            scanner.handler.connectionTimer?.invalidate()
+            if let t = scanner.handler.connectionTimer { timers.append(t) }
             scanner.handler.connectionTimer = nil
+            if let t = signalTimer { timers.append(t) }
+            signalTimer = nil
             scanner.handler.stableCount = 0
             scanner.handler.activePollInterval = 2.0
             scanner.handler.lastEstimatedRSSI = 0
@@ -169,12 +192,17 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             displayRSSI = -60.0
             smoothedRSSIValue = -100.0
             scanner.monitoredUUIDs = [uuid]
-            return old
+            return (old, timers)
         }
+        for t in oldTimers { DispatchQueue.main.async { t.invalidate() } }
 
-        // Timer 操作在锁外（RunLoop 线程安全，但 invalidate 后不应再用锁）
-        proximityTimer?.invalidate()
-        proximityTimer = nil
+        // proximityTimer 置换：锁内取引用并清空，invalidate 派发回主线程
+        let oldProximity: Timer? = lock.withLock {
+            let t = proximityTimer
+            proximityTimer = nil
+            return t
+        }
+        if let t = oldProximity { DispatchQueue.main.async { t.invalidate() } }
         resetSignalTimer()
         cancelHeartbeat()
 
@@ -195,14 +223,16 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     }
 
     func invalidateAllTimers() {
-        lock.withLock {
-            signalTimer?.invalidate()
-            signalTimer = nil
-            proximityTimer?.invalidate()
-            proximityTimer = nil
-            heartbeatTimer?.invalidate()
-            heartbeatTimer = nil
+        // Timer 的 invalidate 必须在其注册线程（主 RunLoop）执行：锁内取引用并清空，
+        // invalidate 派发回主线程（本方法可被 bleQueue 的 scannerDidPowerOff 调用）
+        let timers: [Timer] = lock.withLock {
+            var collected: [Timer] = []
+            if let t = signalTimer { collected.append(t); signalTimer = nil }
+            if let t = proximityTimer { collected.append(t); proximityTimer = nil }
+            if let t = heartbeatTimer { collected.append(t); heartbeatTimer = nil }
+            return collected
         }
+        for t in timers { DispatchQueue.main.async { t.invalidate() } }
         scanner?.handler.invalidateAllTimers()
     }
 
@@ -265,14 +295,18 @@ extension FUn {
     /// 3. 两者皆禁用：不做快速轮询。
     func scannerPollingContext(_ scanner: BLEScanner) -> BLEScanner.PollingContext {
         let (k, near) = lock.withLock {
+            // 注意：锁内只能读私有阈值存储并内联派生（unlockStairThreshold 等 computed 属性
+            // 内部会取锁，UnfairLock 不可重入，不能嵌套调用）
             let isNear: Bool
-            if unlockRSSI != SignalHysteresisEngine.unlockDisabled {
-                let nearClimb = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(unlockStairThreshold))
-                let lockThreshold = SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
+            if _unlockRSSI != SignalHysteresisEngine.unlockDisabled {
+                let trigger = SignalHysteresisEngine.offsetSetting("preUnlockTrigger", default: Self.defaultPreUnlockTrigger)
+                let stair = _unlockRSSI - trigger
+                let nearClimb = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(stair))
+                let lockThreshold = SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: _unlockRSSI, lockRSSI: _lockRSSI)
                 let nearLock = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockThreshold))
                 isNear = nearClimb || nearLock
-            } else if lockRSSI != SignalHysteresisEngine.lockDisabled {
-                isNear = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockRSSI))
+            } else if _lockRSSI != SignalHysteresisEngine.lockDisabled {
+                isNear = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(_lockRSSI))
             } else {
                 isNear = false
             }

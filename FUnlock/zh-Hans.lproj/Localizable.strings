@@ -133,6 +133,7 @@
 "calibration_samples_collected" = "已采集 ";
 "calibration_samples_unit" = " 个样本";
 "calibration_seconds_unit" = "秒";
+"calibration_no_signal_retry" = "未检测到信号，请靠近设备后重试";
 
 // AppDelegate
 "default_paired_device" = "已配对设备";
@@ -308,6 +309,8 @@
 "mb_locked" = "已锁定";
 "mb_disconnected" = "未连接";
 "mb_enable" = "启用 Funlock";
+"mb_switch_on" = "已开启";
+"mb_switch_off" = "已关闭";
 "mb_update_failed" = "更新失败";
 "mb_signal_excellent" = "信号极佳";
 "mb_signal_very_close" = "非常近";

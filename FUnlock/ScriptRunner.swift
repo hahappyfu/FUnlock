@@ -33,9 +33,10 @@ final class ScriptRunner: @unchecked Sendable {
     }()
 
     /// 便利初始化器，用于测试或自定义去重窗口
-    init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date) {
+    init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date, testLogDirectory: URL? = ScriptRunner.shared.testLogDirectory) {
         self.dedupWindow = dedupWindow
         self.nowProvider = nowProvider
+        self.testLogDirectory = testLogDirectory
     }
 
     private var now: Date { nowProvider() }

@@ -13,7 +13,7 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
 
     private var downloadTask: URLSessionDownloadTask?
     private var session: URLSession?
-    private let tempDir = URL(fileURLWithPath: "/tmp/FUnlock-update")
+    private var tempDir: URL = FileManager.default.temporaryDirectory.appendingPathComponent("FUnlock-update-\(UUID().uuidString)")
     private var targetVersion: String = ""
 
     enum DownloadError: LocalizedError {
@@ -35,8 +35,8 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
         targetVersion = version
         let url = URL(string: "https://github.com/hahappyfu/FUnlock/releases/download/v\(version)/FUnlock.zip")!
 
-        // 准备临时目录
-        try? FileManager.default.removeItem(at: tempDir)
+        // 每次下载使用独立的私有临时目录，杜绝 /tmp 固定路径竞态与多用户权限漏洞
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("FUnlock-update-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         let config = URLSessionConfiguration.default
@@ -86,9 +86,10 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
                 }
 
                 let plistPath = appPath.appendingPathComponent("Contents/Info.plist")
+                let expectedBundleId = Bundle.main.bundleIdentifier ?? "com.fuhahah.Funlock"
                 guard let plist = NSDictionary(contentsOf: plistPath),
                       let bundleId = plist["CFBundleIdentifier"] as? String,
-                      bundleId == "com.fuhahah.FUnlock" else {
+                      bundleId.caseInsensitiveCompare(expectedBundleId) == .orderedSame else {
                     throw DownloadError.bundleIdMismatch
                 }
 

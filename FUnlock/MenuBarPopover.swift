@@ -195,6 +195,9 @@ struct MenuBarPopoverView: View {
                           })) {
             withAnimation(.funSpring) { enabled.toggle() }
         }
+        // 自绘 Capsule 滑轨对读屏器不可见：把「开关」语义与当前档位补到整行按钮上
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(enabled ? t("mb_switch_on") : t("mb_switch_off"))
     }
 
     // MARK: 功能 3-7：设置 / 密码 / 更新 / 统计 / 锁屏

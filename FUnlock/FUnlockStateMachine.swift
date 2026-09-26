@@ -54,11 +54,14 @@ final class FUnlockStateMachine {
 
     // MARK: - 状态转换
 
-    func transition(to newState: State) {
+    /// 执行状态转移：非法转移被拒绝并返回 false（可观测），合法则更新状态并返回 true
+    @discardableResult
+    func transition(to newState: State) -> Bool {
         guard canTransition(from: currentState, to: newState) else {
-            return
+            return false
         }
         currentState = newState
+        return true
     }
 
     private func canTransition(from: State, to: State) -> Bool {
@@ -66,6 +69,7 @@ final class FUnlockStateMachine {
         case (.preWaking, .readyToUnlock),
              (.readyToUnlock, .unlocking),
              (.active, .unlocking),
+             (.cooldown, .unlocking),  // 失败冷却结束后可直接发起下一次解锁尝试
              (.unlocking, .active),
              (.unlocking, .cooldown),
              (.cooldown, .active),
@@ -90,6 +94,11 @@ final class FUnlockStateMachine {
             return false
         }
 
+        // 失败冷却：与 canAttemptUnlock 判定内聚，任何调用点都无法绕过冷却
+        guard !isInCooldown else {
+            return false
+        }
+
         // 防抖检查
         guard currentNow.timeIntervalSince(lastUnlockAttempt) > unlockCooldown else {
             return false
@@ -101,8 +110,11 @@ final class FUnlockStateMachine {
             return false
         }
 
+        // 转移被拒绝时本次尝试不生效（不记录尝试时间）
+        guard transition(to: .unlocking) else {
+            return false
+        }
         lastUnlockAttempt = currentNow
-        transition(to: .unlocking)
         return true
     }
 

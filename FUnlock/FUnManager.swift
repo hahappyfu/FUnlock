@@ -31,26 +31,29 @@ final class FUnManager {
 
     // MARK: Dependencies
 
-    let fun: FUn
-    let stateMachine: FUnlockStateMachine
-    let decisionLogger: DecisionLogger
+    /// 以下依赖与簿记字段只被方法调用读写、从不参与视图渲染，统一排除在 @Observable
+    /// 跟踪之外，避免 ObservationRegistrar 为它们登记无意义的访问记录。
+    @ObservationIgnored let fun: FUn
+    @ObservationIgnored let stateMachine: FUnlockStateMachine
+    @ObservationIgnored let decisionLogger: DecisionLogger
     var inputMonitor: InputActivityMonitor?
     var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
-    private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
-    private let downloader = UpdateDownloader()
+    @ObservationIgnored private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
+    @ObservationIgnored private let downloader = UpdateDownloader()
     private(set) var updateState: UpdateDownloader.State = .idle
-    let prefs = ConfigStore.shared.defaults
+    @ObservationIgnored let prefs = ConfigStore.shared.defaults
     /// 后台探测任务的取消句柄，纯内部簿记状态，不参与视图渲染，
     /// 且需在非隔离的 `deinit` 中访问，故显式排除在 @Observable 跟踪之外。
     @ObservationIgnored var intrudeCheckTask: Task<Void, Never>?
-    private var mediaWasPlaying = false
+    @ObservationIgnored private var mediaWasPlaying = false
 
     /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
     /// （在 init 末尾装配；强持有，orchestrator 以 unowned 反向引用本类）
     private(set) var orchestrator: UnlockOrchestrator!
 
     // MARK: - 冷却与缓冲策略（可测试时间源）
-    var nowProvider: () -> Date = { Date() }
+    /// 可注入时间源：仅门控判定内部读取，不驱动视图，故排除在跟踪之外
+    @ObservationIgnored var nowProvider: () -> Date = { Date() }
     var now: Date { nowProvider() }
     /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁
     var unlockCooldownDuration: TimeInterval = 5.0
@@ -98,11 +101,8 @@ final class FUnManager {
         downloader.onStateChange = { [weak self] state in
             self?.updateState = state
             if case .completed(let appPath) = state {
-                do {
-                    try UpdateInstaller.install(appPath: appPath)
-                } catch {
-                    self?.updateState = .failed(error.localizedDescription)
-                }
+                // 安全加固：下载解压验证完成后提示用户确认，不再静默覆盖安装重启
+                self?.promptInstallConfirmation(appPath: appPath)
             }
         }
 
@@ -118,9 +118,14 @@ final class FUnManager {
     // MARK: - 阈值同步
 
     func setLockRSSI(_ value: Int) {
-        lockRSSI = value
-        fun.lockRSSI = value
-        ConfigStore.shared.set(value, forKey: "lockRSSI")
+        var finalLock = value
+        // 防御性校验：若解锁功能开启且不是锁定禁用哨兵，锁定阈值必须严于（更远/小于）解锁阈值
+        if finalLock != SignalHysteresisEngine.lockDisabled && unlockRSSI != FUn.UNLOCK_DISABLED {
+            finalLock = min(finalLock, unlockRSSI - 1)
+        }
+        lockRSSI = finalLock
+        fun.lockRSSI = finalLock
+        ConfigStore.shared.set(finalLock, forKey: "lockRSSI")
         thresholdVersion += 1
     }
 
@@ -129,7 +134,12 @@ final class FUnManager {
         fun.unlockRSSI = value
         ConfigStore.shared.set(value, forKey: "unlockRSSI")
         if value != FUn.UNLOCK_DISABLED {
-            setLockRSSI(max(value - lockUnlockDelayGap, Int(OverviewView.RSSIRange.min)))
+            // 迟滞联动：锁定阈值应比解锁阈值更远（更小）；
+            // 若受下限钳制无法拉满 gap，强制保证 lock < unlock
+            let idealLock = value - lockUnlockDelayGap
+            let clampedLock = SignalHysteresisEngine.clampRSSI(idealLock)
+            let safeLock = min(clampedLock, value - 1)
+            setLockRSSI(safeLock)
         }
     }
 
@@ -289,5 +299,25 @@ final class FUnManager {
 
     func updateConnected(_ newValue: Bool) {
         connected = newValue
+    }
+
+    // MARK: - 更新安装确认
+
+    /// 下载完成后的安装确认弹窗：由用户主动确认后执行替换与重启，防止静默换装
+    private func promptInstallConfirmation(appPath: URL) {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("update_ready_title", value: "新版本已准备就绪", comment: "")
+        alert.informativeText = NSLocalizedString("update_ready_info", value: "新版本已下载并验证签名完成，是否立即退出并更新？", comment: "")
+        alert.addButton(withTitle: NSLocalizedString("update_install_now", value: "立即更新", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("later", value: "稍后", comment: ""))
+        alert.alertStyle = .informational
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            do {
+                try UpdateInstaller.install(appPath: appPath)
+            } catch {
+                self.updateState = .failed(error.localizedDescription)
+            }
+        }
     }
 }

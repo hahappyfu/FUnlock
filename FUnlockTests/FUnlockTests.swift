@@ -174,29 +174,6 @@ class FUnlockTests: XCTestCase {
 
     // MARK: - LockScreenState Tests
 
-    func testCanAutoUnlockNormal() {
-        var state = LockScreenState()
-        state.screen = .unlocked
-        state.system = .awake
-        state.intent = .autoLock
-        XCTAssertTrue(state.canAutoUnlock)
-    }
-
-    func testCanAutoUnlockBlockedByManualLock() {
-        var state = LockScreenState()
-        state.screen = .locked(reason: .manual)
-        state.system = .awake
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
-        XCTAssertFalse(state.canAutoUnlock)
-    }
-
-    func testCanAutoUnlockBlockedBySleep() {
-        var state = LockScreenState()
-        state.screen = .locked(reason: .away)
-        state.system = .sleeping
-        XCTAssertFalse(state.canAutoUnlock)
-    }
-
     func testIsEffectivelyLocked() {
         var state = LockScreenState()
         state.screen = .unlocked
@@ -212,9 +189,11 @@ class FUnlockTests: XCTestCase {
         XCTAssertTrue(intent.isManualLockActive)
     }
 
-    func testManualLockExpired() {
+    func testManualLockStaysActiveAfterDeadlineExpires() {
+        // manualLock 语义（审计修复）：deadline 过期后仍无条件阻止，直到 onUnlock 重置 intent；
+        // deadline 仅作兜底标记保留，不参与判定
         let intent = LockIntent.manualLock(deadline: Date().addingTimeInterval(-1))
-        XCTAssertFalse(intent.isManualLockActive)
+        XCTAssertTrue(intent.isManualLockActive)
     }
 
     func testAutoLockNeverActive() {
@@ -234,59 +213,6 @@ class FUnlockTests: XCTestCase {
 /// 补充测试：LockScreenState 计算属性的更多场景
 /// LockScreenState 是纯值类型，不依赖任何系统框架，可以直接测试
 class LockScreenStateTests: XCTestCase {
-
-    // MARK: - canAutoUnlock 额外场景
-
-    func testCanAutoUnlockBlockedByScreensaver() {
-        // 屏保状态下不应允许自动解锁（屏幕虽然没锁定，但处于屏保中）
-        var state = LockScreenState()
-        state.screen = .screensaver
-        state.system = .awake
-        state.intent = .autoLock
-        // screensaver 不在 canAutoUnlock 的排除列表中，但实际屏幕已非 unlocked
-        // 根据代码：只排除 manualLockActive、system.sleeping、screen.displaySleeping
-        XCTAssertTrue(state.canAutoUnlock, "screensaver 本身不阻止 canAutoUnlock（由上层逻辑决定是否触发解锁）")
-    }
-
-    func testCanAutoUnlockBlockedByDisplaySleeping() {
-        var state = LockScreenState()
-        state.screen = .displaySleeping
-        state.system = .awake
-        state.intent = .autoLock
-        XCTAssertFalse(state.canAutoUnlock, "displaySleeping 状态应阻止自动解锁")
-    }
-
-    func testCanAutoUnlockBlockedByDisplaySleepingEvenWithAutoLockIntent() {
-        var state = LockScreenState()
-        state.screen = .displaySleeping
-        state.system = .awake
-        state.intent = .autoLock
-        XCTAssertFalse(state.canAutoUnlock, "即使 intent 是 autoLock，displaySleeping 也应阻止")
-    }
-
-    func testCanAutoUnlockWithExpiredManualLock() {
-        // manualLock 已过期（deadline 在过去），应允许自动解锁
-        var state = LockScreenState()
-        state.screen = .locked(reason: .manual)
-        state.system = .awake
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(-60))
-        XCTAssertTrue(state.canAutoUnlock, "过期的 manualLock 不应阻止自动解锁")
-    }
-
-    func testCanAutoUnlockBlockedByBothManualLockAndSleep() {
-        // 多重条件：manualLock 活跃 + 系统休眠，应阻止
-        var state = LockScreenState()
-        state.screen = .locked(reason: .manual)
-        state.system = .sleeping
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
-        XCTAssertFalse(state.canAutoUnlock, "manualLock + sleeping 双重条件应阻止")
-    }
-
-    func testCanAutoUnlockDefaultState() {
-        // 默认状态：unlocked + awake + autoLock → 应该允许
-        let state = LockScreenState()
-        XCTAssertTrue(state.canAutoUnlock, "默认状态应允许自动解锁")
-    }
 
     // MARK: - isEffectivelyLocked 在 screensaver / displaySleeping 下
 
@@ -335,44 +261,22 @@ class LockScreenStateTests: XCTestCase {
     // MARK: - LockScreenState 组合场景
 
     func testSleepingWithAutoLockIntent() {
-        // 系统休眠 + autoLock intent：canAutoUnlock = false, isEffectivelyLocked = false（screen 仍 unlocked）
+        // 系统休眠 + autoLock intent：isEffectivelyLocked = false（screen 仍 unlocked）
         var state = LockScreenState()
         state.screen = .unlocked
         state.system = .sleeping
         state.intent = .autoLock
-        XCTAssertFalse(state.canAutoUnlock, "系统休眠时不能自动解锁")
         XCTAssertFalse(state.isEffectivelyLocked, "screen 仍 unlocked，不算有效锁定")
     }
 
     func testDisplaySleepingWithManualLockExpired() {
-        // displaySleeping + 过期 manualLock
+        // displaySleeping + 过期 manualLock：deadline 不参与判定，manualLock 依旧活跃
         var state = LockScreenState()
         state.screen = .displaySleeping
         state.system = .awake
         state.intent = .manualLock(deadline: Date().addingTimeInterval(-60))
-        // canAutoUnlock: manualLock 过期 → 跳过, system.awake → 跳过, screen == .displaySleeping → false
-        XCTAssertFalse(state.canAutoUnlock, "displaySleeping 即使 manualLock 过期也应阻止自动解锁")
+        XCTAssertTrue(state.intent.isManualLockActive, "manualLock 过期后仍活跃（须等 onUnlock 重置 intent）")
         XCTAssertTrue(state.isEffectivelyLocked, "displaySleeping 应视为有效锁定")
-    }
-
-    func testScreensaverDoesNotBlockCanAutoUnlock() {
-        // screensaver 状态：不在 canAutoUnlock 的排除条件中
-        var state = LockScreenState()
-        state.screen = .screensaver
-        state.system = .awake
-        state.intent = .autoLock
-        XCTAssertTrue(state.canAutoUnlock, "screensaver 不在 canAutoUnlock 排除列表中")
-    }
-
-    func testWakePhaseAndMediaStateDoNotAffectCanAutoUnlock() {
-        // 验证 wake 和 media 状态不影响 canAutoUnlock
-        var state = LockScreenState()
-        state.screen = .locked(reason: .away)
-        state.system = .awake
-        state.intent = .autoLock
-        state.wake = .pending
-        state.media = .wasPlaying
-        XCTAssertTrue(state.canAutoUnlock, "wake/media 状态不影响 canAutoUnlock")
     }
 }
 
@@ -384,9 +288,9 @@ class LockIntentTests: XCTestCase {
         _ = LockIntent.manualLock(deadline: Date())
         // Date() 可能与 deadline 同时，< 判断可能为 false
         // 这里测试的是：如果 deadline 就是 now，isManualLockActive 取决于毫秒级时序
-        // 关键行为：过期后的 intent 不应阻止自动解锁
+        // 关键行为：manualLock 一旦设置即无条件阻止自动解锁（deadline 不参与判定）
         let intentExpired = LockIntent.manualLock(deadline: Date().addingTimeInterval(-1))
-        XCTAssertFalse(intentExpired.isManualLockActive, "deadline 在过去应为已过期")
+        XCTAssertTrue(intentExpired.isManualLockActive, "deadline 在过去 manualLock 仍活跃（须等 onUnlock 重置）")
     }
 
     func testManualLockFarFutureDeadlineIsActive() {
@@ -395,9 +299,9 @@ class LockIntentTests: XCTestCase {
     }
 
     func testManualLockZeroDurationDeadline() {
-        // deadline 在过去，应为已过期
+        // deadline 在过去，manualLock 仍活跃（deadline 不参与判定）
         let intent = LockIntent.manualLock(deadline: Date(timeIntervalSince1970: 0))
-        XCTAssertFalse(intent.isManualLockActive, "1970年的 deadline 应为已过期")
+        XCTAssertTrue(intent.isManualLockActive, "1970年的 deadline 不影响 manualLock 活跃判定")
     }
 
     func testAutoLockNeverHasManualLockActive() {
@@ -631,7 +535,7 @@ class UnlockedAtTests: XCTestCase {
         state.unlockedAt = Date(timeIntervalSince1970: 0)
 
         XCTAssertEqual(state.unlockedAt, Date(timeIntervalSince1970: 0), "锁屏后 unlockedAt 应重置为 epoch")
-        XCTAssertFalse(state.canAutoUnlock, "manualLock 活跃时不应允许自动解锁")
+        XCTAssertTrue(state.intent.isManualLockActive, "manualLock 活跃期间不应允许自动解锁")
     }
 }
 
@@ -645,13 +549,13 @@ class StateTransitionSequenceTests: XCTestCase {
         state.screen = .unlocked
         state.system = .awake
         state.intent = .autoLock
-        XCTAssertTrue(state.canAutoUnlock)
+        XCTAssertFalse(state.intent.isManualLockActive, "初始 intent 为 autoLock，不阻止自动解锁")
         XCTAssertFalse(state.isEffectivelyLocked)
 
         // 设备远离 → locked(away)
         state.screen = .locked(reason: .away)
         XCTAssertTrue(state.isEffectivelyLocked)
-        XCTAssertTrue(state.canAutoUnlock, "away 锁定后，intent 仍为 autoLock，应允许自动解锁")
+        XCTAssertEqual(state.intent, .autoLock, "away 锁定后，intent 仍为 autoLock，应允许自动解锁")
     }
 
     func testManualLockPreventsAutoUnlock() {
@@ -659,16 +563,16 @@ class StateTransitionSequenceTests: XCTestCase {
         state.screen = .locked(reason: .manual)
         state.system = .awake
         state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
-        XCTAssertFalse(state.canAutoUnlock, "手动锁定 60 秒内不应自动解锁")
+        XCTAssertTrue(state.intent.isManualLockActive, "手动锁定 60 秒内 manualLock 应活跃（阻止自动解锁）")
         XCTAssertTrue(state.isEffectivelyLocked)
     }
 
-    func testManualLockExpiredAllowsAutoUnlock() {
+    func testManualLockExpiredStillBlocksAutoUnlock() {
         var state = LockScreenState()
         state.screen = .locked(reason: .manual)
         state.system = .awake
         state.intent = .manualLock(deadline: Date().addingTimeInterval(-1))
-        XCTAssertTrue(state.canAutoUnlock, "手动锁定过期后应允许自动解锁")
+        XCTAssertTrue(state.intent.isManualLockActive, "manualLock 过期后仍活跃（须等 onUnlock 重置 intent）")
     }
 
     func testDisplaySleepToLockTransition() {
@@ -676,13 +580,12 @@ class StateTransitionSequenceTests: XCTestCase {
         var state = LockScreenState()
         state.screen = .displaySleeping
         state.system = .awake
-        XCTAssertFalse(state.canAutoUnlock, "displaySleeping 不允许自动解锁")
-        XCTAssertTrue(state.isEffectivelyLocked)
+        XCTAssertTrue(state.isEffectivelyLocked, "displaySleeping 应视为有效锁定")
 
         // 唤醒后 → locked(away)（模拟 onDisplayWake）
         state.screen = .locked(reason: .away)
         state.wake = .succeeded
-        XCTAssertTrue(state.canAutoUnlock, "唤醒后 should allow auto unlock")
+        XCTAssertEqual(state.wake, .succeeded, "唤醒阶段应标记成功，后续解锁链由 intent 判定")
         XCTAssertTrue(state.isEffectivelyLocked)
     }
 
@@ -691,11 +594,11 @@ class StateTransitionSequenceTests: XCTestCase {
         var state = LockScreenState()
         state.screen = .locked(reason: .away)
         state.system = .sleeping
-        XCTAssertFalse(state.canAutoUnlock, "休眠中不允许自动解锁")
+        XCTAssertEqual(state.system, .sleeping, "休眠期间系统态应为 sleeping（上层不触发自动解锁）")
 
         // 系统唤醒
         state.system = .awake
-        XCTAssertTrue(state.canAutoUnlock, "唤醒后应允许自动解锁")
+        XCTAssertEqual(state.system, .awake, "唤醒后系统态应恢复 awake")
     }
 
     func testScreensaverToLockedTransition() {
@@ -708,7 +611,7 @@ class StateTransitionSequenceTests: XCTestCase {
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
         XCTAssertTrue(state.isEffectivelyLocked, "屏保结束后应为有效锁定")
-        XCTAssertTrue(state.canAutoUnlock, "屏保结束后 intent 仍为 autoLock")
+        XCTAssertEqual(state.intent, .autoLock, "屏保结束后 intent 仍为 autoLock")
     }
 
     func testUserManualLockThenDeviceApproaches() {
@@ -717,12 +620,11 @@ class StateTransitionSequenceTests: XCTestCase {
         state.screen = .locked(reason: .manual)
         state.intent = .manualLock(deadline: Date().addingTimeInterval(60))
         state.system = .awake
-        XCTAssertFalse(state.canAutoUnlock, "手动锁屏后设备靠近不应解锁（deadline 未过期）")
+        XCTAssertTrue(state.intent.isManualLockActive, "手动锁屏后 manualLock 应活跃（不应自动解锁）")
 
         // 设备靠近但手动锁仍在有效期
-        // intent 不变，仍为 manualLock，canAutoUnlock 仍为 false
+        // intent 不变，仍为 manualLock
         XCTAssertTrue(state.intent.isManualLockActive, "60秒内手动锁应仍活跃")
-        XCTAssertFalse(state.canAutoUnlock, "手动锁活跃期间不应解锁")
     }
 
     func testFullUnlockCycle() {
@@ -747,7 +649,7 @@ class StateTransitionSequenceTests: XCTestCase {
         XCTAssertTrue(state.isEffectivelyLocked)
 
         // 4. 状态恢复到可解锁
-        XCTAssertTrue(state.canAutoUnlock, "设备再次靠近后应允许解锁")
+        XCTAssertEqual(state.intent, .autoLock, "设备再次靠近后 intent 仍为 autoLock，允许自动解锁")
     }
 }
 
@@ -759,22 +661,23 @@ class ScriptRunnerDedupTests: XCTestCase {
     private var runner: ScriptRunner!
     private var currentTime: Date!
     private var logFile: URL!
+    private var tempDir: URL!
 
     override func setUp() {
         super.setUp()
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         runner = ScriptRunner(dedupWindow: 3.0) { [unowned self] in self.currentTime }
-        // 定位日志文件
-        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        logFile = dir.appendingPathComponent("FUnlock/events.log")
-        // 清空日志，确保测试干净
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        // 安全隔离：使用独立私有临时目录，严禁清空或污染用户真实 Application Support/FUnlock/events.log
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScriptRunnerDedupTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        runner.testLogDirectory = tempDir
+        logFile = tempDir.appendingPathComponent("events.log")
     }
 
     override func tearDown() {
-        // 清理日志
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
         runner = nil
+        try? FileManager.default.removeItem(at: tempDir)
         super.tearDown()
     }
 
@@ -1042,16 +945,20 @@ class FUnManagerCooldownTests: XCTestCase {
 class ScriptRunnerEventLoggingTests: XCTestCase {
 
     private var logFile: URL!
+    private var tempDir: URL!
 
     override func setUp() {
         super.setUp()
-        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        logFile = dir.appendingPathComponent("FUnlock").appendingPathComponent("events.log")
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ScriptRunnerEventLoggingTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        logFile = tempDir.appendingPathComponent("events.log")
+        ScriptRunner.shared.testLogDirectory = tempDir
     }
 
     override func tearDown() {
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        ScriptRunner.shared.testLogDirectory = nil
+        try? FileManager.default.removeItem(at: tempDir)
         super.tearDown()
     }
 
@@ -1600,19 +1507,17 @@ class LegacyCompatibilityTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        let dir = try! FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        logFile = dir.appendingPathComponent("FUnlock/events.log")
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
-
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LegacyCompatTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        logFile = tempDir.appendingPathComponent("events.log")
+        ScriptRunner.shared.testLogDirectory = tempDir
         TelemetryLogger.shared.testLogDirectory = tempDir
         try? FileManager.default.removeItem(at: TelemetryLogger.shared.testLogFile)
     }
 
     override func tearDown() async throws {
-        try? "".write(to: logFile, atomically: true, encoding: .utf8)
+        ScriptRunner.shared.testLogDirectory = nil
         TelemetryLogger.shared.testLogDirectory = nil
         try? FileManager.default.removeItem(at: tempDir)
         try await super.tearDown()
@@ -1715,6 +1620,14 @@ class LegacyCompatibilityTests: XCTestCase {
         let fun = FUn()
         let manager = FUnManager(fun: fun)
         XCTAssertEqual(manager.unlockRSSI, fun.unlockRSSI, "FUnManager.unlockRSSI 默认值应与 FUn.unlockRSSI 一致")
+    }
+
+    /// 审计 B5 #12：设备列表入库门限默认应与最低可配置解锁阈值（-100）对齐。
+    /// 此前默认 -90 会导致解锁阈值放宽到 -100 时可解锁设备先被列表门限过滤、永不出现
+    func testFUnThresholdRSSIDefaultAlignedWithUnlockRange() {
+        let fun = FUn()
+        XCTAssertEqual(fun.thresholdRSSI, -100,
+                       "thresholdRSSI 默认应为 -100（与最低可配置解锁阈值一致，避免设备列表过滤可解锁设备）")
     }
 
     /// FUnManager 解锁冷却默认值为 5 秒
@@ -2368,6 +2281,30 @@ class StaircaseThresholdTests: XCTestCase {
         XCTAssertEqual(fun.unlockStairThreshold, fun.unlockRSSI - 20,
                        "preUnlockTrigger 50 应钳制为 20")
     }
+
+    /// 审计 B5 #14：解锁阈值放宽到 -100 时外推值（-120/-110）钳制到物理下限 -100。
+    /// 此前 -120 的 preWake 永不可能被信号触达，displaySleeping 下任意信号即触发唤醒
+    func testDerivedThresholdClampedAtMinus100() {
+        let fun = FUn()
+        fun.unlockRSSI = -100  // 最低可配置解锁阈值
+        ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
+        ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
+        XCTAssertEqual(fun.preWakeThreshold, -100,
+                       "外推值 -120 应钳制到物理下限 -100（避免任意信号触发预备唤醒）")
+        XCTAssertEqual(fun.unlockStairThreshold, -100,
+                       "外推值 -110 应钳制到物理下限 -100")
+    }
+
+    /// 哨兵语义：解锁禁用（unlockRSSI == UNLOCK_DISABLED == 1）时原样返回，
+    /// 调用方据此跳过阶梯唤醒（不受 -100 钳制影响）
+    func testDerivedThresholdUnlockDisabledSentinel() {
+        let fun = FUn()
+        fun.unlockRSSI = FUn.UNLOCK_DISABLED
+        XCTAssertEqual(fun.preWakeThreshold, FUn.UNLOCK_DISABLED,
+                       "解锁禁用哨兵应原样返回（不参与 -100 钳制）")
+        XCTAssertEqual(fun.unlockStairThreshold, FUn.UNLOCK_DISABLED,
+                       "解锁禁用哨兵应原样返回（不参与 -100 钳制）")
+    }
 }
 
 /// 测试 FUnManager 的预备唤醒与阶梯解锁行为
@@ -2563,9 +2500,7 @@ class PreWakeStaircaseTests: XCTestCase {
         // 1. 手动锁屏（系统通知，非 FUnlock 自锁）
         manager.onSystemScreenLocked()
         XCTAssertTrue(manager.state.intent.isManualLockActive,
-                      "手动锁屏后应进入 manualLock")
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "manualLock 下 canAutoUnlock 应为 false")
+                      "手动锁屏后应进入 manualLock（自动解锁被拦截）")
 
         // 2. 设备靠近且信号已达阶梯解锁阈值 → 自动解锁被 manualLockActive 拦下
         manager.fun.presence = true
@@ -2582,9 +2517,7 @@ class PreWakeStaircaseTests: XCTestCase {
         // 3. 用户手动解锁 → intent 重置，恢复自动解锁能力
         manager.onUnlock()
         XCTAssertFalse(manager.state.intent.isManualLockActive,
-                       "手动解锁后应清除 manualLock")
-        XCTAssertTrue(manager.state.canAutoUnlock,
-                       "手动解锁后应恢复自动解锁能力")
+                       "手动解锁后应清除 manualLock，恢复自动解锁能力")
 
         // 4. 再次靠近 → manualLock 不应复发（后续由冷却/屏幕状态门控接管）
         manager.onDeviceApproached()
@@ -2726,8 +2659,8 @@ class KeychainSecurityTests: XCTestCase {
     // MARK: - storePassword 使用新 accessibility 常量
 
     func testStorePasswordDoesNotReturnErrorOnSuccess() {
-        // 在测试环境中，storePassword 应能成功写入和删除
-        let service = SecurityService.shared
+        // 安全隔离：使用独立测试 serviceName，防止删除或污染真实 Keychain 密码
+        let service = SecurityService(serviceName: "com.fuhahah.FUnlock.test.isolated")
         let testPassword = "test_keychain_security_\(UUID().uuidString)"
         let storeResult = service.storePassword(testPassword)
         // 成功时返回 nil（无错误）
@@ -2737,7 +2670,7 @@ class KeychainSecurityTests: XCTestCase {
     }
 
     func testDeletePasswordDoesNotCrash() {
-        let service = SecurityService.shared
+        let service = SecurityService(serviceName: "com.fuhahah.FUnlock.test.isolated")
         // deletePassword 不返回值，不应崩溃
         service.deletePassword()
         // 调用两次也不应崩溃
@@ -2748,8 +2681,8 @@ class KeychainSecurityTests: XCTestCase {
 
     @MainActor
     func testHandlePasswordChangedDoesNotCrashWithNoPassword() {
-        // 确保 handlePasswordChanged 在无密码时不崩溃
-        let service = SecurityService.shared
+        // 安全隔离：使用独立测试 serviceName
+        let service = SecurityService(serviceName: "com.fuhahah.FUnlock.test.isolated")
         service.deletePassword()
         // 不应崩溃
         service.handlePasswordChanged()
@@ -2881,6 +2814,107 @@ class UserInterventionTests: XCTestCase {
     }
 }
 
+// MARK: - 审计批次4修复测试
+// 覆盖：#1 屏保手动锁定 / #2a isSelfLocking 过期 / #4+#10 自唤醒竞态 / #5 passwordChanged 防伪造
+
+@MainActor
+class AuditBatch4FixTests: XCTestCase {
+
+    private var manager: FUnManager!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        manager = FUnManager(fun: FUn())
+        // 隔离文件作用域的全局时间戳，避免用例间残留
+        selfLockingStartedAt = nil
+    }
+
+    override func tearDown() async throws {
+        manager.orchestrator.cancelPendingTasks()
+        selfLockingStartedAt = nil
+        try await super.tearDown()
+    }
+
+    // MARK: 修复 #1：手动启动屏保应视为手动锁定
+
+    func testScreensaverStartMarksManualLock() {
+        // 审计修复 #1：热角等手动屏保只改 screen 不设 intent 时，
+        // 屏保结束后设备靠近仍会自动解锁
+        manager.onScreensaverStart()
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "手动启动屏保应进入 manualLock")
+        XCTAssertEqual(manager.state.screen, .screensaver, "screen 状态更新行为不变")
+    }
+
+    func testSelfLockingScreensaverStartKeepsAutoLock() {
+        // FUnlock 自动锁屏走屏保路径（screensaver 偏好）时不应误标手动锁定
+        manager.isSelfLocking = true
+        manager.onScreensaverStart()
+        XCTAssertFalse(manager.state.intent.isManualLockActive,
+                       "FUnlock 自锁触发的屏保不应进入 manualLock")
+    }
+
+    // MARK: 修复 #2a：isSelfLocking 残留超过 10s 视为过期
+
+    func testStaleSelfLockingFlagTreatedAsManualLock() {
+        // com.apple.screenIsLocked 通知丢失 → 标志残留；10s 后用户手动锁屏
+        manager.isSelfLocking = true
+        selfLockingStartedAt = Date().addingTimeInterval(-11)
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "置位超 10s 的残留标志应视为过期，按手动锁屏处理")
+        XCTAssertFalse(manager.isSelfLocking, "消费后标志应复位")
+    }
+
+    func testFreshSelfLockingFlagStillConsumedAsAutoLock() {
+        manager.isSelfLocking = true
+        selfLockingStartedAt = Date()
+        manager.onSystemScreenLocked()
+        XCTAssertEqual(manager.state.intent, .autoLock,
+                       "10s 内的正常自锁路径不受过期判定影响")
+        XCTAssertFalse(manager.isSelfLocking)
+    }
+
+    // MARK: 修复 #4/#10：程序自唤醒不触发用户干预
+
+    func testSelfWakeSkipsUserIntervention() {
+        for _ in 0..<3 { manager.stateMachine.handleUnlockFailure() }
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded)
+        manager.orchestrator.displayWakeRequested = true  // 模拟 FUn 预唤醒在途
+        manager.onDisplayWake()
+        XCTAssertEqual(manager.stateMachine.currentState, .degraded,
+                       "程序自唤醒不应触发 onUserIntervention（否则刚调度的解锁任务被自己取消）")
+        XCTAssertFalse(manager.orchestrator.displayWakeRequested,
+                       "唤醒处理后自唤醒标记应复位")
+    }
+
+    func testManualWakeTriggersUserIntervention() {
+        for _ in 0..<3 { manager.stateMachine.handleUnlockFailure() }
+        manager.orchestrator.displayWakeRequested = false  // 用户手动唤醒，无自唤醒标记
+        manager.onDisplayWake()
+        XCTAssertEqual(manager.stateMachine.currentState, .active,
+                       "用户手动唤醒应执行 onUserIntervention 恢复 active")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 3,
+                       "干预语义不变：失败计数保留（clearFailures: false）")
+    }
+
+    // MARK: 修复 #5：未锁定会话下伪造 passwordChanged 不删密码
+
+    func testHandlePasswordChangedIgnoresWhenSessionUnlocked() {
+        let service = SecurityService.shared
+        let marker = "pw-changed-guard-\(UUID().uuidString)"
+        service.storePassword(marker)
+        // 测试宿主会话未锁定 → 通知应被忽略且不弹确认窗
+        service.handlePasswordChanged()
+        if case .success(let pw) = service.fetchPassword() {
+            XCTAssertEqual(pw, marker, "未锁定会话下 passwordChanged 不得删除密码")
+        } else {
+            XCTFail("密码应仍可读取（未被伪造通知删除）")
+        }
+        service.deletePassword()
+    }
+}
+
 // MARK: - 集成测试：完整解锁流程
 
 /// 完整解锁流程集成测试：BLE 信号 → 预备唤醒 → 密码注入
@@ -2918,8 +2952,6 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         manager.onDisplaySleep()
         XCTAssertEqual(manager.state.screen, .displaySleeping,
                        "onDisplaySleep 后 screen 应为 displaySleeping")
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "displaySleeping 时 canAutoUnlock 应为 false")
 
         // 步骤 3：BLE 信号达到预备唤醒阈值（平滑 RSSI >= -60dBm）
         manager.fun.unlockRSSI = -60
@@ -3008,17 +3040,15 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         // 系统进入休眠
         manager.onSystemSleep()
         XCTAssertEqual(manager.state.system, .sleeping,
-                       "onSystemSleep 后 system 应为 sleeping")
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "系统休眠时 canAutoUnlock 应为 false")
+                       "onSystemSleep 后 system 应为 sleeping（上层据此不触发自动解锁）")
 
         // 尝试解锁路径 — 应被阻止
         manager.fun.effectiveRSSI = -45.0
         manager.onDeviceApproached()
 
-        // canAutoUnlock 在 sleeping 状态下应为 false
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "系统休眠时即使信号强也不应允许自动解锁")
+        // 休眠期间不触发自动解锁：system 应保持 sleeping
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "系统休眠时即使信号强也不应改变 system 态")
     }
 
     /// 场景：完整解锁 → 离场锁屏 → 再次靠近解锁循环
@@ -3031,7 +3061,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         // 1. 首次解锁
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked)
-        XCTAssertTrue(manager.state.canAutoUnlock)
+        XCTAssertEqual(manager.state.intent, .autoLock, "onUnlock 应重置 intent，恢复自动解锁能力")
         XCTAssertEqual(manager.stateMachine.currentState, .active,
                        "解锁成功后状态机应为 active")
 
@@ -3087,9 +3117,7 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         // 1. 系统休眠
         manager.onSystemSleep()
         XCTAssertEqual(manager.state.system, .sleeping,
-                       "系统休眠后 system 应为 sleeping")
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "休眠中不能自动解锁")
+                       "系统休眠后 system 应为 sleeping（休眠期间上层不触发自动解锁）")
 
         // 2. 系统唤醒 — 验证 system 恢复为 awake（通过 Task 异步）
         manager.onSystemWake()
@@ -3098,8 +3126,8 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             XCTAssertEqual(self.manager.state.system, .awake,
                            "系统唤醒后 system 应为 awake")
-            XCTAssertTrue(self.manager.state.canAutoUnlock,
-                          "唤醒后 canAutoUnlock 应恢复为 true")
+            XCTAssertFalse(self.manager.state.intent.isManualLockActive,
+                           "唤醒后 intent 不应停留在 manualLock")
             expectation.fulfill()
         }
         wait(for: [expectation], timeout: 2.0)
@@ -3155,8 +3183,8 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
             // 5. 显示器唤醒
             self.manager.onDisplayWake()
             XCTAssertEqual(self.manager.state.wake, .succeeded)
-            XCTAssertTrue(self.manager.state.canAutoUnlock,
-                          "完整电源循环后应恢复解锁能力")
+            XCTAssertFalse(self.manager.state.intent.isManualLockActive,
+                           "完整电源循环后 intent 仍为 autoLock，应恢复解锁能力")
             expectation.fulfill()
         }
         wait(for: [expectation], timeout: 2.0)
@@ -3178,9 +3206,9 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         manager.fun.effectiveRSSI = -45.0
         manager.onDeviceApproached()
 
-        // 验证：canAutoUnlock 应为 false（系统休眠阻止）
-        XCTAssertFalse(manager.state.canAutoUnlock,
-                       "系统休眠时设备靠近不应允许自动解锁")
+        // 验证：休眠态未被设备靠近打破（上层据此不触发自动解锁）
+        XCTAssertEqual(manager.state.system, .sleeping,
+                       "系统休眠时设备靠近不应改变 system 态")
 
         ConfigStore.shared.defaults.removeObject(forKey: "enabled")
     }
@@ -3472,12 +3500,14 @@ class LockUnlockEfficiencyTests: XCTestCase {
     }
 
     func testLockTimeout_linearInterpolation() {
+        // 修复 P0-6 插值方向：t 以快速档边界为 0（slope=-8）、缓降边界为 1（slope=-1），
         // -1 ~ -8 线性映射 5s ~ 2.5s，中点 -4.5 应为 3.75
         let mid = FUn.lockTimeout(slope: -4.5)
         XCTAssertEqual(mid, 3.75, accuracy: 0.001)
-        // -2.5 处 t = (2.5-1)/7 = 0.214 → fastLockTimeout + 2.5*0.214 ≈ 3.0357
+        // -2.5 处 t = (slope + 8) / 7 = 5.5/7 → fastLockTimeout + 2.5 * 5.5/7 ≈ 4.464
+        // （旧实现 t = (-slope - 1) / 7 方向反了：陡降拿长超时、缓降拿短超时）
         let low = FUn.lockTimeout(slope: -2.5)
-        let expected = fastLockTimeout + (5.0 - fastLockTimeout) * (1.5 / 7.0)
+        let expected = fastLockTimeout + (5.0 - fastLockTimeout) * (5.5 / 7.0)
         XCTAssertEqual(low, expected, accuracy: 0.001)
     }
 
@@ -3634,7 +3664,7 @@ class ProfileImportExportTests: XCTestCase {
             return XCTFail("导入应成功")
         }
         XCTAssertEqual(stats.skipped, 1, "default 应被跳过保护")
-        XCTAssertEqual(manager.profiles.first { $0.id == "default" }?.name, "默认", "内置默认不得被覆盖")
+        XCTAssertEqual(manager.profiles.first { $0.id == "default" }?.name, Profile.default.name, "内置默认不得被覆盖")
     }
 
     func testImportAppendsNew() {
@@ -3694,7 +3724,8 @@ class FUnManagerThresholdLinkTests: XCTestCase {
         let fun = FUn()
         let manager = FUnManager(fun: fun)
         manager.setUnlockRSSI(-95)
-        XCTAssertEqual(manager.lockRSSI, -95, "联动值应钳制到滑杆下界 -95")
+        // 审计修复：联动值钳制时必须保证 lock < unlock（-96 < -95），防止两阈值重合导致迟滞死循环
+        XCTAssertEqual(manager.lockRSSI, -96, "联动值在下界时必须严格小于解锁阈值（-96 < -95），防止反向迟滞/死锁循环")
         ConfigStore.shared.defaults.removeObject(forKey: "unlockRSSI")
         ConfigStore.shared.defaults.removeObject(forKey: "lockRSSI")
     }
@@ -3818,5 +3849,65 @@ final class FUnResetScanTimerTests: XCTestCase {
         XCTAssertEqual(spy.removedDevices.count, 1, "超时应派发一次 removeDevice")
         XCTAssertEqual(spy.removedDevices.first?.uuid, device.uuid, "派发的快照应对应原设备 uuid（DeviceSnapshot 为纯值类型，不再持有堆引用）")
         XCTAssertNil(fun.devices[device.uuid], "device 应已从 devices 移除")
+    }
+}
+
+// MARK: - 解锁禁用时 presence 翻转不产生假解锁事件（审计 B5 #13）
+
+/// 回归验证：unlockRSSI == UNLOCK_DISABLED 时 checkProximity 仍按 lockRSSI 维持
+/// presence 翻转语义，但不记 unlocked 事件、不派发 onDeviceApproached
+/// （此前会记假 unlocked 事件并触发假解锁/假唤醒链）。
+/// 经由公开入口 updateMonitoredPeripheral 驱动（checkProximity 为私有方法）。
+@MainActor
+final class FUnUnlockDisabledPresenceTests: XCTestCase {
+
+    /// 捕获 presence 与 approach 派发的 delegate spy
+    private final class DelegateSpy: FUnDelegate {
+        var approachedCount = 0
+        var presenceUpdates: [(Bool, String)] = []
+        var onUpdate: (() -> Void)?
+
+        func newDevice(device: DeviceSnapshot) {}
+        func updateDevice(device: DeviceSnapshot) {}
+        func removeDevice(device: DeviceSnapshot) {}
+        func updateRSSI(rssi: Int?, active: Bool) {}
+        func updatePresence(presence: Bool, reason: String) {
+            presenceUpdates.append((presence, reason))
+            onUpdate?()
+        }
+        func bluetoothPowerWarn() {}
+        func onDeviceApproached() {
+            approachedCount += 1
+            onUpdate?()
+        }
+    }
+
+    func testUnlockDisabledPresenceFlipDoesNotRecordUnlockedOrDispatchApproach() {
+        let fun = FUn()
+        fun.unlockRSSI = FUn.UNLOCK_DISABLED  // = 1，解锁禁用
+        fun.lockRSSI = -80
+        let spy = DelegateSpy()
+        fun.delegate = spy
+        let unlockedBefore = SignalDataStore.shared.samples.filter { $0.isUnlockEvent }.count
+
+        let flipped = expectation(description: "presence 翻转派发")
+        spy.onUpdate = { [weak fun] in
+            if fun?.presence == true { flipped.fulfill() }
+        }
+        fun.updateMonitoredPeripheral(-50)  // effectiveRSSI 必然 >= -80
+
+        wait(for: [flipped], timeout: 2.0)
+
+        XCTAssertTrue(fun.presence, "解锁禁用时 presence 仍应按 lockRSSI 判定翻转")
+        XCTAssertTrue(spy.presenceUpdates.contains { $0.0 && $0.1 == "close" },
+                      "presence UI 仍应派发 close 更新")
+        XCTAssertEqual(SignalDataStore.shared.samples.filter { $0.isUnlockEvent }.count,
+                       unlockedBefore, "解锁禁用时不应记录 unlocked 事件（假解锁）")
+
+        // 让可能排队的 approach 派发落定后再断言（Task { @MainActor } 派发在 runloop 上串行排空）
+        let settle = expectation(description: "排空待派发 Task")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { settle.fulfill() }
+        wait(for: [settle], timeout: 2.0)
+        XCTAssertEqual(spy.approachedCount, 0, "解锁禁用时不应派发 onDeviceApproached（假解锁）")
     }
 }

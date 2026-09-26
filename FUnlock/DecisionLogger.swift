@@ -132,6 +132,12 @@ final class DecisionLogger {
 
     var logDirectory: URL {
         if let testDir = testLogDirectory { return testDir }
+        // 隔离保护：若处于 XCTest 测试宿主环境，自动将决策日志隔离到临时目录，防止污染生产 decisions.jsonl
+        if NSClassFromString("XCTestCase") != nil {
+            let temp = FileManager.default.temporaryDirectory.appendingPathComponent("FUnlock-TestDecisions")
+            try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+            return temp
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock")
     }
@@ -225,33 +231,47 @@ final class DecisionLogger {
     // MARK: - 持久化（静态实现，仅处理值类型，无 self 捕获）
 
     private nonisolated static func write(_ event: DecisionEvent, latest: [DecisionEvent], to url: URL, maxFileSize: UInt64) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            Log.sm.error("DecisionLogger createDirectory failed: \(error.localizedDescription)")
+        }
         appendLine(event, to: url)
 
         // 轮转：超过上限 → 用当前缓冲的最新事件重写文件
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? UInt64,
-           size > maxFileSize {
-            try? FileManager.default.removeItem(at: url)
-            for e in latest {
-                appendLine(e, to: url)
+        // stat 失败只跳过本轮轮转（下次写入再试），不影响事件追加
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+            if let size = attrs[.size] as? UInt64, size > maxFileSize {
+                try FileManager.default.removeItem(at: url)
+                for e in latest {
+                    appendLine(e, to: url)
+                }
             }
+        } catch {
+            Log.sm.error("DecisionLogger rotate failed: \(error.localizedDescription)")
         }
     }
 
     private nonisolated static func appendLine(_ event: DecisionEvent, to url: URL) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
-        guard var data = try? encoder.encode(event) else { return }
+        guard var data = try? encoder.encode(event) else {
+            Log.sm.error("DecisionLogger encode failed for event id=\(event.id)")
+            return
+        }
         data.append(0x0A)
-        if FileManager.default.fileExists(atPath: url.path) {
-            if let handle = try? FileHandle(forWritingTo: url) {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                let handle = try FileHandle(forWritingTo: url)
                 handle.seekToEndOfFile()
                 handle.write(data)
-                handle.closeFile()
+                try handle.close()
+            } else {
+                try data.write(to: url)
             }
-        } else {
-            try? data.write(to: url)
+        } catch {
+            Log.sm.error("DecisionLogger append failed: \(error.localizedDescription)")
         }
     }
 

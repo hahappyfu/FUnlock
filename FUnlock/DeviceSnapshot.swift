@@ -13,7 +13,7 @@ public struct DeviceSnapshot: Sendable, Identifiable, Hashable, Equatable {
     public let macAddr: String?
     public let isMonitored: Bool
 
-    public init(id: UUID? = nil, uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, macAddr: String? = nil, isMonitored: Bool = false) {
+    public init(uuid: UUID, name: String, rssi: Int, manufacture: String? = nil, model: String? = nil, macAddr: String? = nil, isMonitored: Bool = false) {
         self.uuid = uuid
         self.name = name
         self.rssi = rssi

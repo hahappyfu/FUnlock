@@ -29,10 +29,10 @@ struct OverviewView: View {
     @State private var showUnbindConfirm = false
     @State private var isDeviceListExpanded = false
 
-    /// RSSI 可视化范围（dBm）
+    /// RSSI 可视化范围（dBm，转发自 SignalHysteresisEngine 单一来源）
     enum RSSIRange {
-        static let min = -95.0
-        static let max = -30.0
+        static var min: Double { Double(SignalHysteresisEngine.rssiRange.lowerBound) }
+        static var max: Double { Double(SignalHysteresisEngine.rssiRange.upperBound) }
     }
 
     /// 禁用解锁时的 UI 回退阈值：以滑块最小值显示
@@ -203,14 +203,24 @@ struct OverviewView: View {
 
             ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
                                value: $sliderLock, isDragging: $isSliderDragging,
-                               onEditingEnded: { lockSliderUserModified = true })
+                               onEditingEnded: {
+                                   lockSliderUserModified = true
+                                   // 约束：锁定阈值必须小于解锁阈值（更远）
+                                   if sliderLock >= sliderUnlock {
+                                       let safe = max(sliderUnlock - Double(lockUnlockDelayGap), Double(SignalHysteresisEngine.rssiRange.lowerBound))
+                                       sliderLock = min(safe, sliderUnlock - 1)
+                                   }
+                               })
             ThresholdSliderRow(icon: "lock.open.fill", color: .green, title: t("unlock"),
                                value: $sliderUnlock, isDragging: $isSliderDragging,
                                onEditingEnded: {
-                                   // 迟滞联动：用户调解锁阈值时，锁定自动拉开 lockUnlockDelayGap（除非用户主动改过锁定）
-                                   guard !lockSliderUserModified else { return }
+                                   // 迟滞联动：用户调解锁阈值时，若锁定未修改或已越界，自动拉开 lockUnlockDelayGap 并保证 lock < unlock
                                    let linked = Int(sliderUnlock) - lockUnlockDelayGap
-                                   sliderLock = Double(max(linked, Int(OverviewView.RSSIRange.min)))
+                                   let clamped = SignalHysteresisEngine.clampRSSI(linked)
+                                   let safeLock = Double(min(clamped, Int(sliderUnlock) - 1))
+                                   if !lockSliderUserModified || sliderLock >= sliderUnlock {
+                                       sliderLock = safeLock
+                                   }
                                })
 
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
@@ -225,8 +235,12 @@ struct OverviewView: View {
                                value: $preUnlockTrigger)
 
             Button {
-                manager.setUnlockRSSI(Int(sliderUnlock))
-                manager.setLockRSSI(Int(sliderLock))
+                let unlockVal = Int(sliderUnlock)
+                // 提交前强制校验 lock < unlock
+                let safeLockVal = min(Int(sliderLock), unlockVal - 1)
+                sliderLock = Double(safeLockVal)
+                manager.setUnlockRSSI(unlockVal)
+                manager.setLockRSSI(safeLockVal)
                 manager.setWakeAdvance(wakeAdvance)
                 manager.setPreUnlockTrigger(preUnlockTrigger)
             } label: {
