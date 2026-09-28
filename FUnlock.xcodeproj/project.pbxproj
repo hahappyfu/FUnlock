@@ -23,7 +23,6 @@
 		DDGP00000000000000000003 /* SignalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDGP00000000000000000004 /* SignalPipeline.swift */; };
 		AA000001226C1DF200000001 /* FUnManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002226C1DF200000001 /* FUnManager.swift */; };
 		AA000005226C1DF200000001 /* CalibrationWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000006226C1DF200000001 /* CalibrationWizardView.swift */; };
-		AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000010226C1DF200000012 /* FUnlockTests.swift */; };
 		AA000020226C1DF200000001 /* FUnlockStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000021226C1DF200000001 /* FUnlockStateMachine.swift */; };
 		AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */; };
 		AB0000012026062500000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000001 /* OnboardingView.swift */; };
@@ -77,6 +76,19 @@
 		FM0000020000000100000001 /* FUnManager+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = FM0000010000000100000001 /* FUnManager+Events.swift */; };
 		UO0000020000000100000001 /* UnlockOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = UO0000010000000100000001 /* UnlockOrchestrator.swift */; };
 		UA0000020000000100000001 /* UnlockOrchestrator+AutoUnlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */; };
+		SW0000020000000100000001 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000001 /* TestSupport.swift */; };
+		SW0000020000000100000002 /* SignalPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000002 /* SignalPipelineTests.swift */; };
+		SW0000020000000100000003 /* StateAndConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000003 /* StateAndConfigTests.swift */; };
+		SW0000020000000100000004 /* TelemetryLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000004 /* TelemetryLoggerTests.swift */; };
+		SW0000020000000100000005 /* KeychainSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000005 /* KeychainSecurityTests.swift */; };
+		SW0000020000000100000006 /* PowerStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000006 /* PowerStateTests.swift */; };
+		SW0000020000000100000007 /* InjectionAndUserInterventionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000007 /* InjectionAndUserInterventionTests.swift */; };
+		SW0000020000000100000008 /* IntegrationPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000008 /* IntegrationPipelineTests.swift */; };
+		SW0000020000000100000009 /* UIAndUtilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000010000000100000009 /* UIAndUtilityTests.swift */; };
+		SW0000040000000100000001 /* UpdateChainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000030000000100000001 /* UpdateChainTests.swift */; };
+		SW0000040000000100000002 /* HysteresisEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000030000000100000002 /* HysteresisEngineTests.swift */; };
+		SW0000040000000100000003 /* SecurityServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000030000000100000003 /* SecurityServiceTests.swift */; };
+		SW0000040000000100000004 /* OrchestratorGatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW0000030000000100000004 /* OrchestratorGatesTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,10 +126,8 @@
 		3DD4B665226C1DF200451B7B /* FUn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUn.swift; sourceTree = "<group>"; };
 		DDGP00000000000000000002 /* DebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
 		DDGP00000000000000000004 /* SignalPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalPipeline.swift; sourceTree = "<group>"; };
-		3DD4B668226C1E3700451B7B /* login.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = login.framework; path = ../../../../System/Library/PrivateFrameworks/login.framework; sourceTree = "<group>"; };
 		AA000002226C1DF200000001 /* FUnManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnManager.swift; sourceTree = "<group>"; };
 		AA000006226C1DF200000001 /* CalibrationWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationWizardView.swift; sourceTree = "<group>"; };
-		AA000010226C1DF200000012 /* FUnlockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockTests.swift; sourceTree = "<group>"; };
 		AA000010226C1DF200000013 /* FUnlockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FUnlockTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000021226C1DF200000001 /* FUnlockStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachine.swift; sourceTree = "<group>"; };
 		AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachineTests.swift; sourceTree = "<group>"; };
@@ -174,6 +184,19 @@
 		FM0000010000000100000001 /* FUnManager+Events.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FUnManager+Events.swift"; sourceTree = "<group>"; };
 		UO0000010000000100000001 /* UnlockOrchestrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockOrchestrator.swift; sourceTree = "<group>"; };
 		UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UnlockOrchestrator+AutoUnlock.swift"; sourceTree = "<group>"; };
+		SW0000010000000100000001 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestSupport.swift; sourceTree = "<group>"; };
+		SW0000010000000100000002 /* SignalPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalPipelineTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000003 /* StateAndConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateAndConfigTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000004 /* TelemetryLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryLoggerTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000005 /* KeychainSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecurityTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000006 /* PowerStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerStateTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000007 /* InjectionAndUserInterventionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InjectionAndUserInterventionTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000008 /* IntegrationPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationPipelineTests.swift; sourceTree = "<group>"; };
+		SW0000010000000100000009 /* UIAndUtilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIAndUtilityTests.swift; sourceTree = "<group>"; };
+		SW0000030000000100000001 /* UpdateChainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChainTests.swift; sourceTree = "<group>"; };
+		SW0000030000000100000002 /* HysteresisEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HysteresisEngineTests.swift; sourceTree = "<group>"; };
+		SW0000030000000100000003 /* SecurityServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityServiceTests.swift; sourceTree = "<group>"; };
+		SW0000030000000100000004 /* OrchestratorGatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrchestratorGatesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -282,7 +305,6 @@
 			isa = PBXGroup;
 			children = (
 				3D2CF85A255102B300157996 /* MediaRemote.framework */,
-				3DD4B668226C1E3700451B7B /* login.framework */,
 				WF0000010000000100000004 /* CoreWLAN.framework */,
 			);
 			name = Frameworks;
@@ -291,7 +313,6 @@
 		AA000010226C1DF200000014 /* FUnlockTests */ = {
 			isa = PBXGroup;
 			children = (
-				AA000010226C1DF200000012 /* FUnlockTests.swift */,
 				AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */,
 				DT0000010000000100000001 /* DecisionLoggerTests.swift */,
 				RM0000010000000100000001 /* ReasonActionMappingTests.swift */,
@@ -299,6 +320,19 @@
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
 				LR0000010000000100000001 /* LogRotationTests.swift */,
 				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
+				SW0000010000000100000001 /* TestSupport.swift */,
+				SW0000010000000100000002 /* SignalPipelineTests.swift */,
+				SW0000010000000100000003 /* StateAndConfigTests.swift */,
+				SW0000010000000100000004 /* TelemetryLoggerTests.swift */,
+				SW0000010000000100000005 /* KeychainSecurityTests.swift */,
+				SW0000010000000100000006 /* PowerStateTests.swift */,
+				SW0000010000000100000007 /* InjectionAndUserInterventionTests.swift */,
+				SW0000010000000100000008 /* IntegrationPipelineTests.swift */,
+				SW0000010000000100000009 /* UIAndUtilityTests.swift */,
+				SW0000030000000100000001 /* UpdateChainTests.swift */,
+				SW0000030000000100000002 /* HysteresisEngineTests.swift */,
+				SW0000030000000100000003 /* SecurityServiceTests.swift */,
+				SW0000030000000100000004 /* OrchestratorGatesTests.swift */,
 				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
 			);
 			path = FUnlockTests;
@@ -496,7 +530,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA000010226C1DF200000011 /* FUnlockTests.swift in Sources */,
 				AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */,
 				DT0000020000000100000001 /* DecisionLoggerTests.swift in Sources */,
 				RM0000020000000100000001 /* ReasonActionMappingTests.swift in Sources */,
@@ -504,6 +537,19 @@
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
 				LR0000020000000100000001 /* LogRotationTests.swift in Sources */,
 				IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */,
+				SW0000020000000100000001 /* TestSupport.swift in Sources */,
+				SW0000020000000100000002 /* SignalPipelineTests.swift in Sources */,
+				SW0000020000000100000003 /* StateAndConfigTests.swift in Sources */,
+				SW0000020000000100000004 /* TelemetryLoggerTests.swift in Sources */,
+				SW0000020000000100000005 /* KeychainSecurityTests.swift in Sources */,
+				SW0000020000000100000006 /* PowerStateTests.swift in Sources */,
+				SW0000020000000100000007 /* InjectionAndUserInterventionTests.swift in Sources */,
+				SW0000020000000100000008 /* IntegrationPipelineTests.swift in Sources */,
+				SW0000020000000100000009 /* UIAndUtilityTests.swift in Sources */,
+				SW0000040000000100000001 /* UpdateChainTests.swift in Sources */,
+				SW0000040000000100000002 /* HysteresisEngineTests.swift in Sources */,
+				SW0000040000000100000003 /* SecurityServiceTests.swift in Sources */,
+				SW0000040000000100000004 /* OrchestratorGatesTests.swift in Sources */,
 				7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

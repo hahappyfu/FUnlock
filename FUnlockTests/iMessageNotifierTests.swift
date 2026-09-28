@@ -17,6 +17,7 @@ final class iMessageNotifierTests: XCTestCase {
         testConfigStore.defaults.removePersistentDomain(forName: "com.fuhahah.FUnlock.test-imessage")
         iMessageNotifier.shared.configStore = .shared
         iMessageNotifier.shared.scriptRunner = nil
+        iMessageNotifier.shared.nowProvider = Date.init
         iMessageNotifier.shared.resetDebounceForTesting()
         super.tearDown()
     }
@@ -77,59 +78,96 @@ final class iMessageNotifierTests: XCTestCase {
 
     // MARK: - send(_:) 事件 API
 
+    // 完成信号范式：scriptRunner 在串行队列上同步执行，它被调用即代表一次发送落地。
+    // expectation 由 scriptRunner fulfill，由完成信号驱动等待，不再猜派发延迟。
+
     func testLockedEventDebouncedByType() {
         testConfigStore.defaults.set(true, forKey: "iMessageNotify")
         testConfigStore.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
-        var calls = 0
-        iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
+        let sent = expectation(description: "3 次发送（locked 防抖后 1 + unlocked 1 + test 1）")
+        sent.expectedFulfillmentCount = 3
+        sent.assertForOverFulfill = true
+        iMessageNotifier.shared.scriptRunner = { _, _ in sent.fulfill(); return nil }
         // 连续两次同类型事件：30s 防抖只放行一次
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
         // 不同类型互不影响
         iMessageNotifier.shared.send(.unlocked(rssi: -42, deviceName: "iPhone"))
         iMessageNotifier.shared.send(.test)
-        let exp = expectation(description: "async")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 2)
-        XCTAssertEqual(calls, 3, "同类型防抖仅 1 次，不同类型各 1 次，实际: \(calls)")
+        wait(for: [sent], timeout: 2)
     }
 
     func testLockedEventDisabledNotSent() {
         testConfigStore.defaults.set(false, forKey: "iMessageNotify")
         testConfigStore.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
-        var calls = 0
-        iMessageNotifier.shared.scriptRunner = { _, _ in calls += 1; return nil }
+        var sentCount = 0
+        let drained = expectation(description: "串行队列排空（test 排空标记）")
+        iMessageNotifier.shared.scriptRunner = { _, _ in
+            sentCount += 1
+            drained.fulfill()
+            return nil
+        }
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
-        let exp = expectation(description: "async")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 2)
-        XCTAssertEqual(calls, 0, "开关关闭时不应发送，实际: \(calls)")
+        // 排空标记：串行队列 FIFO，标记事件执行完时此前任何误派发必已执行完
+        testConfigStore.defaults.set(true, forKey: "iMessageNotify")
+        iMessageNotifier.shared.send(.test)
+        wait(for: [drained], timeout: 2)
+        XCTAssertEqual(sentCount, 1, "开关关闭时 locked 不应发送，仅排空标记 test 发送 1 次，实际: \(sentCount)")
     }
 
     func testLockedEventSilentFailure() {
         testConfigStore.defaults.set(true, forKey: "iMessageNotify")
         testConfigStore.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
-        iMessageNotifier.shared.scriptRunner = { _, _ in "Messages 未授权：请授权" }
+        let ran = expectation(description: "发送执行（失败路径不崩溃）")
+        iMessageNotifier.shared.scriptRunner = { _, _ in
+            ran.fulfill()
+            return "Messages 未授权：请授权"
+        }
         // 真实路径失败应静默：不崩溃、不抛异常
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
-        let exp = expectation(description: "async")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 2)
+        wait(for: [ran], timeout: 2)
     }
 
     func testLockedEventComposesLocalizedText() {
         testConfigStore.defaults.set(true, forKey: "iMessageNotify")
         testConfigStore.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
         var received = ""
-        iMessageNotifier.shared.scriptRunner = { _, text in received = text; return nil }
+        let ran = expectation(description: "发送执行")
+        iMessageNotifier.shared.scriptRunner = { _, text in
+            received = text
+            ran.fulfill()
+            return nil
+        }
         iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
-        let exp = expectation(description: "async")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 2)
+        wait(for: [ran], timeout: 2)
         XCTAssertTrue(received.contains(t("im_title_locked")), "应发送本地化标题，实际: \(received)")
         XCTAssertTrue(received.contains("iPhone"), "应包含设备名，实际: \(received)")
         XCTAssertTrue(received.contains("-88"), "应包含信号值，实际: \(received)")
         XCTAssertFalse(received.contains("reason="), "不应包含内部调试字段，实际: \(received)")
+    }
+
+    /// 30s 防抖窗口边界：假时钟推进，29s 仍被防抖、整 30s 放行（31s 及以后自然放行）
+    func testDebounceWindowBoundaryWithFakeClock() {
+        testConfigStore.defaults.set(true, forKey: "iMessageNotify")
+        testConfigStore.defaults.set("13800138000", forKey: "iMessageNotifyRecipient")
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        iMessageNotifier.shared.nowProvider = { now }
+        var sentCount = 0
+        let sent = expectation(description: "t0 与 t+30 两次放行")
+        sent.expectedFulfillmentCount = 2
+        sent.assertForOverFulfill = true
+        iMessageNotifier.shared.scriptRunner = { _, _ in
+            sentCount += 1
+            sent.fulfill()
+            return nil
+        }
+        iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))  // t0：放行
+        now = now.addingTimeInterval(29)
+        iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))  // 29s < 30s：防抖
+        now = now.addingTimeInterval(1)  // 整 30s：边界放行（防抖判据为 < 30s）
+        iMessageNotifier.shared.send(.locked(reason: "lost", rssi: -88, deviceName: "iPhone"))
+        wait(for: [sent], timeout: 2)
+        XCTAssertEqual(sentCount, 2, "29s 应被防抖、整 30s 应放行，实际发送 \(sentCount) 次")
     }
 
     // MARK: - sendTestNotification

@@ -1,5 +1,6 @@
 // FUnlockTests/FUnlockStateMachineTests.swift
 import XCTest
+import UserNotifications
 @testable import FUnlock
 
 /// 测试 FUnlockStateMachine 的状态转换、冷却、降级逻辑
@@ -33,77 +34,44 @@ class FUnlockStateMachineTests: XCTestCase {
 
     // MARK: - 状态转换
 
-    func testTransitionPreWakingToReadyToUnlock() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
-        XCTAssertEqual(sm.currentState, .readyToUnlock, "preWaking → readyToUnlock 应成功")
-    }
-
-    func testTransitionReadyToUnlockToUnlocking() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
-        sm.transition(to: .unlocking)
-        XCTAssertEqual(sm.currentState, .unlocking, "readyToUnlock → unlocking 应成功")
-    }
-
     func testTransitionUnlockingToActive() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
         sm.transition(to: .active)
         XCTAssertEqual(sm.currentState, .active, "unlocking → active 应成功")
     }
 
     func testTransitionUnlockingToCooldown() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
         sm.transition(to: .cooldown)
         XCTAssertEqual(sm.currentState, .cooldown, "unlocking → cooldown 应成功")
     }
 
     func testTransitionCooldownToActive() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
         sm.transition(to: .cooldown)
         sm.transition(to: .active)
         XCTAssertEqual(sm.currentState, .active, "cooldown → active 应成功")
     }
 
-    func testTransitionActiveToPreWaking() {
-        sm.transition(to: .preWaking)
-        XCTAssertEqual(sm.currentState, .preWaking, "active → preWaking 应成功")
-    }
-
-    func testTransitionPreWakingToActive() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .active)
-        XCTAssertEqual(sm.currentState, .active, "preWaking → active 应成功")
-    }
-
     func testAnyStateCanTransitionToDegraded() {
-        sm.transition(to: .preWaking)
+        sm.transition(to: .unlocking)
         sm.transition(to: .degraded)
         XCTAssertEqual(sm.currentState, .degraded, "任意状态 → degraded 应成功")
     }
 
     func testAnyStateCanTransitionToActive() {
-        sm.transition(to: .preWaking)
         sm.transition(to: .degraded)
         sm.transition(to: .active)
         XCTAssertEqual(sm.currentState, .active, "degraded → active 应成功（用户干预）")
     }
 
     func testInvalidTransitionIsRejected() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .unlocking)
-        XCTAssertEqual(sm.currentState, .preWaking, "preWaking → unlocking 应被拒绝")
+        _ = sm.attemptUnlock()  // active → unlocking
+        XCTAssertFalse(sm.transition(to: .unlocking), "unlocking → unlocking 自转移应被拒绝")
+        XCTAssertEqual(sm.currentState, .unlocking, "非法转移后状态不应改变")
     }
 
     func testTransitionCooldownToUnlocking() {
-        sm.transition(to: .preWaking)
-        sm.transition(to: .readyToUnlock)
         sm.transition(to: .unlocking)
         sm.transition(to: .cooldown)
         sm.transition(to: .unlocking)
@@ -111,7 +79,7 @@ class FUnlockStateMachineTests: XCTestCase {
     }
 
     func testTransitionReturnsSuccess() {
-        XCTAssertTrue(sm.transition(to: .preWaking), "合法转移应返回 true")
+        XCTAssertTrue(sm.transition(to: .unlocking), "合法转移应返回 true")
         XCTAssertFalse(sm.transition(to: .unlocking), "非法转移应返回 false（可观测）")
     }
 
@@ -229,6 +197,16 @@ class FUnlockStateMachineTests: XCTestCase {
         sm.handleUnlockFailure()
         sm.handleUnlockSuccess()
         XCTAssertTrue(sm.canAttemptUnlock, "成功后 canAttemptUnlock 应恢复为 true")
+    }
+
+    func testCanAttemptUnlockBlockedWhileUnlocking() {
+        // P0-4：注入在途（.unlocking）时必须拒绝再次尝试——否则 0.5s 快轮询重入
+        // 会触发 attemptAutoUnlock 取消在途解锁任务，误判失败连续 3 次即 degraded
+        XCTAssertTrue(sm.attemptUnlock(), "防抖窗口外首次尝试应进入 unlocking")
+        XCTAssertEqual(sm.currentState, .unlocking)
+        XCTAssertFalse(sm.canAttemptUnlock, "unlocking 状态 canAttemptUnlock 应为 false")
+        sm.handleUnlockSuccess()
+        XCTAssertTrue(sm.canAttemptUnlock, "成功回到 active 后恢复")
     }
 }
 
@@ -403,5 +381,106 @@ class TimeDecayTests: XCTestCase {
         // 极低信号 + 长间隙应被 -100 截断，不产生荒谬值
         let eff = FUn.decayedEffectiveRSSI(effectiveRSSI: -95, elapsedSinceLastReceive: 500)
         XCTAssertEqual(eff, -100.0, "衰减后应被 -100 下限截断")
+    }
+}
+
+// MARK: - attemptUnlock 失败预算耗尽分支（FUnlockStateMachine.swift L110-113）
+
+/// 非 degraded 但 consecutiveFailures ≥ 3 时 attemptUnlock 的行为：
+/// 不走 degraded 短路（L95），而是主动触发降级转移后拒绝（L110-113 分支）。
+@MainActor
+final class AttemptUnlockFailureBudgetTests: XCTestCase {
+
+    /// 可变时间盒：闭包不能捕获 inout，以引用类型注入 nowProvider
+    private final class TimeBox {
+        var now: Date
+        init(_ now: Date) { self.now = now }
+    }
+
+    /// 构造「状态已回 active、失败计数保留 3」的唯一公共路径：
+    /// 3 次失败进入 degraded 后 resetToActive(clearFailures: false)。
+    private func makeExhaustedStateMachine(box: TimeBox) -> FUnlockStateMachine {
+        let sm = FUnlockStateMachine(nowProvider: { box.now })
+        XCTAssertTrue(sm.attemptUnlock(), "t0: 首次解锁应成功")          // active→unlocking
+        sm.handleUnlockFailure()                                        // failures=1 → cooldown
+        box.now = box.now.addingTimeInterval(11)
+        XCTAssertTrue(sm.attemptUnlock(), "失败冷却(10s)结束后应可重试") // cooldown→unlocking
+        sm.handleUnlockFailure()                                        // failures=2 → cooldown
+        box.now = box.now.addingTimeInterval(11)
+        XCTAssertTrue(sm.attemptUnlock())                               // 第 3 次尝试
+        sm.handleUnlockFailure()                                        // failures=3 → degraded
+        sm.resetToActive(clearFailures: false)                          // active，保留 failures=3 与失败冷却
+        return sm
+    }
+
+    func testAttemptUnlockWithExhaustedFailureBudgetTransitionsToDegraded() {
+        let box = TimeBox(Date(timeIntervalSince1970: 1_700_000_000))
+        let sm = makeExhaustedStateMachine(box: box)
+
+        XCTAssertEqual(sm.currentState, .active)
+        XCTAssertEqual(sm.consecutiveFailures, 3)
+
+        box.now = box.now.addingTimeInterval(11)  // 失败冷却(deadline=t+32)与防抖(上次尝试+5)均已过
+        let allowed = sm.attemptUnlock()
+        XCTAssertFalse(allowed, "失败预算耗尽（非 degraded 状态）应拒绝解锁")
+        XCTAssertEqual(sm.currentState, .degraded, "该分支应由 attemptUnlock 主动触发降级转移")
+        XCTAssertEqual(sm.consecutiveFailures, 3)
+    }
+
+    func testAttemptUnlockRecoversAfterUserResetClearingFailures() {
+        // 对照：同一路径但 clearFailures: true —— 用户干预后解锁能力恢复，
+        // 证明上一用例的拒绝确实由保留的失败计数触发
+        let box = TimeBox(Date(timeIntervalSince1970: 1_700_000_000))
+        let sm = makeExhaustedStateMachine(box: box)
+        sm.resetToActive(clearFailures: true)
+
+        box.now = box.now.addingTimeInterval(11)
+        XCTAssertTrue(sm.attemptUnlock(), "清零失败计数后 attemptUnlock 应恢复")
+        XCTAssertEqual(sm.currentState, .unlocking)
+    }
+}
+
+// MARK: - 降级通知实发验证
+
+/// handleUnlockFailure 达到上限经 sendLocalNotification() 真实调用
+/// UNUserNotificationCenter.add（identifier = degradedNotificationID）。
+/// UNUserNotificationCenter 无注入 seam；授权环境下经 delivered 列表验证实发，
+/// 未授权环境显式 XCTSkip（授权状态取决于宿主 FUnlock.app 的 TCC 记录）。
+@MainActor
+final class DegradedNotificationDeliveryTests: XCTestCase {
+
+    func testHandleUnlockFailureDegradePathPostsLocalNotification() throws {
+        let center = UNUserNotificationCenter.current()
+        // 清理历史投递，避免旧残留造成假阳性
+        center.removeDeliveredNotifications(withIdentifiers: [FUnlockStateMachine.degradedNotificationID])
+
+        let sm = FUnlockStateMachine()
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        sm.handleUnlockFailure()
+        XCTAssertEqual(sm.currentState, .degraded, "前置：3 次失败进入降级路径")
+
+        let settingsExp = expectation(description: "notification settings")
+        var status: UNAuthorizationStatus?
+        center.getNotificationSettings { settings in
+            status = settings.authorizationStatus
+            settingsExp.fulfill()
+        }
+        wait(for: [settingsExp], timeout: 5)
+        guard let status, [.authorized, .provisional].contains(status) else {
+            throw XCTSkip("通知未授权(\(String(describing: status)))，无法验证系统投递；授权环境下运行此用例")
+        }
+
+        let deliveredExp = expectation(description: "degraded notification delivered")
+        center.getDeliveredNotifications { notifications in
+            let ids = notifications.map(\.request.identifier)
+            XCTAssertTrue(
+                ids.contains(FUnlockStateMachine.degradedNotificationID),
+                "降级路径应真实投递 identifier=\(FUnlockStateMachine.degradedNotificationID) 的本地通知，实际: \(ids)")
+            deliveredExp.fulfill()
+        }
+        wait(for: [deliveredExp], timeout: 5)
+
+        center.removeDeliveredNotifications(withIdentifiers: [FUnlockStateMachine.degradedNotificationID])
     }
 }

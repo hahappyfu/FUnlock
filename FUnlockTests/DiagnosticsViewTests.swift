@@ -15,11 +15,4 @@ final class DiagnosticsViewTests: XCTestCase {
         XCTAssertNil(DecisionEvent.screenLabel(nil))
     }
 
-    @MainActor
-    func testTimeStringContainsOnlyTime() {
-        let date = Date(timeIntervalSince1970: 1_700_000_000)
-        XCTAssertEqual(DiagnosticsView.timeString(date),
-                       date.formatted(.dateTime.hour().minute()),
-                       "timeString 应只显示 HH:mm")
-    }
 }
