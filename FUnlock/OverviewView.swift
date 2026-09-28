@@ -192,6 +192,9 @@ struct OverviewView: View {
             }
         }
         .padding(.top, 8)
+        // 无障碍：信号盘对 VoiceOver 输出可读摘要（当前 RSSI + 在场/距离场景），不再读成一串碎片
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(manager.rssi.map { "\($0)" } ?? "—") dBm, \(scenarioText)"))
     }
 
     // MARK: 阈值分组
@@ -536,9 +539,12 @@ private struct DeviceRowView: View {
         }
     }
 
+    /// 信号质量色:与菜单栏信号档位同源(MenuBarPopoverView.signalLevel,-60/-75 单测锁定)
     private func rssiColor(_ rssi: Int) -> Color {
-        if rssi >= -50 { return .green }
-        if rssi >= -70 { return .yellow }
-        return .red
+        switch MenuBarPopoverView.signalLevel(for: Double(rssi)) {
+        case .excellent: return .green
+        case .good: return .yellow
+        case .weak: return .red
+        }
     }
 }

@@ -50,13 +50,14 @@ nonisolated(unsafe) private var timingLogTestDirectory: URL?
 /// 单文件滚动上限（测试可调小）
 nonisolated(unsafe) private var timingLogMaxBytes: UInt64 = LogRotator.defaultMaxBytes
 
-private var timingLogDirectory: URL {
+var timingLogDirectory: URL {
     if let testDir = timingLogTestDirectory { return testDir }
     let home = FileManager.default.homeDirectoryForCurrentUser
     return home.appendingPathComponent("Library/Logs/FUnlock")
 }
 
-private var timingLogFileURL: URL {
+/// timing.log 完整路径（诊断导出引用单源，测试目录重定向时自动跟随）
+var timingLogFileURL: URL {
     timingLogDirectory.appendingPathComponent("timing.log")
 }
 

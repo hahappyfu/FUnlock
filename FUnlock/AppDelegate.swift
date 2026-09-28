@@ -239,9 +239,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor func updatePresence(presence: Bool, reason: String) {
-        if presence {
-            manager.onDeviceApproached()
-        } else {
+        // presence 翻转只刷新图标；靠近解锁动作统一由 FUnDelegate.onDeviceApproached 承载——
+        // 此处再转调 manager.onDeviceApproached() 会让首次靠近触发两次解锁派发（双包装修复）
+        if !presence {
             manager.onDeviceLeft(reason: reason)
         }
         updateStatusBarIcon()
@@ -304,12 +304,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let id = response.notification.request.identifier
-        if id == "funlock-update" {
+        // 白名单分发：未知 identifier 只记日志 no-op——伪造的本地通知不得拉起浏览器
+        switch id {
+        case "funlock-update":
             // 点击更新通知 → 触发下载安装
             DispatchQueue.main.async { [weak self] in
                 self?.checkForUpdates()
             }
-        } else if id == FUnlockStateMachine.degradedNotificationID {
+        case FUnlockStateMachine.degradedNotificationID:
             // 点击降级通知 → 重置失败计数，恢复自动解锁
             // 审计修复 #9：锁定态下的点击可能来自屏幕前的物理接触者，不得重置降级；
             // 仅当 CGSession 显示会话未锁定时才执行恢复
@@ -322,8 +324,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     logDebug(component: "AppDelegate", "degraded notification tap ignored: session locked")
                 }
             }
-        } else {
-            NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
+        default:
+            logDebug(component: "AppDelegate", "notification tap ignored: unknown identifier \(id)")
         }
     }
 

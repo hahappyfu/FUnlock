@@ -198,6 +198,14 @@ struct StatsView: View {
 
 import Charts
 
+/// 等距降采样：样本数超过 maxPoints 时按等距索引取样（600 样本 ×3 条线直接渲染
+/// 会产生上千个 Mark 拖慢图表；120 点在图表宽度下视觉形状不变）
+fileprivate func downsampleForChart(_ samples: [SignalSample], maxPoints: Int = 120) -> [SignalSample] {
+    guard samples.count > maxPoints else { return samples }
+    let step = Double(samples.count) / Double(maxPoints)
+    return (0..<maxPoints).map { samples[min(samples.count - 1, Int(Double($0) * step))] }
+}
+
 @available(macOS 13.0, *)
 struct SignalChartView: View {
     let samples: [SignalSample]
@@ -235,8 +243,11 @@ struct SignalChartView: View {
                         .foregroundStyle(.orange)
                 }
 
+            // 三条信号曲线用降采样视图渲染（异常点/事件标记保持全量，不丢信息）
+            let plotted = downsampleForChart(samples)
+
             // Raw RSSI（灰色）
-            ForEach(samples) { sample in
+            ForEach(plotted) { sample in
                 LineMark(
                     x: .value("时间", sample.timestamp),
                     y: .value("Raw RSSI", sample.rawRSSI),
@@ -248,7 +259,7 @@ struct SignalChartView: View {
             }
 
             // Kalman 估值（蓝色）
-            ForEach(samples) { sample in
+            ForEach(plotted) { sample in
                 LineMark(
                     x: .value("时间", sample.timestamp),
                     y: .value("Kalman", sample.kalmanEstimate),
@@ -260,7 +271,7 @@ struct SignalChartView: View {
             }
 
             // Effective RSSI（紫色虚线）
-            ForEach(samples) { sample in
+            ForEach(plotted) { sample in
                 LineMark(
                     x: .value("时间", sample.timestamp),
                     y: .value("Effective", sample.effectiveRSSI),
@@ -333,7 +344,9 @@ struct SlopeChartView: View {
                 .foregroundStyle(.red.opacity(0.2))
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
-            ForEach(samples) { sample in
+            let plotted = downsampleForChart(samples)
+
+            ForEach(plotted) { sample in
                 AreaMark(
                     x: .value("时间", sample.timestamp),
                     y: .value("斜率", sample.slope)
@@ -345,7 +358,7 @@ struct SlopeChartView: View {
                 )
             }
 
-            ForEach(samples) { sample in
+            ForEach(plotted) { sample in
                 LineMark(
                     x: .value("时间", sample.timestamp),
                     y: .value("斜率", sample.slope)

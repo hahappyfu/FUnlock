@@ -266,15 +266,13 @@ struct DiagnosticsView: View {
 
     private func exportDiagnostics() {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
-        let logDir = home.appendingPathComponent("Library/Logs/FUnlock")
+        // 路径单源：各 logger 暴露的文件 URL（测试目录重定向时自动跟随）
         let candidates: [URL] = [
-            logDir.appendingPathComponent("debug.log"),
-            logDir.appendingPathComponent("timing.log"),
-            logDir.appendingPathComponent("decisions.jsonl"),
-            logDir.appendingPathComponent("shadow_telemetry.csv"),
-            (try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false))?
-                .appendingPathComponent("FUnlock/events.log"),
+            DebugLog.logFileURL,
+            timingLogFileURL,
+            DecisionLogger.shared.logFile,
+            TelemetryLogger.shared.testLogFile,
+            ScriptRunner.shared.eventsLogURL,
         ].compactMap { $0 }.filter { fm.fileExists(atPath: $0.path) }
 
         guard !candidates.isEmpty else {

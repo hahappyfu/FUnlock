@@ -18,6 +18,15 @@ final class ScriptRunner: @unchecked Sendable {
     /// 事件日志单文件滚动上限（测试可调小）
     var maxFileSize: UInt64 = LogRotator.defaultMaxBytes
 
+    /// events.log 完整路径（诊断导出引用单源；测试目录重定向时自动跟随），无法定位时为 nil
+    var eventsLogURL: URL? {
+        if let testDir = testLogDirectory {
+            return testDir.appendingPathComponent("events.log")
+        }
+        guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        return dir.appendingPathComponent("FUnlock", isDirectory: true).appendingPathComponent("events.log")
+    }
+
     private static let eventFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -72,15 +81,8 @@ final class ScriptRunner: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        let logDir: URL
-        if let testDir = testLogDirectory {
-            logDir = testDir
-        } else {
-            guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
-            logDir = dir.appendingPathComponent("FUnlock", isDirectory: true)
-        }
-        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
-        let logFile = logDir.appendingPathComponent("events.log")
+        guard let logFile = eventsLogURL else { return }
+        try? FileManager.default.createDirectory(at: logFile.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         // 滚动：在锁内执行，保证轮转与写入互斥
         LogRotator.rotateIfNeeded(url: logFile, maxBytes: maxFileSize)

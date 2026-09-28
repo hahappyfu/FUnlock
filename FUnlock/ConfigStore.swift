@@ -168,9 +168,12 @@ final class ConfigStore: @unchecked Sendable {
 
     /// 字符串 → 原类型还原：base64 Data / Int / Bool / String
     private static func decodeSettingValue(_ raw: String) -> Any {
-        if raw.hasPrefix(dataPrefix),
-           let d = Data(base64Encoded: String(raw.dropFirst(dataPrefix.count))) {
-            return d
+        if raw.hasPrefix(dataPrefix) {
+            if let d = Data(base64Encoded: String(raw.dropFirst(dataPrefix.count))) {
+                return d
+            }
+            // base64 解码失败：告警后保持原字符串落盘（导出→导入幂等，损坏数据不扩散成其他类型）
+            logDebug(component: "ConfigStore", "import: \"_b64:\" value failed to decode, keeping as string: \(raw.prefix(48))")
         }
         if raw == "true" { return true }
         if raw == "false" { return false }

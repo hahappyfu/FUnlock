@@ -4,6 +4,7 @@
 import SwiftUI
 import AppKit
 import CoreBluetooth
+import Combine
 
 // MARK: - Tab 枚举
 
@@ -49,9 +50,11 @@ struct MainWindowView: View {
     @State private var currentToastID = UUID()
     @State private var previousConnected: Bool? = nil
 
-    /// 权限状态（仅 UI 展示用，不影响解锁逻辑；每 5 秒刷新一次）
+    /// 权限状态（仅 UI 展示用，不影响解锁逻辑；权限缺失期间每 5 秒刷新一次）
     @State private var axGranted = false
     @State private var btGranted = false
+    /// 权限轮询订阅：仅权限缺失时存活（banner 可见期），授予后停止，不再常驻 Timer
+    @State private var permissionPollCancellable: AnyCancellable?
 
     var body: some View {
         NavigationSplitView {
@@ -112,13 +115,17 @@ struct MainWindowView: View {
         .onAppear {
             previousConnected = manager.connected
             refreshPermissions()
+            updatePermissionPolling()
             if !ConfigStore.shared.defaults.bool(forKey: "hasCompletedOnboarding") {
                 showOnboarding = true
             }
         }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            refreshPermissions()
+        .onDisappear {
+            permissionPollCancellable?.cancel()
+            permissionPollCancellable = nil
         }
+        .onChange(of: axGranted) { _, _ in updatePermissionPolling() }
+        .onChange(of: btGranted) { _, _ in updatePermissionPolling() }
         .onChange(of: manager.connected) { _, connected in
             guard let prev = previousConnected, prev != connected else {
                 previousConnected = connected
@@ -164,7 +171,7 @@ struct MainWindowView: View {
         case .lock:
             LockSettingsView()
         case .network:
-            NetworkSettingsView(fun: fun)
+            NetworkSettingsView(manager: manager)
         case .config:
             ConfigSettingsView(manager: manager, onToast: { message, icon, color in
                 self.showToast(message, icon: icon, color: color)
@@ -239,6 +246,20 @@ struct MainWindowView: View {
     private func refreshPermissions() {
         axGranted = AXIsProcessTrusted()
         btGranted = (CBManager.authorization == .allowedAlways)
+    }
+
+    /// 权限轮询生命周期：缺失时启动 5s 轮询，授予后立即停（辅助功能权限无可靠的变更通知，轮询是缺失期的最小手段）
+    private func updatePermissionPolling() {
+        let needed = !axGranted || !btGranted
+        if needed, permissionPollCancellable == nil {
+            // View 为 struct：闭包捕获值拷贝即可，@State 写入走引用语义
+            permissionPollCancellable = Timer.publish(every: 5, on: .main, in: .common)
+                .autoconnect()
+                .sink { _ in refreshPermissions() }
+        } else if !needed, let cancellable = permissionPollCancellable {
+            cancellable.cancel()
+            permissionPollCancellable = nil
+        }
     }
 
     /// 切换侧边栏显示/隐藏（等价于系统 NavigationSplitView 的 toolbar 切换按钮）

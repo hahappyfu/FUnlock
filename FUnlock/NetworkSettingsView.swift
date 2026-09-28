@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct NetworkSettingsView: View {
-    var fun: FUn
+    var manager: FUnManager
     @AppStorage("pauseOnWiFi", store: ConfigStore.shared.defaults) private var pauseOnWiFi = false
     @AppStorage("pauseOnWiFiSSID", store: ConfigStore.shared.defaults) private var pauseOnWiFiSSID = ""
     @AppStorage("passiveMode", store: ConfigStore.shared.defaults) private var passiveMode = false
@@ -40,7 +40,7 @@ struct NetworkSettingsView: View {
                         Label(t("passive_mode"), systemImage: "antenna.radiowaves.left.and.right")
                         Text(t("passive_mode_desc")).font(.caption).foregroundColor(.secondary)
                     }
-                    .onChange(of: passiveMode) { _, v in fun.setPassiveMode(v) }
+                    .onChange(of: passiveMode) { _, v in manager.setPassiveMode(v) }
                 }
             }
             .formStyle(.grouped)
