@@ -163,20 +163,34 @@ struct PermissionCheckView: View {
     }
 
     private func requestAX() {
-        // 用字面量替代全局 var kAXTrustedCheckOptionPrompt（其值即同名 CFString），规避 Swift 6 全局可变状态警告
-        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
-        openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
+        openAccessibilitySettings()
     }
 
     private func requestBT() {
-        openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
+        openBluetoothSettings()
     }
 }
 
 func openSystemSettingsPane(_ pane: String) {
-    let script = "tell application \"System Settings\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
+    // 1. 优先使用现代 URL Scheme（macOS 13+ Ventura / Sonoma / Sequoia 官方支持，无 AppleScript 权限阻塞）
+    if let url = URL(string: "x-apple.systempreferences:\(pane)") {
+        if NSWorkspace.shared.open(url) { return }
+    }
+    // 2. 兜底旧版 AppleScript（macOS 12 及更早 Monterey）
+    let script = "tell application \"System Preferences\"\nactivate\nreveal pane id \"\(pane)\"\nend tell"
     if let s = NSAppleScript(source: script) { var e: NSDictionary?; s.executeAndReturnError(&e) }
+}
+
+/// 触发系统辅助功能授权询问，并直跳系统设置「隐私与安全性 -> 辅助功能」界面
+func openAccessibilitySettings() {
+    let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+    AXIsProcessTrustedWithOptions(opts)
+    openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
+}
+
+/// 直跳系统设置「隐私与安全性 -> 蓝牙」界面
+func openBluetoothSettings() {
+    openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
@@ -459,9 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 带弹窗请求（用户可在系统设置中手动批准）
     func requestAccessibilityIfNeeded() {
         guard !isAccessibilityGranted else { return }
-        // agent 应用（无 Dock 图标）可能无法弹出系统授权弹窗
-        // 直接打开系统设置的辅助功能页面，让用户手动添加
-        openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
+        openAccessibilitySettings()
     }
 
     // MARK: - 生命周期

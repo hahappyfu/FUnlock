@@ -232,7 +232,7 @@ struct MainWindowView: View {
                     hint: t("permission_banner_ax_hint"),
                     actionLabel: t("permission_banner_ax_action")
                 ) {
-                    openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
+                    openAccessibilitySettings()
                 }
             }
             if !btGranted {
@@ -240,7 +240,7 @@ struct MainWindowView: View {
                     message: t("permission_banner_bt"),
                     actionLabel: t("permission_banner_bt_action")
                 ) {
-                    openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
+                    openBluetoothSettings()
                 }
             }
         }
