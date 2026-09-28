@@ -8,23 +8,46 @@ struct LockSettingsView: View {
 
     var body: some View {
         ScrollView {
-            Form {
-                Section {
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     Toggle(isOn: $pauseItunes) {
-                        Label(t("pause_on_lock"), systemImage: "pause.circle")
-                        Text(t("pause_on_lock_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "pause.circle", color: .pink)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("pause_on_lock"))
+                                Text(t("pause_on_lock_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
+                    LiquidDivider()
                     Toggle(isOn: $sleepDisplay) {
-                        Label(t("sleep_display_on_lock"), systemImage: "moon.fill")
-                        Text(t("sleep_display_on_lock_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "moon.fill", color: .purple)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("sleep_display_on_lock"))
+                                Text(t("sleep_display_on_lock_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
+                    LiquidDivider()
                     Toggle(isOn: $lockOnIdle) {
-                        Label(t("defer_lock_on_input"), systemImage: "keyboard")
-                        Text(t("defer_lock_on_input_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "keyboard", color: .orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("defer_lock_on_input"))
+                                Text(t("defer_lock_on_input_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
                 }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
     }
 }

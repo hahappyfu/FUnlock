@@ -50,11 +50,18 @@ struct MainWindowView: View {
     @State private var currentToastID = UUID()
     @State private var previousConnected: Bool? = nil
 
+    @Environment(\.colorScheme) private var colorScheme
     /// 权限状态（仅 UI 展示用，不影响解锁逻辑；权限缺失期间每 5 秒刷新一次）
     @State private var axGranted = false
     @State private var btGranted = false
     /// 权限轮询订阅：仅权限缺失时存活（banner 可见期），授予后停止，不再常驻 Timer
     @State private var permissionPollCancellable: AnyCancellable?
+
+    init(manager: FUnManager, fun: FUn, initialTab: MenuTab = .overview) {
+        self.manager = manager
+        self.fun = fun
+        self._selectedTab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -64,7 +71,7 @@ struct MainWindowView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !axGranted || !btGranted {
                     permissionBanner
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 14)
                         .padding(.top, 12)
                         .padding(.bottom, 8)
                 }
@@ -73,6 +80,17 @@ struct MainWindowView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 460)
+        .background {
+            ZStack {
+                // 超薄材质垫底，硬件加速透射桌面壁纸
+                Rectangle().fill(.ultraThinMaterial)
+                // 极光自发光网格在毛玻璃之上向视窗内晕染，避免双层 Material 互叠变牛奶白
+                LiquidAuroraMesh(opacity: colorScheme == .dark ? 0.25 : 0.50)
+                // 晶体表面薄霜（轻微润色，维持极致通透度）
+                Color.white.opacity(colorScheme == .dark ? 0.03 : 0.08)
+            }
+            .ignoresSafeArea()
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -84,25 +102,7 @@ struct MainWindowView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack {
-                Button {
-                    manager.lockNow()
-                } label: {
-                    Label(t("lock_now"), systemImage: "lock.fill")
-                        .controlSize(.small)
-                }
-                Spacer()
-                Button {
-                    NSApplication.shared.terminate(nil)
-                } label: {
-                    Label(t("quit"), systemImage: "power")
-                        .controlSize(.small)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
+            bottomBar
         }
         .overlay(alignment: .top) {
             if let msg = toastMessage {
@@ -141,6 +141,13 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .menuShowStats)) { _ in
             showStats = true
         }
+        .onReceive(DistributedNotificationCenter.default.publisher(for: NSNotification.Name("com.funlock.selectTab"))) { notif in
+            if let tabName = notif.object as? String, let tab = MenuTab(rawValue: tabName) {
+                withAnimation(.funSpring) {
+                    selectedTab = tab
+                }
+            }
+        }
         .sheet(isPresented: $showCalibration) {
             CalibrationWizardView(manager: manager, isPresented: $showCalibration)
         }
@@ -156,6 +163,24 @@ struct MainWindowView: View {
         .sheet(isPresented: $showStats) {
             StatsView(isPresented: $showStats)
         }
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 0) {
+            LiquidDivider()
+            HStack(spacing: 10) {
+                LiquidPillButton(title: t("lock_now"), systemImage: "lock.fill") {
+                    manager.lockNow()
+                }
+                Spacer()
+                LiquidPillButton(title: t("quit"), systemImage: "power") {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+        }
+        .background(Color.white.opacity(colorScheme == .dark ? 0.03 : 0.08))
     }
 
     @ViewBuilder
@@ -202,44 +227,23 @@ struct MainWindowView: View {
     private var permissionBanner: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !axGranted {
-                bannerRow(
+                LiquidAmberBanner(
                     message: t("permission_banner_ax"),
                     hint: t("permission_banner_ax_hint"),
-                    action: { openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility") },
                     actionLabel: t("permission_banner_ax_action")
-                )
-            }
-            if !btGranted {
-                bannerRow(
-                    message: t("permission_banner_bt"),
-                    hint: nil,
-                    action: { openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth") },
-                    actionLabel: t("permission_banner_bt_action")
-                )
-            }
-        }
-    }
-
-    /// 单条权限提示：警告图标 + 文案（可选小字提示）+ 前往设置按钮
-    private func bannerRow(message: String, hint: String?, action: @escaping () -> Void, actionLabel: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(message)
-                    .font(.callout)
-                if let hint {
-                    Text(hint)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                ) {
+                    openSystemSettingsPane("com.apple.preference.security?Privacy_Accessibility")
                 }
             }
-            Spacer()
-            Button(actionLabel, action: action)
-                .controlSize(.small)
+            if !btGranted {
+                LiquidAmberBanner(
+                    message: t("permission_banner_bt"),
+                    actionLabel: t("permission_banner_bt_action")
+                ) {
+                    openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
+                }
+            }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
     }
 
     /// 刷新两个权限状态（仅影响警告条显示，不改任何解锁逻辑）

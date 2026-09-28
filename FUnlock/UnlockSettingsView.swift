@@ -8,26 +8,50 @@ struct UnlockSettingsView: View {
 
     var body: some View {
         ScrollView {
-            Form {
-                Section {
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     Toggle(isOn: $wakeOnProximity) {
-                        Label(t("wake_on_proximity"), systemImage: "display")
-                        Text(t("wake_on_proximity_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "display", color: .cyan)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("wake_on_proximity"))
+                                Text(t("wake_on_proximity_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
+                    LiquidDivider()
                     Toggle(isOn: $wakeWithoutUnlocking) {
-                        Label(t("wake_without_unlock"), systemImage: "lock.open")
-                        Text(t("wake_without_unlock_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "lock.open", color: .teal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("wake_without_unlock"))
+                                Text(t("wake_without_unlock_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
+                    LiquidDivider()
                     Toggle(isOn: $useScreensaver) {
-                        Label(t("use_screensaver"), systemImage: "sparkles.tv")
-                        Text(t("use_screensaver_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "sparkles.tv", color: .indigo)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("use_screensaver"))
+                                Text(t("use_screensaver_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
                 }
-                Section {
-                    IMSettingsCard()
-                }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
+
+                // iMessage 通知卡：独立晶体卡片
+                IMSettingsCard()
+                    .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
     }
 }

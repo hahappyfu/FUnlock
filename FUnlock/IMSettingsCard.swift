@@ -34,19 +34,28 @@ struct IMSettingsCard: View {
     }
 
     var body: some View {
-        Toggle(isOn: $iMessageNotify) {
-            Label(t("im_settings_title"), systemImage: "message.fill")
-            Text(t("im_settings_desc")).font(.caption).foregroundColor(.secondary)
-        }
-        if iMessageNotify {
-            recipientRow
-            authorizationRow
-            Divider()
-            testRow
-            if !testStateMessage.isEmpty {
-                Text(testStateMessage)
-                    .font(.caption)
-                    .foregroundColor(testStateColor)
+        // 显式容器：卡片化后不再依赖 Form/Section 的隐式展平，保证纵向堆叠
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $iMessageNotify) {
+                HStack(spacing: 10) {
+                    LiquidIconBadge(icon: "message.fill", color: .blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("im_settings_title"))
+                        Text(t("im_settings_desc")).font(.caption).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .toggleStyle(.switch)
+            if iMessageNotify {
+                recipientRow
+                authorizationRow
+                LiquidDivider()
+                testRow
+                if !testStateMessage.isEmpty {
+                    Text(testStateMessage)
+                        .font(.caption)
+                        .foregroundColor(testStateColor)
+                }
             }
         }
     }
@@ -58,7 +67,8 @@ struct IMSettingsCard: View {
             HStack {
                 Text(t("im_recipient_label"))
                 TextField(t("im_recipient_placeholder"), text: $recipient)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .liquidInputField()
             }
             if !recipient.isEmpty && !recipientValid {
                 Text(t("im_recipient_invalid"))
@@ -78,8 +88,14 @@ struct IMSettingsCard: View {
                     openAutomationSettings()
                 }
             } else {
+                // 「已授权」状态包装为绿色微胶囊，弱化整行色块、强化状态语义
                 Text(t("im_authorized"))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.green.opacity(0.14)))
+                    .overlay(Capsule().strokeBorder(Color.green.opacity(0.28), lineWidth: 0.8))
             }
         }
     }

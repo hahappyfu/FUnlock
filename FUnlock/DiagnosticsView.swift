@@ -22,6 +22,7 @@ struct DiagnosticsView: View {
     var logger: DecisionLogger
     let onNavigate: (MenuTab) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var filter: DecisionCategory?
 
     init(manager: FUnManager, logger: DecisionLogger = DecisionLogger.shared,
@@ -83,13 +84,9 @@ struct DiagnosticsView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(t("diagnostics"))
-                    .font(.system(size: 15, weight: .bold))
-                Text(t("diagnostics_subtitle"))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
+            Text(t("diagnostics_subtitle"))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -109,16 +106,43 @@ struct DiagnosticsView: View {
         }
     }
 
+    /// 晶体发光胶囊筛选片：选中态微光衬底 + 0.8px 亮边，未选中态微透
     private func chipButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 3)
-                .background(isSelected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
-                .cornerRadius(6)
+                .background(
+                    Capsule()
+                        .fill(isSelected
+                             // 选中：琥珀-白光微光衬底，亮度按深浅色模式分档
+                             ? AnyShapeStyle(LinearGradient(
+                                 colors: colorScheme == .dark
+                                     ? [Color.white.opacity(0.16), Color(red: 0.75, green: 0.60, blue: 1.0).opacity(0.22)]
+                                     : [Color.white.opacity(0.42), Color(red: 0.75, green: 0.60, blue: 1.0).opacity(0.20)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                             // 未选中：微透，让底层极光透出
+                             : AnyShapeStyle(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.14)))
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: isSelected
+                                    ? [Color.white.opacity(colorScheme == .dark ? 0.55 : 0.95),
+                                       Color.white.opacity(0.20)]
+                                    : [Color.white.opacity(colorScheme == .dark ? 0.20 : 0.45),
+                                       Color.white.opacity(0.06)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.8
+                        )
+                )
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .animation(.funSpring, value: isSelected)
     }
 
     // MARK: - 时间轴
@@ -128,44 +152,50 @@ struct DiagnosticsView: View {
         static let columnWidth: CGFloat = 18
         static let dotSize: CGFloat = 9
         static let lineWidth: CGFloat = 2
+        /// 导光竖线独立于圆点描边：更细、更淡，贯穿整组形成连续时间线
+        static let guideLineWidth: CGFloat = 1.5
+        static let guideLineOpacity: Double = 0.2
     }
 
     private var timeline: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 10) {
             ForEach(groupedEvents, id: \.title) { group in
                 Text(group.title)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
-                    .padding(.top, 10)
-                    .padding(.bottom, 4)
+                    .padding(.top, 2)
                 timelineGroup(for: group)
             }
         }
     }
 
-    /// 单组时间轴：左侧一条竖线贯穿整组，每个事件是轴上的一个节点
+    /// 单组时间轴：整组坐在一张晶体卡片里，底层流光由卡片半透底衬透出
     private func timelineGroup(for group: (title: String, events: [DecisionEvent])) -> some View {
         ZStack(alignment: .topLeading) {
-            // 竖线：中心 x = columnWidth / 2，与节点圆点水平居中对齐
+            // 导光竖线：中心 x = columnWidth / 2，与圆点对齐；上下略微出头，
+            // 让组内圆点串联成一条连续的时间线（Rectangle 无高度约束，自动撑满整张卡片）
             Rectangle()
-                .fill(Color.secondary.opacity(0.25))
-                .frame(width: AxisLayout.lineWidth)
-                .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.lineWidth / 2)
+                .fill(Color.secondary.opacity(AxisLayout.guideLineOpacity))
+                .frame(width: AxisLayout.guideLineWidth)
+                .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.guideLineWidth / 2)
+                .padding(.vertical, 2)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(group.events) { event in
                     itemRow(for: event)
                 }
             }
         }
+        .liquidGlassCard(cornerRadius: 14, padding: 8)
     }
 
     /// 时间轴节点行：圆点位于竖线上，右侧为事件内容
     private func itemRow(for event: DecisionEvent) -> some View {
         let iconInfo = event.icon
         return HStack(alignment: .top, spacing: 8) {
-            // 节点圆点：轴列内水平居中，描边色 = 事件状态色，背景填充遮住竖线
+            // 节点圆点：轴列内水平居中；填充改用事件状态色的微透底，不再用不透明窗口色
+            // （不透明底会盖穿卡片下的极光流光），描边仍取状态色
             Circle()
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(iconInfo.1.opacity(0.22))
                 .frame(width: AxisLayout.dotSize, height: AxisLayout.dotSize)
                 .overlay(Circle().stroke(iconInfo.1, lineWidth: AxisLayout.lineWidth))
                 .frame(width: AxisLayout.columnWidth)

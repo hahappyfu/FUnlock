@@ -624,6 +624,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 Task { @MainActor in SecurityService.shared.handlePasswordChanged() }
             }
             .store(in: &cancellables)
+        dnc.publisher(for: NSNotification.Name("com.funlock.showSettings"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                if self.settingsWindow == nil { self.setupSettingsWindow() }
+                self.settingsWindow.center()
+                self.settingsWindow.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .store(in: &cancellables)
 
         // 应用失活（点击桌面 / 切换到其他 App）时自动收起状态栏菜单
         NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
@@ -674,7 +684,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "Funlock"
-        settingsWindow.styleMask = [.titled, .closable, .resizable]
+        settingsWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        // 玻璃底座：标题栏透明 + 非不透明窗口 + 清空底色，让极光流光与桌面壁纸从红绿灯一路透到窗口底边
+        settingsWindow.titlebarAppearsTransparent = true
+        settingsWindow.isOpaque = false
+        settingsWindow.backgroundColor = .clear
         settingsWindow.contentMinSize = NSSize(width: 560, height: 460)
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()

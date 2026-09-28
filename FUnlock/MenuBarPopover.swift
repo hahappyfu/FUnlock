@@ -17,6 +17,7 @@ struct MenuBarPopoverView: View {
     var fun: FUn
     let onAction: (MenuBarAction) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
     @State private var updateStatus: UpdateStatus = .idle
     @State private var breathing = false
@@ -27,18 +28,65 @@ struct MenuBarPopoverView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            statusCard.padding(EdgeInsets(top: 12, leading: 12, bottom: 10, trailing: 12))
-            Divider()
+            statusCard
+            LiquidDivider()
             enableRow
-            Divider()
+            LiquidDivider()
             actionRows
-            Divider()
+            LiquidDivider()
             quitRow
+                .padding(.bottom, 4)
         }
         .frame(width: 282)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+        .background {
+            ZStack {
+                // 极光自发光网格层：直接借由 NSPopover 原生毛玻璃背景晕染，消除双层 material 造成的混浊牛奶白
+                LiquidAuroraMesh(opacity: colorScheme == .dark ? 0.35 : 0.60)
+                // 晶体表面薄霜（轻微润色，维持极致通透度）
+                Color.white.opacity(colorScheme == .dark ? 0.03 : 0.10)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            // 晶体外框：棱镜微色散
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 1.0, green: 0.6, blue: 0.8).opacity(0.30),
+                            Color(red: 0.5, green: 0.8, blue: 1.0).opacity(0.30),
+                            Color(red: 0.5, green: 1.0, blue: 0.8).opacity(0.20),
+                            Color(red: 1.0, green: 0.6, blue: 0.8).opacity(0.25)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.0
+                )
+        )
+        .overlay(
+            // 晶体外框：顺光源 3D 高光反射环
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .dark ? 0.50 : 0.85),
+                            Color.white.opacity(colorScheme == .dark ? 0.15 : 0.30),
+                            Color.white.opacity(0.04),
+                            Color.white.opacity(colorScheme == .dark ? 0.20 : 0.40)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.0
+                )
+        )
+        .shadow(
+            color: Color(red: 0.38, green: 0.34, blue: 0.63).opacity(colorScheme == .dark ? 0.32 : 0.16),
+            radius: 16,
+            x: 0,
+            y: 8
+        )
         .onAppear { syncUpdateStatus() }
         .onChange(of: manager.updateState) { _, _ in syncUpdateStatus() }
     }
@@ -90,39 +138,94 @@ struct MenuBarPopoverView: View {
     /// 与总览「无信号」同源判据：manager.rssi 在失联 3 次超时后被置 nil
     private var hasSignal: Bool { manager.rssi != nil }
 
+    private var deviceGemIcon: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.38, green: 0.50, blue: 0.98),
+                            Color(red: 0.50, green: 0.32, blue: 0.90)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.85), Color.white.opacity(0.18)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+            Image(systemName: deviceIcon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+        }
+        .frame(width: 36, height: 36)
+        .shadow(color: Color(red: 0.38, green: 0.50, blue: 0.98).opacity(0.35), radius: 6, y: 2)
+    }
+
+    private var statusBadge: some View {
+        HStack(spacing: 4) {
+            statusDot
+            Text(screenStatus.text)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(screenStatus.color)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(screenStatus.color.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(screenStatus.color.opacity(0.28), lineWidth: 0.8))
+        .animation(.funSpring, value: screenStatus.text)
+    }
+
+    private var signalRow: some View {
+        HStack(spacing: 6) {
+            if hasSignal {
+                signalBarsView
+                Text("\(signalLevel.main) (\(signalLevel.proximity))")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.green)
+            } else {
+                Text(t("mb_signal_lost"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.orange)
+            }
+            Spacer()
+            // 信号 dBm 数据：SF Mono 等宽字体确保数据权威性
+            Text(signalText)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+        }
+    }
+
     private var statusCard: some View {
         HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(LinearGradient(colors: [.blue.opacity(0.85), .indigo.opacity(0.85)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: deviceIcon)
-                    .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-            }
-            .frame(width: 34, height: 34)
+            deviceGemIcon
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text(deviceName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                HStack(spacing: 7) {
-                    if hasSignal {
-                        signalBarsView
-                        Text("\(signalLevel.main) (\(signalLevel.proximity))")
-                            .font(.system(size: 12, weight: .medium)).foregroundColor(.green)
-                    } else {
-                        Text(t("mb_signal_lost"))
-                            .font(.system(size: 12, weight: .medium)).foregroundColor(.orange)
-                    }
-                    Spacer(minLength: 4)
-                    statusDot
-                    Text(screenStatus.text)
-                        .font(.system(size: 10, weight: .semibold)).foregroundColor(screenStatus.color)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(screenStatus.color.opacity(0.12), in: Capsule())
-                        .animation(.funSpring, value: screenStatus.text)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(deviceName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                        // 优先占用弹性空间，剩余才交给 Spacer，避免设备名被过早截断
+                        .layoutPriority(1)
+                    Spacer(minLength: 6)
+                    statusBadge
+                        .fixedSize()
                 }
-                .padding(.top, 4)
-                Text(signalText).font(.system(size: 10)).foregroundColor(.secondary).padding(.top, 2)
+                signalRow
             }
         }
+        .liquidGlassCard(cornerRadius: 13, padding: 10)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
     }
 
     /// 屏幕状态三态：解锁（绿，呼吸）/ 锁定（橙）/ 失联（灰）
@@ -163,7 +266,7 @@ struct MenuBarPopoverView: View {
         return HStack(alignment: .bottom, spacing: 2.5) {
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.green.opacity(i < count ? 1 : 0.2))
+                    .fill(i < count ? Color.green : Color.primary.opacity(0.12))
                     .frame(width: 4, height: 4 + CGFloat(i) * 2)
             }
         }
@@ -187,12 +290,24 @@ struct MenuBarPopoverView: View {
                       title: t("mb_enable"),
                       titleColor: enabled ? .primary : .secondary,
                       hoverTint: .primary,
-                      trailing: AnyView(Capsule()
-                          .fill(enabled ? Color.green : Color.gray.opacity(0.45))
-                          .frame(width: 32, height: 18)
-                          .overlay(alignment: enabled ? .trailing : .leading) {
-                              Circle().fill(.white).frame(width: 14, height: 14).padding(2)
-                          })) {
+                      trailing: AnyView(
+                          Capsule()
+                              .fill(
+                                  enabled ? LinearGradient(colors: [Color.green, Color(red: 0.15, green: 0.75, blue: 0.45)],
+                                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                                          : LinearGradient(colors: [Color.gray.opacity(0.40), Color.gray.opacity(0.50)],
+                                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                              )
+                              .frame(width: 32, height: 18)
+                              .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5))
+                              .overlay(alignment: enabled ? .trailing : .leading) {
+                                  Circle()
+                                      .fill(Color.white)
+                                      .shadow(color: Color.black.opacity(0.18), radius: 1.5, x: 0, y: 1)
+                                      .frame(width: 14, height: 14)
+                                      .padding(2)
+                              }
+                      )) {
             withAnimation(.funSpring) { enabled.toggle() }
         }
         // 自绘 Capsule 滑轨对读屏器不可见：把「开关」语义与当前档位补到整行按钮上
@@ -217,7 +332,7 @@ struct MenuBarPopoverView: View {
                           trailing: AnyView(updateTrailing), disabled: isUpdateInProgress) {
                 startUpdateCheck()
             }
-            Divider().padding(.vertical, 3)
+            LiquidDivider()
             // 数据展示与危险操作：与上方系统配置类分组隔开
             MenuRowButton(icon: "chart.bar", iconColor: .secondary, title: t("menu_stats"),
                           titleColor: .primary, hoverTint: .primary, shortcut: ("s", .command, "⌘S")) {
@@ -228,7 +343,7 @@ struct MenuBarPopoverView: View {
                 onAction(.lockNow)
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 3)
     }
 
     @ViewBuilder

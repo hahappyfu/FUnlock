@@ -57,7 +57,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            Form {
+            VStack(spacing: 14) {
                 if manager.monitoredDeviceName == nil {
                     noDeviceSection
                 } else {
@@ -66,7 +66,9 @@ struct OverviewView: View {
                     quickActionsSection
                 }
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
         .onAppear {
             sliderLock = Double(manager.lockRSSI)
@@ -92,7 +94,7 @@ struct OverviewView: View {
     // MARK: 设备状态卡
 
     private var deviceStatusSection: some View {
-        Section {
+        VStack(spacing: 12) {
             VStack(spacing: 12) {
                 signalRing
                 HStack(spacing: 6) {
@@ -102,6 +104,8 @@ struct OverviewView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+
+            LiquidDivider()
 
             HStack {
                 Label(manager.monitoredDeviceName ?? "", systemImage: deviceIconName(for: manager.monitoredDeviceName ?? ""))
@@ -123,6 +127,8 @@ struct OverviewView: View {
             }
 
             if isDeviceListExpanded {
+                LiquidDivider()
+
                 HStack {
                     Text(t("select_device"))
                         .font(.subheadline)
@@ -137,18 +143,21 @@ struct OverviewView: View {
                 }
 
                 if !frozenDevices.isEmpty {
-                    ForEach(frozenDevices, id: \.uuid) { device in
-                        DeviceRowView(device: device) {
-                            manager.selectDevice(device)
-                            stopScan()
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                isDeviceListExpanded = false
+                    VStack(spacing: 6) {
+                        ForEach(frozenDevices, id: \.uuid) { device in
+                            DeviceRowView(device: device) {
+                                manager.selectDevice(device)
+                                stopScan()
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    isDeviceListExpanded = false
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        .liquidGlassCard(cornerRadius: 16, padding: 14)
     }
 
     private func toggleDeviceList() {
@@ -171,13 +180,8 @@ struct OverviewView: View {
                 .frame(width: 110, height: 110)
             Circle()
                 .trim(from: 0, to: signalStrength)
-                .stroke(
-                    AngularGradient(
-                        gradient: Gradient(colors: [signalColor.opacity(0.4), signalColor]),
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                )
+                // 实时数据环：高饱和实心信号色（不做半透明/渐变衰减，确保档位一眼可读）
+                .stroke(signalColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                 .frame(width: 110, height: 110)
                 .rotationEffect(.degrees(-90))
                 // 高频仪表盘数据：仅保留 0.1s 防闪烁过渡（原 0.5s easeInOut 让实时信号显得迟钝）
@@ -191,7 +195,8 @@ struct OverviewView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 16)
+        .padding(.bottom, 2)
         // 无障碍：信号盘对 VoiceOver 输出可读摘要（当前 RSSI + 在场/距离场景），不再读成一串碎片
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(manager.rssi.map { "\($0)" } ?? "—") dBm, \(scenarioText)"))
@@ -200,9 +205,14 @@ struct OverviewView: View {
     // MARK: 阈值分组
 
     private var thresholdSection: some View {
-        Section(t("distance_threshold")) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("distance_threshold"))
+                .font(.subheadline.weight(.semibold))
+
             thresholdBar
             hysteresisBand
+
+            LiquidDivider()
 
             ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
                                value: $sliderLock, isDragging: $isSliderDragging,
@@ -214,6 +224,9 @@ struct OverviewView: View {
                                        sliderLock = min(safe, sliderUnlock - 1)
                                    }
                                })
+
+            LiquidDivider()
+
             ThresholdSliderRow(icon: "lock.open.fill", color: .green, title: t("unlock"),
                                value: $sliderUnlock, isDragging: $isSliderDragging,
                                onEditingEnded: {
@@ -226,16 +239,23 @@ struct OverviewView: View {
                                    }
                                })
 
+            LiquidDivider()
+
             ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
                                title: t("wake_advance"),
                                preText: t("subtitle_pre"), postText: t("wake_subtitle_post"),
                                derivedValue: Int(sliderUnlock) - wakeAdvance,
                                value: $wakeAdvance)
+
+            LiquidDivider()
+
             ThresholdOffsetRow(icon: "bolt.fill", color: .purple,
                                title: t("pre_unlock_trigger"),
                                preText: t("subtitle_pre"), postText: t("pre_subtitle_post"),
                                derivedValue: Int(sliderUnlock) - preUnlockTrigger,
                                value: $preUnlockTrigger)
+
+            LiquidDivider()
 
             Button {
                 let unlockVal = Int(sliderUnlock)
@@ -253,6 +273,7 @@ struct OverviewView: View {
             }
             .disabled(isThresholdApplied)
         }
+        .liquidGlassCard(cornerRadius: 16, padding: 14)
     }
 
     // MARK: 可视化阈值条
@@ -335,24 +356,24 @@ struct OverviewView: View {
     // MARK: 快捷操作
 
     private var quickActionsSection: some View {
-        Section {
-            Button {
-                showCalibration = true
-            } label: {
-                Label(t("calibration_wizard"), systemImage: "wand.and.stars")
-            }
-            Button {
-                manager.lockNow()
-            } label: {
-                Label(t("lock_now"), systemImage: "lock.fill")
-            }
+        // 只保留「自动校准向导」单主按钮（「立刻锁定」与底栏重复，已移除），填满宽度居中呈现
+        Button {
+            showCalibration = true
+        } label: {
+            Label(t("calibration_wizard"), systemImage: "wand.and.stars")
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 3)
         }
+        .controlSize(.large)
+        .buttonStyle(.borderedProminent)
+        .liquidGlassCard(cornerRadius: 16, padding: 14)
     }
 
     // MARK: 未绑定设备引导卡
 
     private var noDeviceSection: some View {
-        Section {
+        VStack(spacing: 12) {
             VStack(spacing: 10) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
                     .font(.system(size: 30))
@@ -372,14 +393,19 @@ struct OverviewView: View {
             .padding(.vertical, 16)
 
             if !frozenDevices.isEmpty {
-                ForEach(frozenDevices, id: \.uuid) { device in
-                    DeviceRowView(device: device) {
-                        manager.selectDevice(device)
-                        stopScan()
+                LiquidDivider()
+
+                VStack(spacing: 6) {
+                    ForEach(frozenDevices, id: \.uuid) { device in
+                        DeviceRowView(device: device) {
+                            manager.selectDevice(device)
+                            stopScan()
+                        }
                     }
                 }
             }
         }
+        .liquidGlassCard(cornerRadius: 16, padding: 14)
     }
 
     // MARK: 扫描
@@ -451,18 +477,24 @@ private struct ThresholdSliderRow: View {
     var onEditingEnded: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: icon).foregroundColor(color).frame(width: 16)
-            Text(title).frame(width: 30, alignment: .leading)
+            Text(title).font(.system(size: 12)).frame(width: 34, alignment: .leading)
             Slider(value: $value, in: OverviewView.RSSIRange.min...OverviewView.RSSIRange.max,
                    onEditingChanged: { editing in
                        isDragging = editing
                        if !editing { onEditingEnded?() }
                    })
+            // dBm 数值微胶囊槽：等宽数字 + 微透衬底，读数工整且醒目
             Text("\(Int(value))")
-                .font(.system(size: 11, design: .monospaced))
-                .frame(width: 34, alignment: .trailing)
-            Text("dBm").font(.caption).foregroundColor(.secondary)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .monospacedDigit()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.6))
+                .fixedSize()
+            Text("dBm").font(.caption2).foregroundColor(.secondary)
         }
     }
 }
@@ -517,6 +549,9 @@ private struct DeviceRowView: View {
     let device: DeviceSnapshot
     let onSelect: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: onSelect) {
             HStack {
@@ -527,16 +562,32 @@ private struct DeviceRowView: View {
                         .lineLimit(1)
                     if let mac = device.macAddr {
                         Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())
-                            .font(.caption)
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
                 }
                 Spacer()
                 Text("\(device.rssi) dBm")
-                    .font(.caption)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(rssiColor(device.rssi))
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        // 悬停晶体微光：轻亮底 + 0.6px 高反光细边
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(isHovering ? (colorScheme == .dark ? 0.10 : 0.18) : 0))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(Color.white.opacity(isHovering ? 0.30 : 0.0), lineWidth: 0.6)
+        )
+        .animation(.funSpring, value: isHovering)
+        .onHover { isHovering = $0 }
     }
 
     /// 信号质量色:与菜单栏信号档位同源(MenuBarPopoverView.signalLevel,-60/-75 单测锁定)

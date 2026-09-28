@@ -13,21 +13,31 @@ struct NetworkSettingsView: View {
 
     var body: some View {
         ScrollView {
-            Form {
-                Section {
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     Toggle(isOn: $pauseOnWiFi) {
-                        Label(t("pause_on_wifi"), systemImage: "wifi")
-                        Text(t("pause_on_wifi_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "wifi", color: .blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("pause_on_wifi"))
+                                Text(t("pause_on_wifi_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
                     if pauseOnWiFi {
-                        HStack {
+                        LiquidDivider()
+                        // 输入槽与右侧胶囊按钮在同一 HStack 中，默认 center 对齐确保中轴严格对齐
+                        HStack(alignment: .center, spacing: 8) {
                             Text(t("wifi_ssid"))
                             TextField(t("wifi_ssid_placeholder"), text: $pauseOnWiFiSSID)
-                                .textFieldStyle(.roundedBorder)
-                            Button(t("current_wifi")) {
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 12, design: .monospaced))
+                                .liquidInputField()
+                                .frame(maxWidth: .infinity)
+                            LiquidPillButton(title: t("current_wifi"), systemImage: "wifi") {
                                 fillCurrentWiFi()
                             }
-                            .controlSize(.small)
                         }
                         if let hint = wifiHint {
                             Text(hint)
@@ -36,14 +46,24 @@ struct NetworkSettingsView: View {
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
+                    LiquidDivider()
                     Toggle(isOn: $passiveMode) {
-                        Label(t("passive_mode"), systemImage: "antenna.radiowaves.left.and.right")
-                        Text(t("passive_mode_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "antenna.radiowaves.left.and.right", color: .purple)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("passive_mode"))
+                                Text(t("passive_mode_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
                     .onChange(of: passiveMode) { _, v in manager.setPassiveMode(v) }
                 }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
     }
 

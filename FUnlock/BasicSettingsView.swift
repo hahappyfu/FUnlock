@@ -8,16 +8,29 @@ struct BasicSettingsView: View {
 
     var body: some View {
         ScrollView {
-            Form {
-                Section {
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     Toggle(isOn: $enabled) {
-                        Label(t("enable"), systemImage: "power")
-                        Text(t("enable_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "power", color: .green)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("enable"))
+                                Text(t("enable_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
+                    LiquidDivider()
                     Toggle(isOn: $launchAtLogin) {
-                        Label(t("launch_at_login"), systemImage: "arrow.up.circle")
-                        Text(t("launch_at_login_desc")).font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            LiquidIconBadge(icon: "arrow.up.circle", color: .blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("launch_at_login"))
+                                Text(t("launch_at_login_desc")).font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
+                    .toggleStyle(.switch)
                     .onChange(of: launchAtLogin) { _, v in
                         if #available(macOS 13.0, *) {
                             do {
@@ -27,8 +40,11 @@ struct BasicSettingsView: View {
                         }
                     }
                 }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
     }
 }

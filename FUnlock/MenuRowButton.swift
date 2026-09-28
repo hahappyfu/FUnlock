@@ -48,9 +48,13 @@ struct MenuRowButton: View {
             .padding(.vertical, 7)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 8)
                     .fill(isPressed ? hoverTint.opacity(0.18)
                                     : (isHovering ? hoverTint.opacity(0.08) : .clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isHovering ? Color.white.opacity(0.24) : .clear, lineWidth: 0.6)
             )
             .scaleEffect(isPressed ? 0.985 : 1.0)
             .animation(.funSpring, value: isHovering)

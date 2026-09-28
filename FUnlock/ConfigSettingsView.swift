@@ -16,8 +16,9 @@ struct ConfigSettingsView: View {
 
     var body: some View {
         ScrollView {
-            Form {
-                Section {
+            VStack(spacing: 12) {
+                // 档位选择与增删导入导出
+                VStack(alignment: .leading, spacing: 10) {
                     Picker(t("profile"), selection: $profileManager.activeProfileID) {
                         ForEach(profileManager.profiles) { profile in
                             Text(profile.name).tag(profile.id)
@@ -28,44 +29,56 @@ struct ConfigSettingsView: View {
                         profileManager.applyActiveProfile(to: manager)
                     }
 
-                    HStack {
+                    LiquidDivider()
+
+                    // 档位操作栏：带文案的小号描边按钮，取代此前孤立的 (+)/(↓)/(↑) 裸图标
+                    HStack(spacing: 8) {
                         Spacer()
                         Button {
                             newProfileName = ""
                             showAddProfile = true
                         } label: {
-                            Image(systemName: "plus.circle")
+                            Label(t("profile_add"), systemImage: "plus")
                         }
                         if profileManager.activeProfileID != "default" {
                             Button { showDeleteProfile = true } label: {
-                                Image(systemName: "minus.circle")
+                                Label(t("profile_delete"), systemImage: "trash")
                             }
+                            .tint(.red)
                         }
-                        Divider()
-                            .frame(height: 12)
                         Button(action: importProfiles) {
-                            Image(systemName: "arrow.down.doc")
+                            Label(t("profile_import"), systemImage: "arrow.down.doc")
                         }
                         Button(action: exportProfiles) {
-                            Image(systemName: "arrow.up.doc")
+                            Label(t("profile_export"), systemImage: "arrow.up.doc")
                         }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
 
-                Section {
-                    HStack {
+                // 全量设置备份
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
                         Text(t("settings_backup_title"))
                             .font(.callout)
                         Spacer()
                         Button(t("settings_export_all")) { exportAllSettings() }
                         Button(t("settings_import_all")) { importAllSettings() }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    LiquidDivider()
                     Text(t("settings_backup_desc"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+                .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
         .alert(t("profile_add"), isPresented: $showAddProfile) {
             TextField(t("profile_name_placeholder"), text: $newProfileName)
