@@ -24,62 +24,107 @@ flowchart TB
         DV[DiagnosticsView 诊断页]
         SV[StatsView 统计页]
         CW[CalibrationWizardView 校准向导]
+        AD[AppDelegate<br/>Popover / 通知响应 / FUnDelegate 消费]
     end
 
     subgraph COORD["协调层"]
-        FM[FUnManager<br/>屏幕/系统事件 + 决策 + 解锁编排]
+        FM[FUnManager<br/>屏幕/系统事件 + 决策 + 手动锁定]
+        UE[FUnManager+Events<br/>事件入口实现]
+        UO[UnlockOrchestrator (+AutoUnlock)<br/>解锁流水线：门控→密码→注入→验证→唤醒重试]
         SM[FUnlockStateMachine<br/>状态机（防抖/降级）]
         DL[DecisionLogger<br/>决策时间线]
+        SHE[SignalHysteresisEngine<br/>迟滞/阈值/超时纯逻辑]
     end
 
-    subgraph CORE["核心层"]
-        FUn[FUn<br/>CBCentralManager 扫描/连接/信号]
+    subgraph CORE["核心层 (BLE)"]
+        FUn[FUn<br/>BLE Facade + 阈值存储]
+        FSP[FUnSignalProcessor<br/>信号处理/在场判定/快照]
+        LC[FUnLockCoordinator<br/>锁定时延/心跳/信号超时]
+        BS[BLEScanner<br/>CBCentralManager 扫描/设备表]
+        BPH[BLEPeripheralHandler<br/>连接外设/采样轮询]
         SP[SignalPipeline<br/>Kalman + EWLR + IQR + 衰减]
     end
 
-    subgraph SYS["系统交互层"]
+    subgraph SYS["系统交互与服务层"]
         SIS[SystemInteractionService<br/>锁屏/唤醒/键盘注入/通知]
         SS[SecurityService<br/>Keychain 密码存取]
+        CS[ConfigStore<br/>独立 suite 域配置]
+        PM[ProfileManager<br/>配置档案]
+        SR[ScriptRunner<br/>事件脚本 + events.log]
+        IMN[iMessageNotifier<br/>iMessage 告警]
     end
 
     MV --> FM
     OV --> FM
     DV --> DL
     CW --> FM
+    AD --> FM
+    FM --> UO
     FM --> FUn
     FM --> SM
     FM --> DL
+    UO --> SIS
+    UO --> SS
+    UO --> SR
+    UO --> IMN
+    FUn --> BS
+    BS --> BPH
+    FUn --> FSP
+    FUn --> LC
     FUn --> SP
+    FSP --> SHE
+    LC --> SHE
     FM --> SIS
     FM --> SS
-    SIS --> SS
+    FM --> SR
+    FM --> IMN
+    UI -.-> CS
+    COORD -.-> CS
+    SHE -.-> CS
 
-    SYS -. AX / CoreGraphics / Keychain / IOKit .-> macOS
+    SYS -. AX / CoreGraphics / Keychain / IOKit / CoreWLAN .-> macOS
     CORE -. CoreBluetooth .-> macOS
 ```
 
-**数据流（一次解锁）**：`BLE 广播 → FUn(CBCentralManager 回调) → SignalPipeline 处理 → effectiveRSSI → FUnManager 判断阶梯阈值 → 状态机校验 → SystemInteractionService 注入密码 → Keychain 取密 → 验证解锁结果 → DecisionLogger 记录`。
+**数据流（一次解锁）**：`BLE 广播 → BLEScanner/BLEPeripheralHandler 采样 → FUnSignalProcessor(SignalPipeline) 处理 → effectiveRSSI → checkProximity 派发 onDeviceApproached → FUnManager → UnlockOrchestrator 门控链 → SystemInteractionService 注入密码 ← SecurityService 取密 → 双保险验证 → DecisionLogger 记录 + ScriptRunner/iMessageNotifier 通知`。
 
 ## 3. 模块清单
 
 | 文件 | 职责 | 关键类型/函数 |
 |---|---|---|
-| `FUn.swift` | BLE 核心：扫描、连接、设备表、RSSI 更新、定时器 | `FUn`(NSObject+CBCentralManagerDelegate)、`preWakeThreshold`、`unlockStairThreshold`、`smoothedRSSI(_:)`、`lockTimeout(slope:base:)`、`isNearThreshold(_:threshold:)` |
-| `FUnManager.swift` | 编排层：屏幕/系统事件、解锁/锁定决策、诊断记录、更新检查 | `@Published state/rssi/lockRSSI/unlockRSSI`、`attemptAutoUnlock()`、`onDeviceApproached()`、`onSystemScreenLocked()`、`recordUnlock(_:reason:detail:)` |
-| `FUnlockStateMachine.swift` | 解锁状态机：冷却、连续失败降级 | `State`(active/displayAsleep/preWaking/readyToUnlock/unlocking/cooldown/degraded)、`canAttemptUnlock` |
-| `SignalPipeline.swift` | 信号处理管线（值类型，线程安全） | `process(rssi:source:now:) -> SignalDecision`、`UnfairLock` |
+| `AppDelegate.swift` | 应用入口壳：状态栏 Popover、系统/远程通知响应、FUnDelegate UI 消费、权限引导 | `applicationDidFinishLaunching`、`updatePresence(presence:reason:)`、通知点击白名单分发 |
+| `main.m` / `lowlevel.[ch]` | 进程入口；SAC 锁屏 / 显示器唤醒 / 唤醒断言等私有 API 封装 | `SACLockScreenImmediate`、`funlock_wakeDisplay` |
+| `FUn.swift` | BLE Facade：阈值/共享状态存储、扫描与监控入口、`BLEScannerHost` 转发 | `startMonitor(uuid:)`、`unlockRSSI/lockRSSI`（锁保护）、`UNLOCK_DISABLED/LOCK_DISABLED` |
+| `BLEScanner.swift` | CBCentralManager 委托：扫描、设备表、监控外设管理（与 FUn 共锁） | `BLEScanner`、`PollingContext` |
+| `BLEPeripheralHandler.swift` | 已连接外设委托：RSSI 采样轮询、服务发现、主动模式计时 | `BLEPeripheralHandler` |
+| `FUnSignalProcessor.swift` | 信号处理与在场判定（extension FUn）：管道滤波、EMA、checkProximity、快照 | `signalSnapshot()`、`updateMonitoredPeripheral(_:)`、`preWakeThreshold`、`unlockStairThreshold` |
+| `FUnLockCoordinator.swift` | 锁定决策与心跳（extension FUn）：锁延迟计时、信号超时、时间衰减 | `applyLockTimer`、`decayedEffectiveRSSI` |
+| `FUnManager.swift` | 编排层：状态中枢（@Observable）、手动锁定、阈值同步、扫描控制 | `markManualLock()`、`setUnlockRSSI/setLockRSSI`、`setPassiveMode(_:)` |
+| `FUnManager+Events.swift` | 系统/设备事件入口实现：锁屏/唤醒/屏保/靠近/离开 | `onDeviceApproached()`、`onDeviceLeft(reason:)`、`onSystemScreenLocked()` |
+| `UnlockOrchestrator.swift` | 解锁流水线：门控链调度、密码注入、双保险验证、决策记录 | `attemptAutoUnlock()`、`tryUnlock()`、`recordUnlock(_:reason:detail:)` |
+| `UnlockOrchestrator+AutoUnlock.swift` | attemptAutoUnlock 完整门控链与并行唤醒路径、0.3s 延迟任务 | `startWakeRetry()`、`PauseOnWiFiSSIDCache` |
+| `FUnlockStateMachine.swift` | 解锁状态机：防抖冷却、连续失败降级 | `State`(active/unlocking/cooldown/degraded)、`attemptUnlock()`、`canAttemptUnlock` |
+| `SignalHysteresisEngine.swift` | 迟滞/阈值纯逻辑引擎（全项目唯一定义）：哨兵、钳制、超时插值、靠近/离开判定 | `unlockDisabled/lockDisabled`、`clampRSSI`、`clampOffset`、`lockTimeout(slope:base:)`、`isNearThreshold`、`checkProximity` |
+| `SignalPipeline.swift` | 信号处理管线（值类型，线程安全） | `process(rssi:source:now:) -> SignalDecision` |
+| `SignalDataStore.swift` / `RingBuffer.swift` | 信号历史落库与环形缓冲 | `SignalDataStore.record(...)`、`SignalSample` |
+| `LockScreenState.swift` / `DeviceSnapshot.swift` | 领域状态值类型：屏幕/意图/媒体状态、不可变设备快照 | `LockScreenState`、`LockIntent.manualLock(deadline:)`、`DeviceSnapshot` |
+| `ConfigStore.swift` | 独立 suite 域配置存储：全量导出/导入、迁移、默认值表 | `ConfigStore.shared`、`exportAllSettings()`、`importAllSettings(json:)` |
+| `ProfileManager.swift` | 阈值配置档案保存/应用 | `ProfileManager`、`Profile` |
+| `ScriptRunner.swift` | 事件脚本执行 + events.log 落盘 | `runScript(_:rssi:deviceName:)`、`eventsLogURL` |
+| `iMessageNotifier.swift` / `IMMessageComposer.swift` | 锁定/解锁 iMessage 告警与消息组装 | `iMessageNotifier.shared.send(...)` |
 | `SystemInteractionService.swift` | 系统能力封装：锁屏、唤醒、键盘注入、通知、解锁验证 | `wakeDisplay()`、`lockOrSaveScreen(...)`、`injectPasswordWithPrelude(...)`、`verifyUnlock(...)` |
-| `SecurityService.swift` | Keychain 密码读写 | — |
+| `SecurityService.swift` | Keychain 密码读写与改密流程 | `fetchPassword()`、`handlePasswordChanged()` |
 | `DecisionLogger.swift` | 决策事件落盘 + 读取（时间线） | `record(category:outcome:reason:detail:)`、`loadHistory()` |
+| `TelemetryLogger.swift` / `Log.swift` / `DebugLog.swift` / `FUnlockUtils.swift` | 遥测 CSV / os.log 分级 / 文件诊断日志 / 时序埋点 | `TelemetryLogger.log(...)`、`logDebug(component:_:)`、`timingLog(_:)` |
 | `OverviewView.swift` | 总览页：信号盘、阈值条、偏移量输入 | `ThresholdSliderRow`、`ThresholdOffsetRow` |
-| `DiagnosticsView.swift` | 诊断页：时间线 + 建议按钮 | — |
-| `StatsView.swift` | 统计页 | — |
+| `MainWindowView.swift` / `SidebarView.swift` | 主窗口骨架与侧边栏导航 | `MenuTab` |
+| `DiagnosticsView.swift` | 诊断页：时间线 + 建议按钮 + 日志导出 | `exportDiagnostics()` |
+| `StatsView.swift` | 统计页（Swift Charts 信号/斜率图） | `SignalChartView`、`SlopeChartView`、`StatsCalculator` |
 | `CalibrationWizardView.swift` | 阈值校准向导 | — |
-| `SignalDataStore.swift` / `RingBuffer.swift` | 信号历史与环形缓冲 | — |
-| `WiFiMonitor.swift` | 指定 Wi-Fi 暂停锁屏 | — |
-| `TelemetryLogger.swift` / `Log.swift` / `DebugLog.swift` | 遥测/日志 | — |
-| `UpdateDownloader.swift` / `UpdateInstaller.swift` | 自动更新 | — |
-| `appleDeviceNames.swift` | 设备厂商名映射 | — |
+| `OnboardingView.swift` / `AutomationView.swift` / `AboutView.swift` 等 | 引导/自动化/关于等次级页面 | — |
+| `WiFiMonitor.swift` | 指定 Wi-Fi 暂停锁屏 | `currentSSID` |
+| `UpdateDownloader.swift` / `UpdateInstaller.swift` / `checkUpdate.swift` | 自动更新：检查、下载、签名校验与原子替换安装 | `UpdateInstaller.install(appPath:)`、`parseTeamId(fromOutput:)` |
+| `appleDeviceNames.swift` / `LEDeviceInfo.swift` | 设备厂商名映射与广播信息解析 | — |
 
 ## 4. 核心机制
 
@@ -151,14 +196,13 @@ onDeviceApproached → 阶梯阈值门控
 
 | 签名 | 说明 |
 |---|---|
-| `func scanForPeripherals()` / `startScanning()` / `stopScanning()` | 扫描控制 |
+| `func startScanning()` / `stopScanning()` | 扫描控制 |
 | `func startMonitor(uuid: UUID)` | 开始监测指定设备 |
 | `func getEffectiveRSSI() -> Double` | 读取当前有效信号 |
-| `func updateRSSI(rssi: Int?, active: Bool)` | 外部喂入采样 |
 | `var preWakeThreshold: Int` / `var unlockStairThreshold: Int` | 派生阶梯阈值 |
-| `static func lockTimeout(slope:base:) -> TimeInterval` | 按斜率计算锁屏超时（陡降快速锁） |
-| `static func isNearThreshold(_:threshold:) -> Bool` | 接近窗口判断 |
-| `static func clampOffset(_:) -> Int` | 偏移钳制 0...20 |
+| `var unlockRSSI: Int` / `var lockRSSI: Int` | 阈值存取（锁保护；哨兵值见 SignalHysteresisEngine） |
+| `static let UNLOCK_DISABLED / LOCK_DISABLED` | 解锁/锁定禁用哨兵（别名，本体在 SignalHysteresisEngine） |
+| `static func decayedEffectiveRSSI(effectiveRSSI:elapsedSinceLastReceive:) -> Double` | 心跳兜底时间衰减 |
 
 ### FUnManager（编排）
 
@@ -167,11 +211,31 @@ onDeviceApproached → 阶梯阈值门控
 | `func onSystemScreenLocked()` / `onDisplaySleep/Wake()` / `onSystemSleep/Wake()` | 系统事件入口 |
 | `func onDeviceApproached()` / `onDeviceLeft(reason:)` | 靠近/离开 |
 | `func onRSSIUpdated(rssi:active:)` | 信号更新入口 |
-| `func attemptAutoUnlock()` | 尝试自动解锁（含门控与验证） |
-| `func lockNow()` | 立即锁定 |
-| `func setLockRSSI / setUnlockRSSI(_:)` | 阈值写入（含钳制） |
+| `func markManualLock()` | 手动锁定意图标记（lockNow/屏保/系统锁屏单一入口） |
+| `func setPassiveMode(_ mode: Bool)` | 被动扫描模式写路径唯一入口（View 层经此转发） |
+| `func setLockRSSI / setUnlockRSSI(_:)` | 阈值写入（含迟滞联动与钳制） |
 | `func setWakeAdvance / setPreUnlockTrigger(_:)` | 偏移写入（含钳制） |
 | `var thresholdVersion: Int` | 阈值版本（UI 监听刷新） |
+
+### UnlockOrchestrator（解锁流水线）
+
+| 签名 | 说明 |
+|---|---|
+| `func attemptAutoUnlock()` | 完整门控链：presence→开关→信号→状态机→缓冲→冷却→Wi-Fi→手动锁→屏幕状态 |
+| `func recordUnlock(_ outcome:reason:detail:)` | 解锁类决策记录（门控 SKIP 与结果均经此落盘） |
+| `func startWakeRetry()` | 显示器唤醒重试循环（0.5s × 10 次） |
+| `func cancelPendingTasks()` | 取消唤醒/解锁任务（退出与用户干预时） |
+
+### SignalHysteresisEngine（阈值纯逻辑，全项目唯一定义）
+
+| 签名 | 说明 |
+|---|---|
+| `static let unlockDisabled = 1` / `lockDisabled = -100` | 禁用哨兵（FUn 上的同名常量是别名） |
+| `static func clampRSSI(_:) -> Int` | RSSI 阈值钳制（-95...-30） |
+| `static func clampOffset(_:) -> Int` | 偏移钳制（0...20） |
+| `static func lockTimeout(slope:base:) -> TimeInterval` | 按斜率计算锁屏超时（陡降快速锁） |
+| `static func isNearThreshold(_:threshold:) -> Bool` | 接近窗口判断 |
+| `static func checkProximity(effectiveRSSI:unlockRSSI:lockRSSI:) -> ProximityDecision` | 双阈值迟滞靠近/离开判定 |
 
 ### SystemInteractionService
 
@@ -194,7 +258,7 @@ xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=mac
 xcodebuild -project FUnlock.xcodeproj -scheme FUnlock -configuration Release -derivedDataPath build build
 ```
 
-测试组织：`FUnlockTests/FUnlockTests.swift`（主测试）、`FUnlockStateMachineTests.swift`、`DecisionLoggerTests.swift`、`ReasonActionMappingTests.swift`。
+测试组织：`FUnlockTests/` 按域拆分（状态机 `FUnlockStateMachineTests.swift`、门控 `OrchestratorGatesTests.swift`、信号管线 `SignalPipelineTests.swift`、状态与配置 `StateAndConfigTests.swift`、遥测 `TelemetryLoggerTests.swift`、更新链 `UpdateChainTests.swift`、迟滞引擎 `HysteresisEngineTests.swift` 等），共享脚手架见 `TestSupport.swift`。
 
 ## 7. FAQ
 

@@ -111,6 +111,7 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 - **系统锁屏监听**：监听 `com.apple.screenIsLocked` 通知，通过系统菜单锁屏后禁止自动解锁
 - **SQL 参数化查询**：蓝牙设备数据库查询使用参数绑定，防止注入
 - **codesign 校验**：自动更新安装时校验应用签名，防止恶意替换
+- **BLE 中继边界**：在场判定基于 RSSI 信号强度，无法防御 BLE 中继攻击（攻击者桥接转发手表广播伪造"在场"）。Apple Watch 不提供挑战应答 API，纯 macOS 端无技术对抗手段，属产品设计边界；对安全要求极高的场景请勿将本工具作为唯一防线
 - **Actor 状态机**：基于 Swift Actor 的状态管理，线程安全，消除竞态条件
 
 ---
