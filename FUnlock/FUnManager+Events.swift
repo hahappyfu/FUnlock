@@ -42,13 +42,11 @@ extension FUnManager {
             orchestrator.displayWakeRequested = false
             orchestrator.attemptAutoUnlock()
         } else {
-            // 用户手动唤醒：保持原有两级语义——先 attemptAutoUnlock（原 onDisplayWake 行为），
-            // 再执行用户干预（原 AppDelegate 独立 screensDidWake 观察者的行为）。
-            // 两个订阅者已合并到同一入口按固定顺序执行，消除"先调度后取消"的竞态（修复 #10）：
-            // 此前干预经独立观察者异步触发，且 wakeTask 的 defer 可能已提前复位
-            // displayWakeRequested，导致自唤醒路径的解锁任务仍被误杀
-            orchestrator.attemptAutoUnlock()
+            // 用户手动唤醒：先干预（复位状态机并取消陈旧任务），再调度新的延迟解锁任务。
+            // 顺序不可倒置：onUserIntervention 的 cancelPendingTasks 无条件取消 unlockTask，
+            // 若先 attemptAutoUnlock 后干预，刚调度的解锁任务必被取消，手动唤醒的自动解锁失效（P0-3）
             onUserIntervention()
+            orchestrator.attemptAutoUnlock()
         }
     }
 
@@ -56,17 +54,21 @@ extension FUnManager {
         Log.sm.debug("[SM] systemSleep")
         recordSystem(.systemSleep)
         state.system = .sleeping
+        // 休眠期间临时转 regular：睡眠/唤醒窗口内可能需要弹出交互窗（改密确认、更新安装确认），
+        // accessory（菜单栏 agent）拿不到关键窗口焦点；唤醒完成在 onSystemWake 恢复 accessory
         NSApp.setActivationPolicy(.regular)
     }
 
     func onSystemWake() {
         Log.sm.debug("[SM] systemWake")
         recordSystem(.systemWake)
-        // 延迟 1 秒等待蓝牙栈恢复
+        // 延迟等待蓝牙栈恢复（默认 1s，测试注入更小值）
+        let delay = systemWakeDelay
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
             guard let self else { return }
+            // 恢复菜单栏 agent 形态（配对 onSystemSleep 的临时 regular，见该处注释）
             NSApp.setActivationPolicy(.accessory)
             self.state.system = .awake
             self.orchestrator.attemptAutoUnlock()
@@ -93,17 +95,27 @@ extension FUnManager {
         fun.refreshProximityGrace()
         // 区分解锁来源：FUn 自动解锁的 unlockSuccess 已在 performInjectionAndVerify 记录，
         // 这里只在真正手动解锁时记录 userUnlocked，避免自动解锁被误标为"用户手动解锁"
-        if !orchestrator.isAutoUnlocking {
+        // P1-2: isAutoUnlocking 在 unlockTask 的 defer 中早于慢速分布式通知复位，
+        // 改用带 4s 完成窗口的判定，避免合法自动解锁被误判
+        if !orchestrator.isAutoUnlockingOrRecentlyCompleted {
             recordUser(.userUnlocked)
         }
         // 状态机：用户解锁成功 → 重置为 active（退出降级/冷却）
         // 本方法已在 @MainActor 上执行，同步调用即可，无需再包一层 Task
         stateMachine.resetToActive()
 
+        // P1-1: 锁屏期间收到的改密通知被延迟到此处消费——屏幕已解锁，弹确认窗安全。
+        // 先复位标记再处理，防止 runModal 期间重入重复消费
+        if SecurityService.shared.hasPendingPasswordChange {
+            SecurityService.shared.hasPendingPasswordChange = false
+            SecurityService.shared.handlePasswordChanged()
+        }
+
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         // Task 是逃逸闭包，内部再读 isAutoUnlocking 会拿到 2 秒后的值，
         // 因此必须在启动 Task 前同步捕获快照
-        let wasFUnUnlock = orchestrator.isAutoUnlocking
+        // P1-2: 同上，改用带 4s 完成窗口的判定
+        let wasFUnUnlock = orchestrator.isAutoUnlockingOrRecentlyCompleted
         intrudeCheckTask?.cancel()
         intrudeCheckTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -126,7 +138,7 @@ extension FUnManager {
         // 屏保结束后设备靠近仍会自动解锁。与 onSystemScreenLocked 的手动锁分支同语义；
         // isSelfLocking（FUnlock 自锁走屏保路径）时不标记，消费逻辑见 onSystemScreenLocked
         if !isSelfLocking {
-            state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
+            markManualLock()
         }
         state.screen = .screensaver
     }
@@ -157,7 +169,7 @@ extension FUnManager {
             state.intent = .autoLock
         } else {
             // 用户手动锁屏（⌘+Ctrl+Q 等）→ 永久阻止自动解锁，直到手动解锁
-            state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
+            markManualLock()
         }
         isSelfLocking = false
         selfLockingStartedAt = nil
@@ -267,10 +279,13 @@ extension FUnManager {
         self.rssi = rssi
 
         // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值）
-        if let rssi = rssi, !orchestrator.displayWakeRequested,
+        // 门控改读时间归一化 EMA（由 processSignal 单驱动），主线程不持锁直接读 currentSmoothedRSSI
+        // rssi 非空守卫：失联派发（nil）不评估门控，避免用冻结 EMA 为已离场的设备误唤醒显示器
+        if rssi != nil,
+           !orchestrator.displayWakeRequested,
            state.screen == .displaySleeping,
            prefs.bool(forKey: "wakeOnProximity") {
-            let smoothed = fun.smoothedRSSI(rssi)
+            let smoothed = fun.currentSmoothedRSSI
             if smoothed >= Double(fun.preWakeThreshold) {
                 orchestrator.displayWakeRequested = true
                 Log.sm.debug("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")

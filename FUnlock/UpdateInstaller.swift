@@ -17,6 +17,31 @@ enum UpdateInstaller {
         }
     }
 
+    /// 构造安装脚本：先复制到同卷 staging，成功后才移除旧版并原子 mv 替换（供单元测试断言结构）
+    static func makeInstallScript(appPath: URL) -> String {
+        let updateDir = appPath.deletingLastPathComponent()
+        return """
+        #!/bin/bash
+        sleep 2
+        APP="/Applications/FUnlock.app"
+        UPDATE="\(appPath.path)"
+        STAGING="/Applications/FUnlock.app.staging"
+
+        if [ -d "$UPDATE" ]; then
+            rm -rf "$STAGING"
+            cp -R "$UPDATE" "$STAGING"      # 先复制到临时位置（与目标同卷，mv 为原子操作）
+            if [ -d "$STAGING" ]; then
+                rm -rf "$APP"               # 复制成功后才动旧版
+                mv "$STAGING" "$APP"
+                open "$APP"
+            else
+                rm -rf "$STAGING"           # 复制失败，清理 staging，旧版保留不动
+            fi
+        fi
+        rm -rf "\(updateDir.path)"
+        """
+    }
+
     /// 校验代码签名后，生成安装脚本并启动，然后退出 app
     static func install(appPath: URL) throws {
         // 代码签名校验
@@ -39,26 +64,7 @@ enum UpdateInstaller {
         }
 
         let updateDir = appPath.deletingLastPathComponent()
-        let script = """
-        #!/bin/bash
-        sleep 2
-        APP="/Applications/FUnlock.app"
-        UPDATE="\(appPath.path)"
-        STAGING="/Applications/FUnlock.app.staging"
-
-        if [ -d "$UPDATE" ]; then
-            rm -rf "$STAGING"
-            cp -R "$UPDATE" "$STAGING"      # 先复制到临时位置（与目标同卷，mv 为原子操作）
-            if [ -d "$STAGING" ]; then
-                rm -rf "$APP"               # 复制成功后才动旧版
-                mv "$STAGING" "$APP"
-                open "$APP"
-            else
-                rm -rf "$STAGING"           # 复制失败，清理 staging，旧版保留不动
-            fi
-        fi
-        rm -rf "\(updateDir.path)"
-        """
+        let script = makeInstallScript(appPath: appPath)
 
         let scriptPath = updateDir.appendingPathComponent("install.sh").path
         do {
@@ -85,6 +91,21 @@ enum UpdateInstaller {
         }
     }
 
+    /// 从 codesign -d --verbose=4 的 stderr 文本解析 TeamIdentifier（供单元测试）。
+    /// 空值/纯空白返回 nil：若返回标签串 "TeamIdentifier"，双空比较（installed == downloaded）
+    /// 会对两个都未签名/解析失败的应用误报匹配，绕过 TeamId 校验
+    static func parseTeamId(fromOutput output: String) -> String? {
+        guard let teamId = output.split(separator: "\n")
+            .first(where: { $0.contains("TeamIdentifier=") })?
+            .split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            .last?
+            .trimmingCharacters(in: .whitespaces),
+            !teamId.isEmpty else {
+            return nil
+        }
+        return teamId
+    }
+
     /// 通过 codesign -d --verbose=4 提取应用的 TeamIdentifier（信息输出在 stderr）
     private static func extractTeamId(from appURL: URL) -> String? {
         let process = Process()
@@ -104,16 +125,8 @@ enum UpdateInstaller {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        guard let output = String(data: data, encoding: .utf8),
-              let teamId = output.split(separator: "\n")
-                  .first(where: { $0.contains("TeamIdentifier=") })?
-                  .split(separator: "=")
-                  .last?
-                  .trimmingCharacters(in: .whitespaces),
-              !teamId.isEmpty else {
-            return nil
-        }
-        return teamId
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        return parseTeamId(fromOutput: output)
     }
 
     private static func chmod(_ path: String) {

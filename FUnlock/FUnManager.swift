@@ -55,16 +55,26 @@ final class FUnManager {
     /// 可注入时间源：仅门控判定内部读取，不驱动视图，故排除在跟踪之外
     @ObservationIgnored var nowProvider: () -> Date = { Date() }
     var now: Date { nowProvider() }
-    /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁
-    var unlockCooldownDuration: TimeInterval = 5.0
+    /// 解锁成功后的冷却时间（秒），冷却期内不重复尝试解锁（默认引用状态机单一来源，测试可注入覆盖）
+    var unlockCooldownDuration: TimeInterval = FUnlockStateMachine.unlockCooldownDuration
     /// 自动锁屏后的缓冲时间（秒），缓冲期内不尝试自动解锁
     var lockBufferDuration: TimeInterval = 0.8
+    /// 系统唤醒后等待蓝牙栈恢复的延迟（秒），延迟结束才置 system 为 awake；测试注入更小值消除 1s 硬等
+    var systemWakeDelay: TimeInterval = 1.0
     /// 上次自动锁屏的时间（通过 onDeviceLeft 触发）
     var lastLockTime: Date = .distantPast
     /// 上次成功解锁的时间（自动或手动解锁时更新）
     var lastUnlockTime: Date = .distantPast
 
     // MARK: - 决策记录辅助（锁 / 系统 / 用户；解锁类记录见 UnlockOrchestrator）
+
+    /// 手动锁定意图的有效期（秒）：一次性覆盖自动解锁判定，直到用户手动解锁重置 intent
+    static let manualLockIntentDuration: TimeInterval = 86_400
+
+    /// 标记手动锁定意图（lockNow / 屏保启动 / 系统锁屏三处的单一入口）
+    func markManualLock() {
+        state.intent = .manualLock(deadline: Date().addingTimeInterval(FUnManager.manualLockIntentDuration))
+    }
 
     func recordLock(_ reason: DecisionReason, detail: String = "") {
         decisionLogger.record(category: .lock, outcome: .success, reason: reason,
@@ -120,7 +130,7 @@ final class FUnManager {
     func setLockRSSI(_ value: Int) {
         var finalLock = value
         // 防御性校验：若解锁功能开启且不是锁定禁用哨兵，锁定阈值必须严于（更远/小于）解锁阈值
-        if finalLock != SignalHysteresisEngine.lockDisabled && unlockRSSI != FUn.UNLOCK_DISABLED {
+        if finalLock != FUn.LOCK_DISABLED && unlockRSSI != FUn.UNLOCK_DISABLED {
             finalLock = min(finalLock, unlockRSSI - 1)
         }
         lockRSSI = finalLock
@@ -165,6 +175,12 @@ final class FUnManager {
         fun.stopScanning()
     }
 
+    /// 被动扫描模式写路径唯一入口（设置页不再直写 FUn）：转发并记录切换
+    func setPassiveMode(_ mode: Bool) {
+        Log.sm.info("[SM] passiveMode=\(mode)")
+        fun.setPassiveMode(mode)
+    }
+
     // MARK: - 核心：自动解锁（转发至 UnlockOrchestrator，保持对外签名 100% 兼容）
 
     func attemptAutoUnlock() {
@@ -176,7 +192,7 @@ final class FUnManager {
     func lockNow() {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
         // 手动锁定：永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(86400))
+        markManualLock()
         state.screen = .locked(reason: .manual)
         lastLockTime = now
         checkAndPauseMedia()

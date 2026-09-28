@@ -42,13 +42,14 @@ private final class DisplayRSSIDispatchThrottler: @unchecked Sendable {
 private let displayRSSIDispatchThrottler = DisplayRSSIDispatchThrottler()
 
 /// FUn 的信号处理与在场判定层（自 FUn.swift 抽离，保持单文件 <300 行）：
-/// - 原始 RSSI 采样摄入：updateMonitoredPeripheral / processSignal（管道滤波 + 样本落库）
-/// - 显示平滑：updateDisplayRSSI / smoothedRSSI（EMA，供阶梯唤醒阈值判断）
+/// - 原始 RSSI 采样摄入：updateMonitoredPeripheral / processSignal（管道滤波 + 样本落库 + 预唤醒单驱动）
+/// - 显示平滑与预唤醒 EMA：updateDisplayRSSI / smoothedRSSI（时间归一化 EMA，仅在 processSignal 单驱动，供阶梯唤醒阈值判断）
 /// - 在场判定：checkProximity（快速解锁分支，锁定决策转发 FUnLockCoordinator.applyLockTimer）
 /// - 共享状态快照与锁内访问器：SignalSnapshot / signalSnapshot / withDevices / withLockedPeripheral / unbindAllState
 ///
 /// 线程契约：所有共享状态由 FUn.lock（UnfairLock）保护；unlockRSSI/lockRSSI 的判定读
 /// 统一锁内成对快照（`_unlockRSSI`/`_lockRSSI`）；向 delegate 的派发统一走 Task { @MainActor }。
+/// 预唤醒 EMA 仅由 bleQueue 采样经 processSignal 驱动，主线程等外部消费者仅读 currentSmoothedRSSI。
 extension FUn {
     /// 跨线程共享信号状态的锁内快照（Manager/UI 统一走快照，避免逐字段裸读）
     struct SignalSnapshot {
@@ -74,8 +75,9 @@ extension FUn {
     }
 
     /// 锁内遍历 devices（Manager 解绑/清理时避免裸读字典）
+    /// 注意：UnfairLock 不可重入，锁内直访 scanner.devices 裸存储（FUn.devices computed 自带锁）
     func withDevices(_ body: ([UUID: Device]) -> Void) {
-        lock.withLock { body(devices) }
+        lock.withLock { body(scanner.devices) }
     }
 
     /// 锁内读取监控的 peripheral 引用（锁外取消连接）
@@ -99,6 +101,7 @@ extension FUn {
             effectiveRSSI = -60.0
             displayRSSI = -60.0
             smoothedRSSIValue = -100.0
+            smoothedLastUpdate = nil
         }
         // 派发节流缓存独立于 FUn.lock（自带 NSLock，非同一把锁，无重入风险），锁外复位即可：
         // 解绑后清空「上次已派发值」，确保重新绑定的首个采样必然刷新 UI
@@ -156,8 +159,8 @@ extension FUn {
             return d
         }
 
-        // EMA 平滑 RSSI：用于阶梯唤醒阈值判断
-        smoothedRSSI(rssi)
+        // EMA 平滑 RSSI：用于阶梯唤醒阈值判断（单驱动点，时间归一化）
+        smoothedRSSI(rssi, now: now)
 
         // P1: 采集信号样本到数据仓库（低开销，仅追加到环形缓冲）
         SignalDataStore.shared.record(
@@ -177,14 +180,24 @@ extension FUn {
         }
     }
 
-    /// EMA 信号平滑：返回指数移动平均 RSSI，用于阶梯唤醒阈值判断
-    /// - Parameter rssi: 原始 RSSI 采样值（dBm，负数）
+    /// EMA 信号平滑：返回时间归一化指数移动平均 RSSI，用于阶梯唤醒阈值判断
+    /// - Parameters:
+    ///   - rssi: 原始 RSSI 采样值（dBm，负数）
+    ///   - now: 当前采样时间戳
     /// - Returns: 平滑后的 RSSI（dBm）
     @discardableResult
-    func smoothedRSSI(_ rssi: Int) -> Double {
+    func smoothedRSSI(_ rssi: Int, now: Date) -> Double {
         lock.withLock {
             let measurement = Double(rssi)
-            smoothedRSSIValue = smoothedRSSIAlpha * measurement + (1 - smoothedRSSIAlpha) * smoothedRSSIValue
+            guard let last = smoothedLastUpdate else {
+                smoothedRSSIValue = measurement
+                smoothedLastUpdate = now
+                return smoothedRSSIValue
+            }
+            let dt = max(0, now.timeIntervalSince(last))
+            let alpha = 1.0 - exp(-dt / Self.preWakeEMATau)
+            smoothedRSSIValue = alpha * measurement + (1.0 - alpha) * smoothedRSSIValue
+            smoothedLastUpdate = now
             return smoothedRSSIValue
         }
     }
@@ -193,6 +206,7 @@ extension FUn {
     func resetSmoothedRSSI() {
         lock.withLock {
             smoothedRSSIValue = -100.0
+            smoothedLastUpdate = nil
         }
     }
 
@@ -212,7 +226,8 @@ extension FUn {
 
         // 调试日志：追踪 presence 判断条件
         let debugInfo: (isMonitored: Bool, presence: Bool, uuidCount: Int) = lock.withLock {
-            (monitoredUUID != nil, presence, scanner.monitoredUUIDs.count)
+            // 锁内直访裸存储：FUn.monitoredUUID computed 自带锁，UnfairLock 不可重入
+            (scanner.monitoredUUID != nil, presence, scanner.monitoredUUIDs.count)
         }
         throttledBleLog("checkProximity", interval: 1.0, "[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", effectiveRSSI)) threshold=\(decision.unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
 

@@ -9,8 +9,6 @@ final class FUnlockStateMachine {
 
     enum State: Equatable, Hashable {
         case active              // 正常使用中
-        case preWaking           // 触发预备唤醒
-        case readyToUnlock       // 屏幕已亮，等待信号达到阈值
         case unlocking           // 正在注入密码
         case cooldown            // 冷却防抖中
         case degraded            // 连续失败降级中
@@ -35,9 +33,13 @@ final class FUnlockStateMachine {
 
     // MARK: - 防抖配置
 
-    private let unlockCooldown: TimeInterval = 5.0
     private let failureCooldown: TimeInterval = 10.0
     private let maxConsecutiveFailures: Int = 3
+
+    /// 解锁防抖冷却（秒）单一来源：FUnManager.unlockCooldownDuration 默认引用本常量，
+    /// 两侧冷却窗口不会因各自硬编码而漂移
+    static let unlockCooldownDuration: TimeInterval = 5.0
+    private let unlockCooldown = FUnlockStateMachine.unlockCooldownDuration
 
     /// 降级通知标识符（供 AppDelegate 响应处理使用）
     nonisolated static let degradedNotificationID = "funlock-degraded"
@@ -47,9 +49,11 @@ final class FUnlockStateMachine {
         now < failureCooldownDeadline
     }
 
-    /// 是否处于可接受解锁尝试的状态（非 degraded、非冷却中）
+    /// 是否处于可接受解锁尝试的状态（非 degraded、非注入中、非冷却中）。
+    /// 排除 .unlocking：注入在途（2s 双保险验证）时 0.5s 快轮询重入会触发
+    /// attemptAutoUnlock 取消在途解锁任务，误判失败连续 3 次即进入 degraded 永久停摆（P0-4）
     var canAttemptUnlock: Bool {
-        currentState != .degraded && !isInCooldown
+        currentState != .degraded && currentState != .unlocking && !isInCooldown
     }
 
     // MARK: - 状态转换
@@ -65,16 +69,14 @@ final class FUnlockStateMachine {
     }
 
     private func canTransition(from: State, to: State) -> Bool {
+        // preWaking/readyToUnlock 已删除：生产代码从未触发过这两个状态的转移
+        //（预备唤醒由 orchestrator.displayWakeRequested 承载，解锁直接从 active 进入 unlocking）
         switch (from, to) {
-        case (.preWaking, .readyToUnlock),
-             (.readyToUnlock, .unlocking),
-             (.active, .unlocking),
+        case (.active, .unlocking),
              (.cooldown, .unlocking),  // 失败冷却结束后可直接发起下一次解锁尝试
              (.unlocking, .active),
              (.unlocking, .cooldown),
              (.cooldown, .active),
-             (.active, .preWaking),
-             (.preWaking, .active),
              (_, .degraded),
              (_, .active),    // 任意状态可以切回 active（用户干预）
              (_, .cooldown):  // 任意状态可以进入 cooldown（失败处理）

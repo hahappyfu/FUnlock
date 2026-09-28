@@ -43,6 +43,10 @@ final class iMessageNotifier: @unchecked Sendable {
     /// 测试注入点：配置存储（默认 ConfigStore.shared）
     var configStore: ConfigStore = .shared
 
+    /// 测试注入点：时间源（默认 Date.init），供 30s 防抖窗口边界测试推进假时钟。
+    /// 仅测试进程在调用 send 之前设置；运行期恒为默认值，不要在生产代码赋值。
+    var nowProvider: () -> Date = Date.init
+
     /// 开关 / 收件人读取（复用现有 Keys enum）
     private var enabled: Bool {
         configStore.bool(forKey: Keys.enabled)
@@ -65,7 +69,7 @@ final class iMessageNotifier: @unchecked Sendable {
         }
 
         // 同类型 30 秒内防抖
-        let now = Date()
+        let now = nowProvider()
         lock.lock()
         if let last = lastSendTime[typeKey], now.timeIntervalSince(last) < debounceInterval {
             lock.unlock()

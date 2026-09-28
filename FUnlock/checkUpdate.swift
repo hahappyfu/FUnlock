@@ -70,11 +70,11 @@ class UpdateChecker {
         guard let local = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
             return false
         }
-        return compareVersions(remoteVersion, local) == .orderedDescending
+        return Self.compareVersions(remoteVersion, local) == .orderedDescending
     }
 
-    /// semver 比较：返回 .orderedAscending / .orderedSame / .orderedDescending
-    private func compareVersions(_ v1: String, _ v2: String) -> ComparisonResult {
+    /// semver 比较：返回 .orderedAscending / .orderedSame / .orderedDescending（static 供单元测试）
+    static func compareVersions(_ v1: String, _ v2: String) -> ComparisonResult {
         let parts1 = v1.split(separator: ".").compactMap { Int($0) }
         let parts2 = v2.split(separator: ".").compactMap { Int($0) }
         let maxLen = max(parts1.count, parts2.count)

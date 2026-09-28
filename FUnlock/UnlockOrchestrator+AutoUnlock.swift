@@ -123,7 +123,7 @@ extension UnlockOrchestrator {
                     guard !self.manager.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking in parallel wake task"); timingLog("SKIP wakeWithoutUnlocking in parallel task"); self.recordUnlock(reason: .wakeWithoutUnlocking); return }
                     timingLog("parallel unlock task fired after 0.8s")
                     guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); self.recordUnlock(reason: .systemNotReady); return }
-                    self.tryUnlock()
+                    await self.tryUnlock()
                 }
             } else {
                 Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", snap.effectiveRSSI)) < unlockRSSI=\(m.fun.unlockRSSI)")
@@ -151,7 +151,7 @@ extension UnlockOrchestrator {
             guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); timingLog("SKIP systemNotReady in delayed task"); self.recordUnlock(reason: .systemNotReady); return }
             Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen))")
             timingLog("delayed unlock task fired | tryUnlock")
-            self.tryUnlock()
+            await self.tryUnlock()
         }
     }
 

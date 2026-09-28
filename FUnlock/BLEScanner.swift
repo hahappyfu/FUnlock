@@ -265,6 +265,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     }
                 }
             }
+            // P1-5: SQLite 查询移出 UnfairLock 临界区——入参 peripheral 为局部变量，
+            // 进锁前预查（getLEDeviceInfoFromUUID 内部取 leDbLock 并做磁盘 I/O），
+            // 锁内仅剩纯内存赋值；多余查询仅落在已有设备/低于门限路径，成本可忽略
+            let leInfo = getLEDeviceInfoFromUUID(peripheral.identifier.description)
             // Device 字段的创建/更新/比较统一在锁内完成（修复锁外写/锁内读竞态）；
             // 锁外仅执行 CoreBluetooth 调用与快照派发
             let (device, isNew, passedThreshold): (Device, Bool, Bool) = lock.withLock {
@@ -277,7 +281,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                     d.peripheral = peripheral
                     d.rssi = rssi
                     d.advData = advertisementData["kCBAdvDataManufacturerData"] as? Data
-                    if let info = getLEDeviceInfoFromUUID(peripheral.identifier.description) {
+                    if let info = leInfo {
                         d.blName = info.name
                         d.macAddr = info.macAddr
                     }

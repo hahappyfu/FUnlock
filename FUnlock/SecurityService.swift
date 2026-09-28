@@ -109,27 +109,55 @@ final class SecurityService: Sendable {
 
     // MARK: - Password Change Detection
 
+    // P1-1: 以下钩子与 pending 标记仅由 @MainActor 路径读写
+    // （handlePasswordChanged / onUnlock / 测试），actor 隔离保证 Sendable 约束
+
+    /// 单元测试注入确认结果（true=确认重输）；nil 时走真实 alert.runModal()
+    @MainActor var confirmHandler: (@MainActor () -> Bool)?
+    /// 确认后的重输引导，可注入替换以避免测试弹真实输入框；nil 时走 askPassword()
+    @MainActor var reEntryHandler: (@MainActor () -> Void)?
+    /// 测试注入锁定态；nil 时读真实 CGSession
+    @MainActor var sessionLockProvider: (@MainActor () -> Bool)?
+    /// 锁屏期间收到改密通知 → 标记待确认，解锁后由 onUnlock 消费再弹确认
+    /// （internal 可写：onUnlock 所在 extension 跨文件重置）
+    @MainActor var hasPendingPasswordChange = false
+
     /// CGSession 当前会话是否处于锁定态（审计修复 #5 的前置校验）
-    private var isSessionLocked: Bool {
+    @MainActor private var isSessionLocked: Bool {
+        if let provider = sessionLockProvider { return provider() }
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
         return dict["CGSSessionScreenIsLocked"] as? Int == 1
     }
 
     /// Handle system password change notification: clear old password and prompt user
     /// 审计修复 #5：com.apple.security.loginwindow.passwordChanged 为无认证分布式通知，
-    /// 任意本地进程可伪造广播。两层防护：
-    /// 1) 会话未锁定时直接忽略（伪造通知无法在用户正常使用时静默触发删除/弹窗）；
-    /// 2) 删除密码前先经用户确认弹窗，确认后才删除并引导重输（拒绝则保留旧密码，
-    ///    旧密码失效导致的解锁失败由状态机 degraded 保护兜底）
+    /// 任意本地进程可伪造广播。三层防护：
+    /// 1) 无存储密码时直接忽略；
+    /// 2) 删除密码前先经用户确认弹窗（confirmHandler 可注入），拒绝则保留旧密码，
+    ///    旧密码失效导致的解锁失败由状态机 degraded 保护兜底；
+    /// 3) P1-1: 屏幕锁定时不弹窗（runModal 会被锁屏遮挡挂起主线程），
+    ///    仅标记 hasPendingPasswordChange，由 onUnlock 在解锁后消费再弹确认
     @MainActor
     func handlePasswordChanged() {
-        guard isSessionLocked else {
-            Log.sm.debug("passwordChanged ignored: session not locked")
-            return
-        }
         if case .failure = fetchPassword() { return }
         if case .success(nil) = fetchPassword() { return }
+        if isSessionLocked {
+            Log.sm.debug("passwordChanged: session locked, deferring confirmation until unlock")
+            hasPendingPasswordChange = true
+            return
+        }
         Log.sm.debug("system password changed, asking user confirmation before clearing")
+        let confirmed = confirmHandler.map { $0() } ?? runPasswordChangeConfirmation()
+        if confirmed {
+            Log.sm.debug("user confirmed password change, clearing stored password")
+            deletePassword()
+            if let handler = reEntryHandler { handler() } else { askPassword() }
+        }
+    }
+
+    /// 改密确认弹窗（主线程 UI）。返回用户是否选择立即重输密码。
+    @MainActor
+    private func runPasswordChangeConfirmation() -> Bool {
         let alert = NSAlert()
         alert.messageText = t("password_changed_title")
         alert.informativeText = t("password_changed_info")
@@ -138,11 +166,7 @@ final class SecurityService: Sendable {
         alert.addButton(withTitle: t("later"))
         alert.window.title = "Funlock"
         NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            Log.sm.debug("user confirmed password change, clearing stored password")
-            deletePassword()
-            askPassword()
-        }
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     // MARK: - Password Dialog

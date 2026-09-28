@@ -91,27 +91,30 @@ final class SystemInteractionService: Sendable {
         defer { IOObjectRelease(reg) }
 
         if let prop = IORegistryEntryCreateCFProperty(reg, "IOEnginePower" as CFString, kCFAllocatorDefault, 0) {
-            let powerState = prop.takeRetainedValue() as! CFNumber
+            let raw = prop.takeRetainedValue()
+            // CFNumber 不允许 as? 条件下转（编译器视 CF 桥接为恒真），用 GetTypeID 做运行时类型校验
+            guard CFGetTypeID(raw) == CFNumberGetTypeID() else {
+                logDebug(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower not a CFNumber")
+                return true  // 类型不符时默认通电（与其他失败路径一致）
+            }
+            let powerState = unsafeDowncast(raw, to: CFNumber.self)
             var value: UInt32 = 0
             CFNumberGetValue(powerState, .sInt32Type, &value)
             logDebug(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower=\(value)")
             return value != 0
         }
         logDebug(component: "SystemInteraction", "isDisplayPoweredOn: IOEnginePower not found")
-        return true  // 属性不存在时默认通电
+        return true  // 属性不存在时默认通电，避免误唤醒
     }
 
     /// Wake the display before password injection
-    /// 审计修复 #8：本方法在 @MainActor 注入路径被同步调用，Thread.sleep 会冻结主线程。
-    /// 最小治理：保留同步签名与阻塞等待（唤醒后需短暂延时让显示器点亮才能接收按键），
-    /// 阻塞窗口约 0.2s（从 0.3 缩短；fakeKeyStrokes 的 display-off 唤醒路径是唯一调用方，
-    /// 唤醒+等待逻辑只保留这一处）。后续改造方向：方法 async 化改用 Task.sleep，
-    /// 由调用方在后台上下文等待——但 performInjectionAndVerify 同步依赖注入返回值，
-    /// 需连同调用链一起改造，本轮不动。
-    func wakeDisplay() {
+    /// P1-4: 原 Thread.sleep(0.2) 在 @MainActor 注入路径同步阻塞主线程；
+    /// async 化后 Task.sleep 只挂起当前任务，主线程事件循环继续处理
+    @MainActor
+    func wakeDisplay() async {
         logBoth("SystemInteraction", "PASSWORD: waking display before injection", fileMsg: "wakeDisplay: waking display")
         funlock_wakeDisplay()
-        Thread.sleep(forTimeInterval: 0.2)
+        try? await Task.sleep(nanoseconds: 200_000_000)
     }
 
     // MARK: - Screen Control (Lock)
@@ -140,11 +143,8 @@ final class SystemInteractionService: Sendable {
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
         logBoth("SystemInteraction", "PASSWORD: attempting keystroke injection", fileMsg: "fakeKeyStrokes() START")
 
-        // 检查屏幕是否可见，如果不可见则唤醒
-        if !isDisplayPoweredOn() {
-            logBoth("SystemInteraction", "PASSWORD: display off, waking screen", fileMsg: "fakeKeyStrokes: display off, waking")
-            wakeDisplay()
-        }
+        // P1-4: display-off 唤醒已上移至 injectPasswordWithPrelude 开头
+        // （本方法为同步方法，保留唤醒等待会阻塞主线程）
 
         // 尝试第1级：cgSessionEventTap + virtualKey 0
         logBoth("SystemInteraction", "PASSWORD: trying Level 1 - cgSessionEventTap + virtualKey 0", fileMsg: "Level 1: cgSessionEventTap + vk0")
@@ -314,17 +314,22 @@ final class SystemInteractionService: Sendable {
     /// Send a Shift key prelude, wait 300ms, then inject password.
     /// The Shift key activates the login window text field before password injection.
     /// Returns true if at least one password event was posted.
-    /// 审计修复 #8：此处 Thread.sleep 冻结主线程约 0.3s（Shift 前奏到密码注入的必要间隔）。
-    /// 最小治理：保留同步签名与阻塞等待；display-off 唤醒等待不在本方法叠加
-    /// （fakeKeyStrokes 内的 wakeDisplay 已统一处理，避免双重唤醒双 sleep）。
-    /// 后续改造方向同 wakeDisplay：需与调用链一起 async 化。
-    public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) -> Bool {
+    /// P1-4: 原 Thread.sleep(0.3) 与 fakeKeyStrokes 内 wakeDisplay 的 Thread.sleep(0.2)
+    /// 在 @MainActor 注入路径同步冻结主线程共约 0.5s。本方法 async 化（@MainActor）：
+    /// 等待改 Task.sleep 挂起不占线程，display-off 唤醒统一移至方法开头。
+    @MainActor
+    public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) async -> Bool {
         logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + 300ms delay", fileMsg: "injectPasswordWithPrelude() START")
+
+        if !isDisplayPoweredOn() {
+            logBoth("SystemInteraction", "PASSWORD: display off, waking screen", fileMsg: "injectPasswordWithPrelude: display off, waking")
+            await wakeDisplay()
+        }
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         if shiftSent {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude sent, waiting 300ms before password", fileMsg: "injectPasswordWithPrelude: Shift sent, waiting 300ms")
-            Thread.sleep(forTimeInterval: 0.3)
+            try? await Task.sleep(nanoseconds: 300_000_000)
         } else {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude failed, proceeding without delay", fileMsg: "injectPasswordWithPrelude: Shift failed, proceeding without delay")
         }

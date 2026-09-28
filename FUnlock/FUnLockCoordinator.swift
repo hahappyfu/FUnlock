@@ -323,6 +323,9 @@ extension FUn {
         let timeout = Self.lockTimeout(slope: slope, base: proximityTimeout)
         let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] timer in
             guard let self = self else { return }
+            // 身份守卫：本 timer 已被置换/取消时直接丢弃过期 fire（与 resetSignalTimer
+            // 的 signalTimer 守卫同款），防孤立 Timer 执行锁定逻辑
+            guard self.lock.withLock({ self.proximityTimer === timer }) else { return }
             let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
             let nowEff = self.getEffectiveRSSI()
             // 阈值锁内成对快照（修复裸读竞态）
@@ -370,7 +373,14 @@ extension FUn {
                 self?.delegate?.updatePresence(presence: false, reason: "away")
             }
         })
-        lock.withLock { proximityTimer = timer }
+        // 锁内原子置换并取出旧 timer（P1-3）：防并发触发时后写覆盖前写，
+        // 旧 Timer 沦为 RunLoop 中的孤立僵尸；invalidate 派发回主线程（注册在主 RunLoop）
+        let oldTimer: Timer? = lock.withLock {
+            let old = proximityTimer
+            proximityTimer = timer
+            return old
+        }
+        if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }
         RunLoop.main.add(timer, forMode: .common)
     }
 

@@ -29,6 +29,19 @@ final class UnlockOrchestrator {
     var unlockTask: Task<Void, Never>?
     /// FUn 是否正在执行自动解锁（用于区分手动解锁入侵）
     private(set) var isAutoUnlocking = false
+    /// P1-2: 最近一次自动解锁验证通过的时间。CGSession 快速轮询确认解锁后 unlockTask
+    /// 的 defer 先复位 isAutoUnlocking，慢速系统分布式通知（100-500ms）随后到达
+    /// onUnlock，只读 isAutoUnlocking 会把合法自动解锁误判入侵；
+    /// 4s 完成窗口覆盖通知的最大延迟
+    private(set) var lastAutoUnlockSuccessTime: Date?
+
+    /// 正在自动解锁，或 4s 内刚完成自动解锁（P1-2：供 onUnlock 区分解锁来源）
+    var isAutoUnlockingOrRecentlyCompleted: Bool {
+        if isAutoUnlocking { return true }
+        guard let last = lastAutoUnlockSuccessTime else { return false }
+        return now.timeIntervalSince(last) < 4.0
+    }
+
     /// 是否已请求显示器唤醒（防止重复启动唤醒重试任务）
     var displayWakeRequested = false
     private var consecutiveUnlockAttempts = 0
@@ -87,10 +100,11 @@ final class UnlockOrchestrator {
     }
 
     /// 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
-    func tryUnlock() {
+    /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
+    func tryUnlock() async {
         timingLog("tryUnlock enter")
         guard let password = guardFetchPassword() else { return }
-        performInjectionAndVerify(password: password)
+        await performInjectionAndVerify(password: password)
     }
 
     /// 前置门控 + 密码获取：任一检查失败即记录原因并返回 nil
@@ -137,7 +151,8 @@ final class UnlockOrchestrator {
     }
 
     /// 密码注入 + 乐观确认 + 双保险验证
-    func performInjectionAndVerify(password: String) {
+    /// P1-4: async 化——await injectPasswordWithPrelude 期间主线程不被阻塞
+    func performInjectionAndVerify(password: String) async {
         let m = manager
         let sys = SystemInteractionService.shared
         let snap = m.fun.signalSnapshot()
@@ -146,7 +161,7 @@ final class UnlockOrchestrator {
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
         logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude")
-        let posted = sys.injectPasswordWithPrelude(password) {
+        let posted = await sys.injectPasswordWithPrelude(password) {
             m.state.screen != .unlocked
             && sys.isSecureToInject(screenState: m.state.screen)
         }
@@ -175,6 +190,9 @@ final class UnlockOrchestrator {
             if verification.unlock {
                 // 通知或 CGSession 确认解锁成功
                 Log.sm.debug("dual verify: unlock confirmed")
+                // P1-2: 记录完成时间，供 isAutoUnlockingOrRecentlyCompleted 覆盖
+                // 慢速分布式通知先于 defer 复位到达的窗口
+                self.lastAutoUnlockSuccessTime = self.now
                 // 乐观时间戳移到验证通过后：注入失败不再误触发 3s 防抖与 5s 冷却
                 self.manager.state.unlockedAt = self.now
                 self.manager.lastUnlockTime = self.now
