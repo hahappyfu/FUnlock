@@ -141,6 +141,12 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .menuShowStats)) { _ in
             showStats = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissions()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("com.funlock.bluetoothStateChanged"))) { _ in
+            refreshPermissions()
+        }
         .onReceive(DistributedNotificationCenter.default.publisher(for: NSNotification.Name("com.funlock.selectTab"))) { notif in
             if let tabName = notif.object as? String, let tab = MenuTab(rawValue: tabName) {
                 withAnimation(.funSpring) {
@@ -233,6 +239,9 @@ struct MainWindowView: View {
                     actionLabel: t("permission_banner_ax_action")
                 ) {
                     openAccessibilitySettings()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        refreshPermissions()
+                    }
                 }
             }
             if !btGranted {
@@ -241,6 +250,9 @@ struct MainWindowView: View {
                     actionLabel: t("permission_banner_bt_action")
                 ) {
                     openBluetoothSettings()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        refreshPermissions()
+                    }
                 }
             }
         }
@@ -249,7 +261,9 @@ struct MainWindowView: View {
     /// 刷新两个权限状态（仅影响警告条显示，不改任何解锁逻辑）
     private func refreshPermissions() {
         axGranted = AXIsProcessTrusted()
-        btGranted = (CBManager.authorization == .allowedAlways)
+        let btAuth = (CBManager.authorization == .allowedAlways)
+        let btPoweredOn = (fun.centralMgr?.state == .poweredOn)
+        btGranted = btAuth || btPoweredOn
     }
 
     /// 权限轮询生命周期：缺失时启动 5s 轮询，授予后立即停（辅助功能权限无可靠的变更通知，轮询是缺失期的最小手段）

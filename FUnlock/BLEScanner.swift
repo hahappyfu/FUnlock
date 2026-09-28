@@ -217,6 +217,9 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         logDebug(component: "FUn", "[DIAG] centralManagerDidUpdateState - state=\(central.state.rawValue), authorization=\(CBManager.authorization.rawValue)")
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: NSNotification.Name("com.funlock.bluetoothStateChanged"), object: nil)
+        }
         switch central.state {
         case .poweredOn:
             Log.ble.debug("Bluetooth powered on")
