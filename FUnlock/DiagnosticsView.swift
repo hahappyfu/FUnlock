@@ -17,6 +17,16 @@ extension DecisionCategory {
     }
 }
 
+extension Array {
+    /// 按固定大小切块（最后一块可短于 size）；空数组返回空
+    func chunked(pageSize size: Int) -> [[Element]] {
+        guard size > 0, !isEmpty else { return isEmpty ? [] : [self] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0 ..< Swift.min($0 + size, count)])
+        }
+    }
+}
+
 struct DiagnosticsView: View {
     var manager: FUnManager
     var logger: DecisionLogger
@@ -164,13 +174,21 @@ struct DiagnosticsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
                     .padding(.top, 2)
-                timelineGroup(for: group)
+                // 分块渲染：同一天可能有数百条事件，整组作为单个渲染单元会让滚动每帧
+                // 重建整张巨型卡片（实测 467 行组导致帧率塌陷）。每块限 pageSize 行，
+                // 卡片仍是视觉上的连续时间轴，但滚动时只需重建一小块。
+                ForEach(Array(group.events.chunked(pageSize: Self.timelinePageSize).enumerated()), id: \.offset) { _, chunk in
+                    timelineGroup(events: chunk)
+                }
             }
         }
     }
 
+    /// 单张卡片的最大行数：控制滚动时单次重建的渲染单元规模
+    static let timelinePageSize = 40
+
     /// 单组时间轴：整组坐在一张晶体卡片里，底层流光由卡片半透底衬透出
-    private func timelineGroup(for group: (title: String, events: [DecisionEvent])) -> some View {
+    private func timelineGroup(events: [DecisionEvent]) -> some View {
         ZStack(alignment: .topLeading) {
             // 导光竖线：中心 x = columnWidth / 2，与圆点对齐；上下略微出头，
             // 让组内圆点串联成一条连续的时间线（Rectangle 无高度约束，自动撑满整张卡片）
@@ -180,12 +198,13 @@ struct DiagnosticsView: View {
                 .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.guideLineWidth / 2)
                 .padding(.vertical, 2)
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(group.events) { event in
+                ForEach(events) { event in
                     itemRow(for: event)
                 }
             }
         }
         .liquidGlassCard(cornerRadius: 14, padding: 8)
+        .id(events.first?.id)
     }
 
     /// 时间轴节点行：圆点位于竖线上，右侧为事件内容

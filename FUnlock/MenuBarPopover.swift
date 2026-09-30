@@ -21,6 +21,9 @@ struct MenuBarPopoverView: View {
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
     @State private var updateStatus: UpdateStatus = .idle
     @State private var breathing = false
+    /// 弹窗可见性：NSPopover 的 hosting view 常驻，靠 onAppear/onDisappear 区分开/关，
+    /// 用于停掉离屏期间空转的无限动画
+    @State private var popoverVisible = false
 
     enum UpdateStatus: Equatable {
         case idle, checking, downloading(Double), latest, failed
@@ -87,7 +90,15 @@ struct MenuBarPopoverView: View {
             x: 0,
             y: 8
         )
-        .onAppear { syncUpdateStatus() }
+        .onAppear {
+            syncUpdateStatus()
+            popoverVisible = true
+            syncBreathing(visible: true)
+        }
+        .onDisappear {
+            popoverVisible = false
+            syncBreathing(visible: false)
+        }
         .onChange(of: manager.updateState) { _, _ in syncUpdateStatus() }
     }
 
@@ -238,21 +249,29 @@ struct MenuBarPopoverView: View {
     }
 
     /// 生命圆点：解锁/连接时 1.8s 周期呼吸微光（opacity 0.7→1.0, scale 0.95→1.15），失联褪为静止灰
+    ///
+    /// 动画生命周期：NSPopover 的 contentViewController 在启动时就挂好、弹窗关闭后视图树仍常驻，
+    /// 因此 repeatForever 若不显式停止会永远空转，每帧驱动整个进程的主线程属性图重算
+    /// （实测弹窗关闭状态下 CPU 仍 12.6%，诊断页滚动帧率被拖垮）。故与弹窗可见性绑定启停。
     private var statusDot: some View {
-        let breathe = Animation.easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-        return Circle()
+        Circle()
             .fill(screenStatus.color)
             .frame(width: 7, height: 7)
             .shadow(color: screenStatus.color.opacity(breathing ? 0.9 : 0.25), radius: breathing ? 4.5 : 1.5)
             .scaleEffect(breathing ? 1.15 : 0.95)
             .opacity(breathing ? 1.0 : 0.7)
-            .onAppear {
-                guard screenStatus.alive else { return }
-                withAnimation(breathe) { breathing = true }
-            }
-            .onChange(of: screenStatus.alive) { _, alive in
-                withAnimation(alive ? breathe : .easeInOut(duration: 0.4)) { breathing = alive }
-            }
+            .onAppear { syncBreathing(visible: popoverVisible) }
+            .onChange(of: screenStatus.alive) { _, _ in syncBreathing(visible: popoverVisible) }
+    }
+
+    /// 呼吸动画启停同步：仅在圆点「活着」且弹窗可见时运行，其余情况立刻静止
+    private func syncBreathing(visible: Bool) {
+        let shouldBreathe = screenStatus.alive && visible
+        withAnimation(shouldBreathe
+            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+            : .easeInOut(duration: 0.4)) {
+            breathing = shouldBreathe
+        }
     }
 
     /// 按设备名推断设备图标（Apple Watch / AirPods / iPhone 等）
