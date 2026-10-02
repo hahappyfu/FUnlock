@@ -245,7 +245,7 @@ class ScriptRunnerDedupTests: XCTestCase {
 
     func testDefaultDedupWindowIs3Seconds() {
         // 用默认窗口构造
-        let defaultRunner = ScriptRunner(dedupWindow: 3.0) { [unowned self] in self.currentTime }
+        let defaultRunner = ScriptRunner(dedupWindow: 3.0, testLogDirectory: tempDir) { [unowned self] in self.currentTime }
         XCTAssertTrue(defaultRunner.logEventIfNeeded("test_default_window"))
         currentTime = currentTime.addingTimeInterval(2.9)
         XCTAssertFalse(defaultRunner.logEventIfNeeded("test_default_window"), "2.9 秒时仍在窗口内")
