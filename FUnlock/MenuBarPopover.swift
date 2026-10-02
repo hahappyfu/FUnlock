@@ -99,6 +99,17 @@ struct MenuBarPopoverView: View {
             popoverVisible = false
             syncBreathing(visible: false)
         }
+        // transient popover 点外部关闭只做窗口 orderOut，视图树常驻导致 onDisappear 不触发，
+        // 故监听 AppKit 系统通知启停呼吸动画（本进程仅此一个 NSPopover，无需按 object 过滤）；
+        // didShow 兜住再次弹出时 onAppear 不重放的问题
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didCloseNotification)) { _ in
+            popoverVisible = false
+            syncBreathing(visible: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.didShowNotification)) { _ in
+            popoverVisible = true
+            syncBreathing(visible: true)
+        }
         .onChange(of: manager.updateState) { _, _ in syncUpdateStatus() }
     }
 
