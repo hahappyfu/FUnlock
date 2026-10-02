@@ -112,6 +112,12 @@ extension FUn {
 
     func updateMonitoredPeripheral(_ rssi: Int) {
         let now = Date()
+        // 预唤醒观测（阶段 1）：监测广播采样断流缺口，帮助定位休眠期扫描停顿成因
+        let gap = now.timeIntervalSince(lastReceiveTime)
+        if gap >= 30.0 {
+            logDebug(component: "BLE", "[BLE] scan gap \(String(format: "%.1f", gap))s")
+        }
+
         // activeModeTimer 锁内快照（修复锁外读 vs 锁内写竞态；source 与下方日志共用一次快照）
         let isActive = lock.withLock { scanner.handler.activeModeTimer != nil }
         let source: SignalSource = isActive ? .connected : .scanning

@@ -20,6 +20,7 @@ extension FUnManager {
         Log.sm.debug("[SM] displaySleep")
         recordSystem(.displaySleep)
         Log.sm.debug("EVENT: onDisplaySleep screen=\(self.state.screen) system=\(self.state.system)")
+        logDebug(component: "BLE", "[BLE] displaySleep — screen=\(self.state.screen)")
         state.screen = .displaySleeping
     }
 
@@ -27,6 +28,7 @@ extension FUnManager {
         Log.sm.debug("[SM] displayWake")
         recordSystem(.displayWake)
         Log.sm.debug("EVENT: onDisplayWake screen=\(self.state.screen) system=\(self.state.system)")
+        logDebug(component: "BLE", "[BLE] displayWake — screen=\(self.state.screen)")
         // 审计修复 #4/#10：必须在 cancelWakeRetry 复位 displayWakeRequested 之前捕获——
         // true 表示本次唤醒由 FUn 预唤醒（startWakeRetry）发起，属程序自唤醒而非用户手动唤醒
         let isSelfWake = orchestrator.displayWakeRequested
