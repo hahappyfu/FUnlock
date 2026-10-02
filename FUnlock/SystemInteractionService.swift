@@ -80,8 +80,15 @@ final class SystemInteractionService: Sendable {
 
     // MARK: - Screen Control
 
-    /// Check if the display is powered on via IOKit IODisplayWrangler
+    /// Check if the display is powered on.
+    /// 优先用 CoreGraphics 公共 API CGDisplayIsAsleep；IOKit IOEnginePower 在
+    /// Apple Silicon 上不存在（日志打印 not found），仅作后备检查。
     func isDisplayPoweredOn() -> Bool {
+        if CGDisplayIsAsleep(CGMainDisplayID()) != 0 {
+            logDebug(component: "SystemInteraction", "isDisplayPoweredOn: CGDisplayIsAsleep == true")
+            return false
+        }
+
         let reg = IORegistryEntryFromPath(kIOMainPortDefault,
                                           "IOService:/IOResources/IODisplayWrangler")
         guard reg != 0 else {
@@ -311,25 +318,45 @@ final class SystemInteractionService: Sendable {
         return false
     }
 
-    /// Send a Shift key prelude, wait 300ms, then inject password.
+    /// Send a Shift key prelude, wait for the display/loginwindow to become ready, then inject password.
     /// The Shift key activates the login window text field before password injection.
     /// Returns true if at least one password event was posted.
     /// P1-4: 原 Thread.sleep(0.3) 与 fakeKeyStrokes 内 wakeDisplay 的 Thread.sleep(0.2)
     /// 在 @MainActor 注入路径同步冻结主线程共约 0.5s。本方法 async 化（@MainActor）：
     /// 等待改 Task.sleep 挂起不占线程，display-off 唤醒统一移至方法开头。
+    /// P1-3: 显示器熄灭唤醒后 loginwindow 就绪需 500ms~1500ms，固定 300ms 会导致
+    /// 首次注入丢失；改为自适应轮询——熄屏唤醒最多等 2.5s，亮屏 300ms 不变。
     @MainActor
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) async -> Bool {
-        logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + 300ms delay", fileMsg: "injectPasswordWithPrelude() START")
+        logBoth("SystemInteraction", "PASSWORD: injection with prelude - Shift + adaptive wait", fileMsg: "injectPasswordWithPrelude() START")
 
-        if !isDisplayPoweredOn() {
+        let displayWasOff = !isDisplayPoweredOn()
+        if displayWasOff {
             logBoth("SystemInteraction", "PASSWORD: display off, waking screen", fileMsg: "injectPasswordWithPrelude: display off, waking")
             await wakeDisplay()
         }
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         if shiftSent {
-            logBoth("SystemInteraction", "PASSWORD: Shift prelude sent, waiting 300ms before password", fileMsg: "injectPasswordWithPrelude: Shift sent, waiting 300ms")
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            logBoth("SystemInteraction", "PASSWORD: Shift prelude sent, waiting for display ready", fileMsg: "injectPasswordWithPrelude: Shift sent, waiting for display ready")
+            // 熄屏唤醒最多轮询 2.5s，亮屏状态 300ms 即可
+            let maxWaitMs = displayWasOff ? 2500 : 300
+            let stepMs = 100
+            var waitedMs = 0
+            while waitedMs < maxWaitMs {
+                try? await Task.sleep(nanoseconds: UInt64(stepMs) * 1_000_000)
+                waitedMs += stepMs
+                // 轮询期间若屏幕已不再处于安全锁定状态（例如用户已手动解锁），立即中止
+                guard isSecureCheck() else {
+                    logBoth("SystemInteraction", "PASSWORD: abort wait - screen no longer secure", fileMsg: "injectPasswordWithPrelude: abort wait - screen no longer secure")
+                    return false
+                }
+                // 基础 300ms 保障 loginwindow 响应 Shift 聚焦；超过 300ms 且显示器已唤醒即可注入
+                if waitedMs >= 300 && isDisplayPoweredOn() {
+                    break
+                }
+            }
+            logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: display ready after \(waitedMs)ms")
         } else {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude failed, proceeding without delay", fileMsg: "injectPasswordWithPrelude: Shift failed, proceeding without delay")
         }
