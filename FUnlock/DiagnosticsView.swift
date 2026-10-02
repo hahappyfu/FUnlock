@@ -177,8 +177,8 @@ struct DiagnosticsView: View {
                 // 分块渲染：同一天可能有数百条事件，整组作为单个渲染单元会让滚动每帧
                 // 重建整张巨型卡片（实测 467 行组导致帧率塌陷）。每块限 pageSize 行，
                 // 卡片仍是视觉上的连续时间轴，但滚动时只需重建一小块。
-                ForEach(Array(group.events.chunked(pageSize: Self.timelinePageSize).enumerated()), id: \.offset) { _, chunk in
-                    timelineGroup(events: chunk)
+                ForEach(makeChunks(from: group.events)) { chunk in
+                    timelineGroup(events: chunk.events)
                 }
             }
         }
@@ -186,6 +186,19 @@ struct DiagnosticsView: View {
 
     /// 单张卡片的最大行数：控制滚动时单次重建的渲染单元规模
     static let timelinePageSize = 40
+
+    /// 分块包装：以块首事件 id 为稳定标识，新事件挤入头部时块内容整体后移但 id 不复用，
+    /// 避免 offset 作 id 时块错位导致的卡片状态闪烁
+    private struct EventChunk: Identifiable {
+        let id: UUID
+        let events: [DecisionEvent]
+    }
+
+    private func makeChunks(from events: [DecisionEvent]) -> [EventChunk] {
+        events.chunked(pageSize: Self.timelinePageSize).compactMap { chunk in
+            chunk.first.map { EventChunk(id: $0.id, events: chunk) }
+        }
+    }
 
     /// 单组时间轴：整组坐在一张晶体卡片里，底层流光由卡片半透底衬透出
     private func timelineGroup(events: [DecisionEvent]) -> some View {
