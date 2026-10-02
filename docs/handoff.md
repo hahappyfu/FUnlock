@@ -25,7 +25,7 @@ FUnlock：macOS 菜单栏应用，通过 BLE RSSI 实现"靠近自动解锁、�
 
 - 分支 `feat/diagnostics-tab`，工作区干净
 - 2.8.27 已部署 `/Applications/FUnlock.app`（运行中），github 已推送（feb11ea..c9771a7）
-- `CFBundleVersion` 已按惯例恢复 1258（提交时保持 1258，部署时 xcodebuild 会自动递增，勿提交递增值）
+- `CFBundleVersion` 每次构建前递增并随提交入库（当前为 1523）
 
 ## 遗留事项
 
@@ -37,9 +37,9 @@ FUnlock：macOS 菜单栏应用，通过 BLE RSSI 实现"靠近自动解锁、�
 ## 部署惯例（若需发新版本）
 
 ```
-PlistBuddy Set CFBundleShortVersionString → Release build → 全量 xcodebuild test →
-kill/替换 /Applications/FUnlock.app → codesign --verify → open → 恢复 CFBundleVersion 1258 →
-commit → git -c credential.helper='!/opt/homebrew/bin/gh auth git-credential' push github feat/diagnostics-tab
+PlistBuddy Set CFBundleShortVersionString / CFBundleVersion → build → 全量 xcodebuild test →
+kill/替换 /Applications/FUnlock.app → codesign --verify → open →
+commit → git push origin main
 ```
 
 ## 建议技能（下次会话按需加载）
