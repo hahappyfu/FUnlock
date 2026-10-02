@@ -168,12 +168,19 @@ final class UnlockOrchestrator {
         logDebug(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
         Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
         guard posted else {
-            Log.sm.error("WARN: CGEvent post failed — Accessibility permission likely revoked")
             // 注入失败，本次不算自动解锁，立即复位标记；状态回落 active，允许下次尝试
             isAutoUnlocking = false
             m.stateMachine.transition(to: .active)
-            recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
-            sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
+            if AXIsProcessTrusted() {
+                // 辅助功能权限依然有效：本次失败仅为瞬态竞态（如用户已手动解锁使屏幕脱离锁定态）
+                Log.sm.info("unlock injection aborted — screen state changed or user unlocked (AX permission intact)")
+                recordUnlock(.skipped, reason: nil, detail: "注入中止（用户手动解锁或屏幕已脱离锁定态）")
+            } else {
+                // 辅助功能权限真实被撤销
+                Log.sm.error("WARN: CGEvent post failed — Accessibility permission revoked")
+                recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
+                sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
+            }
             return
         }
         Log.sm.debug("unlock attempt posted, waiting for dual verification")
