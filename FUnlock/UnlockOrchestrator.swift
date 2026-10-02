@@ -156,6 +156,7 @@ final class UnlockOrchestrator {
         let m = manager
         let sys = SystemInteractionService.shared
         let snap = m.fun.signalSnapshot()
+        let injectStart = now
         timingLog("performInjectionAndVerify | injecting password")
         Log.sm.debug("typing password with Shift prelude")
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
@@ -215,7 +216,11 @@ final class UnlockOrchestrator {
                     event: .autoUnlock, deviceModel: self.manager.monitoredDeviceName,
                     rawRSSI: self.manager.rssi ?? -100, kalmanRSSI: snap.kalmanEstimate,
                     effectiveRSSI: snap.effectiveRSSI, slope: snap.smoothedSlope,
-                    isAnomalous: snap.lastSignalAnomalous
+                    isAnomalous: snap.lastSignalAnomalous,
+                    result: "success",
+                    durationMs: self.now.timeIntervalSince(injectStart) * 1000,
+                    injectTime: injectStart,
+                    confirmTime: self.now
                 )
                 Log.sm.debug("unlock complete")
                 // 状态机在 @MainActor 上串行更新（本 Task 已标注 @MainActor），无需再包 Task
@@ -226,6 +231,16 @@ final class UnlockOrchestrator {
                     self.consecutiveUnlockAttempts += 1
                     self.recordUnlockAttempt()
                     Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    TelemetryLogger.shared.log(
+                        event: .autoUnlock, deviceModel: self.manager.monitoredDeviceName,
+                        rawRSSI: self.manager.rssi ?? -100, kalmanRSSI: snap.kalmanEstimate,
+                        effectiveRSSI: snap.effectiveRSSI, slope: snap.smoothedSlope,
+                        isAnomalous: snap.lastSignalAnomalous,
+                        result: "fail",
+                        durationMs: self.now.timeIntervalSince(injectStart) * 1000,
+                        injectTime: injectStart,
+                        confirmTime: nil
+                    )
                     self.recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
                     logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
                     self.manager.stateMachine.handleUnlockFailure()

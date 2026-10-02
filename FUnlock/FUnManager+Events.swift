@@ -256,7 +256,8 @@ extension FUnManager {
             kalmanRSSI: snap.kalmanEstimate,
             effectiveRSSI: snap.effectiveRSSI,
             slope: snap.smoothedSlope,
-            isAnomalous: snap.lastSignalAnomalous
+            isAnomalous: snap.lastSignalAnomalous,
+            result: "success"
         )
         // 审计修复 #2b：锁屏调用 2s 后回读会话状态，验证锁屏确实生效
         // （SACLockScreenImmediate/屏保启动可能静默失败，失败时通知 com.apple.screenIsLocked
