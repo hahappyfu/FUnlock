@@ -116,13 +116,18 @@ extension FUnManager {
         // 因此必须在启动 Task 前同步捕获快照
         // P1-2: 同上，改用带 4s 完成窗口的判定
         let wasFUnUnlock = orchestrator.isAutoUnlockingOrRecentlyCompleted
+        // P1-2: 设备在场判定同样在 Task 前捕获——2 秒后信号可能已变化，
+        // 用解锁瞬间的快照判断授权设备是否在场，防止设备在场的合法手动解锁被误报
+        let snap = fun.signalSnapshot()
+        let isDevicePresent = rssi != nil && (snap.presence || snap.effectiveRSSI >= Double(fun.unlockRSSI))
         intrudeCheckTask?.cancel()
         intrudeCheckTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
             guard let self else { return }
             if !wasFUnUnlock {
-                if self.fun.unlockRSSI != FUn.UNLOCK_DISABLED {
+                // 入侵 = 手动输密码解锁且授权设备不在场（手表在另一房间/无信号）
+                if !isDevicePresent && self.fun.unlockRSSI != FUn.UNLOCK_DISABLED {
                     ScriptRunner.shared.runScript("intruded", rssi: self.rssi, deviceName: self.monitoredDeviceName)
                     ScriptRunner.shared.logEvent("intruded", rssi: self.rssi)
                 }
