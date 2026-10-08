@@ -298,8 +298,10 @@ final class SystemInteractionService: Sendable {
         logBoth("SystemInteraction", "PASSWORD: sending Shift key prelude", fileMsg: "sendShiftKey() START")
 
         let src = CGEventSource(stateID: .hidSystemState)
+        var sent = false
 
-        for tap in [CGEventTapLocation.cgSessionEventTap, CGEventTapLocation.cghidEventTap] {
+        // 优先确保向 cghidEventTap 投递 HID 级按键以唤醒显示器硬件，同时向 cgSession 投递以激活登录窗口文本框
+        for tap in [CGEventTapLocation.cghidEventTap, CGEventTapLocation.cgSessionEventTap] {
             guard isSecureCheck() else {
                 logDebug(component: "SystemInteraction", "sendShiftKey: ABORT - screen not secure")
                 return false
@@ -309,9 +311,13 @@ final class SystemInteractionService: Sendable {
             shiftDown?.post(tap: tap)
             shiftUp?.post(tap: tap)
             if shiftDown != nil {
-                logBoth("SystemInteraction", "PASSWORD: Shift key sent successfully", fileMsg: "sendShiftKey: SUCCESS via tap=\(tap == .cgSessionEventTap ? "cgSession" : "cghid")")
-                return true
+                sent = true
             }
+        }
+
+        if sent {
+            logBoth("SystemInteraction", "PASSWORD: Shift key sent successfully", fileMsg: "sendShiftKey: SUCCESS")
+            return true
         }
 
         logBoth("SystemInteraction", "PASSWORD: Shift key send failed", fileMsg: "sendShiftKey: FAILED - all taps exhausted")
@@ -337,12 +343,12 @@ final class SystemInteractionService: Sendable {
         }
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
+        var waitedMs = 0
         if shiftSent {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude sent, waiting for display ready", fileMsg: "injectPasswordWithPrelude: Shift sent, waiting for display ready")
             // 熄屏唤醒最多轮询 2.5s，亮屏状态 300ms 即可
             let maxWaitMs = displayWasOff ? 2500 : 300
             let stepMs = 100
-            var waitedMs = 0
             while waitedMs < maxWaitMs {
                 try? await Task.sleep(nanoseconds: UInt64(stepMs) * 1_000_000)
                 waitedMs += stepMs
@@ -356,9 +362,19 @@ final class SystemInteractionService: Sendable {
                     break
                 }
             }
-            logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: display ready after \(waitedMs)ms")
+            if isDisplayPoweredOn() {
+                logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: display ready after \(waitedMs)ms")
+            } else {
+                logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: wait timed out after \(waitedMs)ms, display not ready")
+            }
         } else {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude failed, proceeding without delay", fileMsg: "injectPasswordWithPrelude: Shift failed, proceeding without delay")
+        }
+
+        // 关键门控：显示器若仍处于休眠未点亮状态，绝不盲打注入密码，防止按键丢失并触发改密误报
+        guard isDisplayPoweredOn() else {
+            logBoth("SystemInteraction", "PASSWORD: display still asleep after \(waitedMs)ms wait, aborting injection", fileMsg: "injectPasswordWithPrelude: display still asleep after \(waitedMs)ms, aborting injection")
+            return false
         }
 
         logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: injecting password")

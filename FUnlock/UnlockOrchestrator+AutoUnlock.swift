@@ -175,10 +175,10 @@ extension UnlockOrchestrator {
                 guard !Task.isCancelled else { return }
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
-                timingLog("wake attempt=\(attempt) done | locked=\(!SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen))")
-                // wakeDisplay() 不一定触发 screensDidWakeNotification，
-                // 直接检测屏幕是否已解锁
-                if self.manager.state.wake == .succeeded || !SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen) {
+                let displayReady = SystemInteractionService.shared.isDisplayPoweredOn()
+                timingLog("wake attempt=\(attempt) done | displayReady=\(displayReady)")
+                // 唤醒成功：收到唤醒通知或检测到显示器已通电亮起
+                if self.manager.state.wake == .succeeded || displayReady {
                     self.manager.state.wake = .succeeded
                     timingLog("wake succeeded")
                     self.attemptAutoUnlock()
@@ -187,7 +187,7 @@ extension UnlockOrchestrator {
             }
             self.manager.state.wake = .failed
             timingLog("wake failed after 10 retries")
-            self.attemptAutoUnlock()
+            // 唤醒失败时不发起自动解锁，防止对黑屏盲打密码并消耗失败配额
         }
     }
 }

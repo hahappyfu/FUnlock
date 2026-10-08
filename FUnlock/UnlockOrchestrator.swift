@@ -44,7 +44,7 @@ final class UnlockOrchestrator {
 
     /// 是否已请求显示器唤醒（防止重复启动唤醒重试任务）
     var displayWakeRequested = false
-    private var consecutiveUnlockAttempts = 0
+    private(set) var consecutiveUnlockAttempts = 0
     private let maxUnlockAttempts = 3
     private var lastAXRevokedAlertTime: Date = .distantPast
 
@@ -172,7 +172,11 @@ final class UnlockOrchestrator {
             // 注入失败，本次不算自动解锁，立即复位标记；状态回落 active，允许下次尝试
             isAutoUnlocking = false
             m.stateMachine.transition(to: .active)
-            if AXIsProcessTrusted() {
+            if !sys.isDisplayPoweredOn() {
+                // 显示器未处于就绪状态，安全早退防止盲打
+                Log.sm.info("unlock injection aborted — display asleep (aborted to avoid blind typing)")
+                recordUnlock(.skipped, reason: .displaySleeping, detail: "注入中止（显示器休眠未点亮，已拦截盲打）")
+            } else if AXIsProcessTrusted() {
                 // 辅助功能权限依然有效：本次失败仅为瞬态竞态（如用户已手动解锁使屏幕脱离锁定态）
                 Log.sm.info("unlock injection aborted — screen state changed or user unlocked (AX permission intact)")
                 recordUnlock(.skipped, reason: nil, detail: "注入中止（用户手动解锁或屏幕已脱离锁定态）")
@@ -226,8 +230,15 @@ final class UnlockOrchestrator {
                 // 状态机在 @MainActor 上串行更新（本 Task 已标注 @MainActor），无需再包 Task
                 self.manager.stateMachine.handleUnlockSuccess()
             } else {
-                // 通知和 CGSession 都未确认解锁 → 可能密码错误
+                // 通知和 CGSession 都未确认解锁
                 if sys.isScreenLocked(screenState: self.manager.state.screen) {
+                    guard sys.isDisplayPoweredOn() else {
+                        // 显示器非点亮状态，解锁未成功属硬件/显示休眠问题，不可归咎为密码错误
+                        Log.sm.info("unlock verify failed while display asleep — skipping password failure counter")
+                        self.recordUnlock(.skipped, reason: .displaySleeping, detail: "解锁验证未通过（显示器未处于唤醒状态，不计入密码失败）")
+                        self.manager.stateMachine.transition(to: .active)
+                        return
+                    }
                     self.consecutiveUnlockAttempts += 1
                     self.recordUnlockAttempt()
                     Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")

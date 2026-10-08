@@ -4,6 +4,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 
 static IOPMAssertionID wakeAssertionID = 0;
+static IOPMAssertionID preventSleepAssertionID = 0;
 
 void funlock_wakeDisplay(void)
 {
@@ -12,18 +13,33 @@ void funlock_wakeDisplay(void)
         IOPMAssertionRelease(wakeAssertionID);
         wakeAssertionID = 0;
     }
+    if (preventSleepAssertionID != 0) {
+        IOPMAssertionRelease(preventSleepAssertionID);
+        preventSleepAssertionID = 0;
+    }
 
-    // 方式1: 创建强断言强制唤醒显示器
+    // 方式1: 声明用户活动（主动点亮已休眠显示器）
+    IOPMAssertionDeclareUserActivity(
+        CFSTR("FUnlock Wake Activity"),
+        kIOPMUserActiveLocal,
+        &wakeAssertionID);
+
+    // 方式2: 创建强断言防止再次闲置休眠
     IOPMAssertionCreateWithName(
         kIOPMAssertionTypePreventUserIdleDisplaySleep,
         kIOPMAssertionLevelOn,
-        CFSTR("FUnlock Wake"),
-        &wakeAssertionID);
+        CFSTR("FUnlock Keep Awake"),
+        &preventSleepAssertionID);
 
-    // 方式2: 通过 IORegistry 直接唤醒显示器（深层兜底）
+    // 方式3: 通过 IORegistry 直接唤醒显示器（深层兜底，Intel 平台）
     io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
-        IORegistryEntrySetCFProperty(reg, CFSTR("IORequestPowerState"), CFNumberCreate(NULL, kCFNumberIntType, &(int){2}));
+        int powerState = 2;
+        CFNumberRef powerNum = CFNumberCreate(NULL, kCFNumberIntType, &powerState);
+        if (powerNum) {
+            IORegistryEntrySetCFProperty(reg, CFSTR("IORequestPowerState"), powerNum);
+            CFRelease(powerNum);
+        }
         IOObjectRelease(reg);
     }
 }
@@ -33,6 +49,10 @@ void funlock_releaseWakeAssertion(void)
     if (wakeAssertionID != 0) {
         IOPMAssertionRelease(wakeAssertionID);
         wakeAssertionID = 0;
+    }
+    if (preventSleepAssertionID != 0) {
+        IOPMAssertionRelease(preventSleepAssertionID);
+        preventSleepAssertionID = 0;
     }
 }
 

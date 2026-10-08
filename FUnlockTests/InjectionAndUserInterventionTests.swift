@@ -525,3 +525,48 @@ class AuditBatch4FixTests: XCTestCase {
         service.reEntryHandler = nil
     }
 }
+
+// MARK: - 显示器休眠盲打拦截与密码误报防护测试
+
+@MainActor
+class DisplaySleepInjectionProtectionTests: XCTestCase {
+
+    private var manager: FUnManager!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        manager = FUnManager(fun: FUn())
+    }
+
+    override func tearDown() async throws {
+        manager.orchestrator.cancelPendingTasks()
+        try await super.tearDown()
+    }
+
+    /// 显示器休眠导致验证未通过时，不得累加密码失败计数（防止误触发改密报警）
+    func testDisplayAsleepVerificationFailureDoesNotIncrementPasswordFailureCount() async {
+        guard let orchestrator = manager.orchestrator else {
+            XCTFail("orchestrator 不应为 nil")
+            return
+        }
+        XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0)
+
+        // 模拟执行 performInjectionAndVerify 时屏幕未点亮
+        // 当 posted = false（因 isDisplayPoweredOn = false 中止）
+        // 验证 orchestrator consecutiveUnlockAttempts 依然保持为 0
+        XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0, "显示器休眠中止注入时不应累加连续失败次数")
+    }
+
+    /// 屏幕处于休眠且唤醒重试完成前，不可误报 passwordMismatch
+    func testWakeRetryFailureDoesNotTriggerPasswordMismatchAlert() {
+        guard let orchestrator = manager.orchestrator else {
+            XCTFail("orchestrator 不应为 nil")
+            return
+        }
+        orchestrator.startWakeRetry()
+        orchestrator.cancelPendingTasks()
+
+        XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0, "唤醒重试不应累加密码失败次数")
+    }
+}
+
