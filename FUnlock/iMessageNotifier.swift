@@ -83,7 +83,7 @@ final class iMessageNotifier: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self = self else { return }
             if let err = self.runScriptSync(recipient: recipient, text: text) {
-                Log.ble.error("[iMessage] 发送失败（静默丢弃）: \(err)")
+                AppLog.error(.app, "imessageSendFailed", [("error", err)])
             }
         }
     }
