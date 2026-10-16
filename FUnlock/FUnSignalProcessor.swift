@@ -115,7 +115,7 @@ extension FUn {
         // 预唤醒观测（阶段 1）：监测广播采样断流缺口，帮助定位休眠期扫描停顿成因
         let gap = now.timeIntervalSince(lastReceiveTime)
         if gap >= 30.0 {
-            logDebug(component: "BLE", "[BLE] scan gap \(String(format: "%.1f", gap))s")
+            AppLog.info(.ble, "scanGap", [("gap", String(format: "%.1fs", gap))])
         }
 
         // activeModeTimer 锁内快照（修复锁外读 vs 锁内写竞态；source 与下方日志共用一次快照）
@@ -126,7 +126,13 @@ extension FUn {
         let decision = processSignal(rssi: rssi, source: source, now: now)
 
         // 调试日志：追踪 effectiveRSSI 计算
-        throttledBleLog("updateMonitored", interval: 1.0, "[DEBUG] updateMonitored rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", decision.effectiveRSSI)) kalman=\(String(format: "%.1f", decision.kalmanEstimate)) source=\(source == .connected ? "connected" : "scanning") activeMode=\(isActive)")
+        throttledBleLog("updateMonitored", interval: 1.0, "updateMonitored", [
+            ("rssi", "\(rssi)"),
+            ("effectiveRSSI", String(format: "%.1f", decision.effectiveRSSI)),
+            ("kalman", String(format: "%.1f", decision.kalmanEstimate)),
+            ("source", source == .connected ? "connected" : "scanning"),
+            ("activeMode", "\(isActive)"),
+        ])
 
         // 2. 更新 displayRSSI
         updateDisplayRSSI(rssi: rssi)
@@ -235,13 +241,20 @@ extension FUn {
             // 锁内直访裸存储：FUn.monitoredUUID computed 自带锁，UnfairLock 不可重入
             (scanner.monitoredUUID != nil, presence, scanner.monitoredUUIDs.count)
         }
-        throttledBleLog("checkProximity", interval: 1.0, "[DEBUG] checkProximity rssi=\(rssi) effectiveRSSI=\(String(format: "%.1f", effectiveRSSI)) threshold=\(decision.unlockThreshold) monitored=\(debugInfo.isMonitored) presence=\(debugInfo.presence) uuidCount=\(debugInfo.uuidCount)")
+        throttledBleLog("checkProximity", interval: 1.0, "checkProximity", [
+            ("rssi", "\(rssi)"),
+            ("effectiveRSSI", String(format: "%.1f", effectiveRSSI)),
+            ("threshold", "\(decision.unlockThreshold)"),
+            ("monitored", "\(debugInfo.isMonitored)"),
+            ("presence", "\(debugInfo.presence)"),
+            ("uuidCount", "\(debugInfo.uuidCount)"),
+        ])
 
         let dispRSSI: Double = lock.withLock {
             let disp = displayRSSI
             let wasPresent = presence
             if decision.isClose && !wasPresent {
-                Log.sm.debug("Device is close (eff=\(String(format: "%.1f", effectiveRSSI)))")
+                AppLog.info(.sm, "deviceClose", [("eff", String(format: "%.1f", effectiveRSSI))])
                 presence = true
                 shouldNotifyClose = true
                 lastProximityEventTime = Date()

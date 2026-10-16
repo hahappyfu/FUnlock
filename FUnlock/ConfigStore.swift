@@ -173,7 +173,7 @@ final class ConfigStore: @unchecked Sendable {
                 return d
             }
             // base64 解码失败：告警后保持原字符串落盘（导出→导入幂等，损坏数据不扩散成其他类型）
-            logDebug(component: "ConfigStore", "import: \"_b64:\" value failed to decode, keeping as string: \(raw.prefix(48))")
+            AppLog.error(.app, "importBase64DecodeFailed", [("prefix", String(raw.prefix(48)))])
         }
         if raw == "true" { return true }
         if raw == "false" { return false }

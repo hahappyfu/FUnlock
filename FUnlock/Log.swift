@@ -1,5 +1,7 @@
 import os
 
+/// 底层 os.Logger 实例集合（仅供 AppLog 门面内部使用，业务代码请调用 AppLog）。
+///
 /// 日志分级约定：
 /// - .debug  高频原始数据（RSSI、didDiscover、updateMonitored）
 /// - .info   状态机流转与业务分支（SKIP、displaySleep/Wake）

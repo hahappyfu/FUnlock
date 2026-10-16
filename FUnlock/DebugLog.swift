@@ -1,10 +1,5 @@
 import Foundation
 
-/// 写入文件诊断日志（不依赖 os.Logger，debug 级别不会被过滤）
-func logDebug(component: String, _ message: String) {
-    DebugLog.log(component: component, message)
-}
-
 enum DebugLog {
     static var path: String { logFileURL.path }
 

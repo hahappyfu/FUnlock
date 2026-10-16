@@ -18,7 +18,9 @@
 - level：debug=高频原始数据；info=状态流转与业务分支；error=异常失败；fault=需人工介入
 - 不引入日志框架依赖；不改日志文件位置与滚动策略；不动 DecisionLogger/TelemetryLogger
 - 涉及密码内容的日志（原代码有 `PASSWORD:` 脱敏逻辑，SystemInteractionService.swift:35）迁移时保持脱敏
-- 每个迁移任务后必须 `swift build` 编译通过 + `swift test` 全绿（447 个测试）才可 commit
+- 本项目是 Xcode 工程（非 SPM）。每个迁移任务后必须编译通过 + 测试全绿（基线：444 通过 + 1 跳过 = 0 失败）才可 commit
+  - 构建：`xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -5`
+  - 测试：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 - commit 末尾加：`Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 
 ## 迁移映射表（所有任务通用）
@@ -110,7 +112,7 @@ final class AppLogTests: XCTestCase {
 
 - [ ] **步骤 2：运行测试验证失败**
 
-运行：`swift test --filter AppLogTests`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' -only-testing:FUnlockTests/AppLogTests 2>&1 | tail -8`
 预期：FAIL，"cannot find 'AppLog' in scope"
 
 - [ ] **步骤 3：编写实现**
@@ -187,11 +189,11 @@ enum AppLog {
 }
 ```
 
-（若 Xcode 项目用 file membership 而非文件夹自动收录，需把 `AppLog.swift` 加进 target——先跑 `swift build` 确认。）
+（本项目 xcodeproj 用显式 file membership 而非文件夹自动收录：需要把 `AppLog.swift` 与 `AppLogTests.swift` 加入对应 target 的 Compile Sources。用 `xcodebuild build` 确认。）
 
 - [ ] **步骤 4：运行测试验证通过**
 
-运行：`swift test --filter AppLogTests`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' -only-testing:FUnlockTests/AppLogTests 2>&1 | tail -8`
 预期：5 个测试全 PASS
 
 - [ ] **步骤 5：Commit**
@@ -229,8 +231,8 @@ AppLog.info(.unlock, "unlockStart", [("screen", "\(m.state.screen)"), ("locked",
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
-预期：编译 0 错误；447 个测试全 PASS（这两个文件多线程路径有测试覆盖，若某个测试断言了日志文本需同步更新断言）。
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
+预期：编译 0 错误；444 个测试全 PASS（1 跳过）（这两个文件多线程路径有测试覆盖，若某个测试断言了日志文本需同步更新断言）。
 
 - [ ] **步骤 3：Commit**
 
@@ -254,7 +256,7 @@ git commit -m "refactor(log): UnlockOrchestrator 日志迁移至 AppLog"
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS。
 
 - [ ] **步骤 3：Commit**
@@ -280,7 +282,7 @@ RSSI 采样、didDiscover 等高频数据 → `AppLog.debug(.ble, ...)`；扫描
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS（`UIAndUtilityTests` 覆盖 throttledBleLog）。
 
 - [ ] **步骤 3：Commit**
@@ -307,7 +309,7 @@ git commit -m "refactor(log): BLE 层日志迁移至 AppLog，throttledBleLog �
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS。
 
 - [ ] **步骤 3：Commit**
@@ -334,7 +336,7 @@ git commit -m "refactor(log): 系统交互与安全服务迁移至 AppLog，删�
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS。
 
 - [ ] **步骤 3：Commit**
@@ -362,7 +364,7 @@ git commit -m "refactor(log): App 层与杂项日志迁移至 AppLog"
 
 - [ ] **步骤 3：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS。
 
 - [ ] **步骤 4：Commit**
@@ -393,7 +395,7 @@ git commit -m "refactor(log): 删除 logDebug/lockLog 旧入口，Log 收编为 
 
 - [ ] **步骤 2：验证**
 
-运行：`swift build 2>&1 | tail -5 && swift test 2>&1 | tail -3`
+运行：`xcodebuild test -project FUnlock.xcodeproj -scheme FUnlock -destination 'platform=macOS' 2>&1 | tail -6`
 预期：编译 0 错误，全 PASS。
 
 - [ ] **步骤 3：Commit**
@@ -422,7 +424,7 @@ grep '\[UNLOCK\]' ~/Library/Logs/FUnlock/debug.log
 
 - [ ] **步骤 2：终验**
 
-运行：`grep -rn "Log\.\(sm\|ble\|dev\)\." --include='*.swift' FUnlock | grep -v AppLog.swift | grep -v "Log.swift"; swift test 2>&1 | tail -3`
+运行：`grep -rn "Log\.\(sm\|ble\|dev\)\." --include='*.swift' FUnlock | grep -v AppLog.swift | grep -v "Log.swift"` 然后跑上面的 xcodebuild test
 预期：grep 无输出（旧调用清零）；447 个测试全 PASS。
 
 - [ ] **步骤 3：Commit**

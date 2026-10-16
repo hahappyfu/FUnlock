@@ -44,34 +44,34 @@ extension UnlockOrchestrator {
         let snap = m.fun.signalSnapshot()
         let sys = SystemInteractionService.shared
         let screenLocked = sys.isScreenLocked(screenState: m.state.screen)
-        timingLog("attemptAutoUnlock | presence=\(snap.presence) screen=\(m.state.screen) system=\(m.state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
-        Log.sm.debug("attemptAutoUnlock presence=\(snap.presence) screen=\(m.state.screen) wakeWO=\(m.prefs.bool(forKey: "wakeWithoutUnlocking")) locked=\(screenLocked)")
-        guard snap.presence else { Log.sm.info("SKIP: no presence"); timingLog("SKIP noPresence"); recordUnlock(reason: .noPresence); return }
-        guard m.fun.unlockRSSI != FUn.UNLOCK_DISABLED else { Log.sm.info("SKIP: unlock disabled"); timingLog("SKIP unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
+        timingLog("event=attemptAutoUnlock presence=\(snap.presence) screen=\(m.state.screen) system=\(m.state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
+        AppLog.debug(.unlock, "autoUnlockAttempt", [("presence", "\(snap.presence)"), ("screen", "\(m.state.screen)"), ("wakeWO", "\(m.prefs.bool(forKey: "wakeWithoutUnlocking"))"), ("locked", "\(screenLocked)")])
+        guard snap.presence else { AppLog.info(.unlock, "unlockSkip", [("reason", "noPresence")]); timingLog("event=unlockSkip reason=noPresence"); recordUnlock(reason: .noPresence); return }
+        guard m.fun.unlockRSSI != FUn.UNLOCK_DISABLED else { AppLog.info(.unlock, "unlockSkip", [("reason", "unlockDisabled")]); timingLog("event=unlockSkip reason=unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
         // 与 onDeviceApproached 的到位门控保持一致，信号不足（如已衰减）时拒绝解锁
         guard snap.effectiveRSSI >= Double(m.fun.unlockRSSI) else {
-            Log.sm.debug("SKIP: signal below unlock threshold (\(String(format: "%.1f", snap.effectiveRSSI)))")
-            timingLog("SKIP signalBelowThreshold rssi=\(String(format: "%.1f", snap.effectiveRSSI)) unlock=\(m.fun.unlockRSSI)")
+            AppLog.info(.unlock, "unlockSkip", [("reason", "signalBelowThreshold"), ("rssi", String(format: "%.1f", snap.effectiveRSSI)), ("threshold", "\(m.fun.unlockRSSI)")])
+            timingLog("event=unlockSkip reason=signalBelowThreshold rssi=\(String(format: "%.1f", snap.effectiveRSSI)) unlock=\(m.fun.unlockRSSI)")
             recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm 低于解锁阈值 \(m.fun.unlockRSSI) dBm")
             return
         }
         // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard m.stateMachine.canAttemptUnlock else { Log.sm.info("SKIP: state machine not ready (degraded/cooldown)"); timingLog("SKIP stateMachineBlocked"); recordUnlock(reason: .stateMachineBlocked); return }
+        guard m.stateMachine.canAttemptUnlock else { AppLog.info(.unlock, "unlockSkip", [("reason", "stateMachineNotReady")]); timingLog("event=unlockSkip reason=stateMachineNotReady"); recordUnlock(reason: .stateMachineBlocked); return }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(m.lastLockTime)
         guard sinceLock >= m.lockBufferDuration else {
-            Log.sm.debug("SKIP: lock buffer active (locked \(String(format: "%.1f", sinceLock))s ago)")
-            timingLog("SKIP lockBufferActive sinceLock=\(String(format: "%.1f", sinceLock))s")
+            AppLog.info(.unlock, "unlockSkip", [("reason", "lockBufferActive"), ("sinceLock", String(format: "%.1fs", sinceLock))])
+            timingLog("event=unlockSkip reason=lockBufferActive sinceLock=\(String(format: "%.1f", sinceLock))s")
             recordUnlock(reason: .lockBufferActive, detail: "\(String(format: "%.1f", sinceLock)) 秒前已锁定")
             return
         }
 
         // 解锁冷却：成功解锁后短时间内不重复尝试，防止密码风暴
         if m.isUnlockCooldownActive() {
-            Log.sm.debug("SKIP: unlock cooldown active (\(String(format: "%.1f", self.now.timeIntervalSince(m.lastUnlockTime)))s since last unlock)")
-            timingLog("SKIP unlockCooldownActive sinceUnlock=\(String(format: "%.1f", now.timeIntervalSince(m.lastUnlockTime)))s")
+            AppLog.info(.unlock, "unlockSkip", [("reason", "unlockCooldownActive"), ("sinceUnlock", String(format: "%.1fs", self.now.timeIntervalSince(m.lastUnlockTime)))])
+            timingLog("event=unlockSkip reason=unlockCooldownActive sinceUnlock=\(String(format: "%.1f", now.timeIntervalSince(m.lastUnlockTime)))s")
             recordUnlock(reason: .unlockCooldownActive, detail: "距上次解锁 \(String(format: "%.1f", self.now.timeIntervalSince(m.lastUnlockTime))) 秒")
             return
         }
@@ -90,7 +90,7 @@ extension UnlockOrchestrator {
                     pauseOnWiFiSSIDCache.store(currentSSID, now: now)
                 }
                 if let currentSSID, currentSSID == targetSSID {
-                    Log.sm.debug("SKIP: pauseOnWiFi matched SSID '\(targetSSID)'")
+                    AppLog.info(.unlock, "unlockSkip", [("reason", "wifiPaused"), ("ssid", targetSSID)])
                     recordUnlock(reason: .wifiPaused, detail: "WiFi '\(targetSSID)'")
                     return
                 }
@@ -98,7 +98,7 @@ extension UnlockOrchestrator {
         }
         // #5: 手动锁屏后不自动解锁（deadline 语义已含 60s/24h 区分，不依赖键是否缺失）
         if m.state.intent.isManualLockActive {
-            Log.sm.debug("SKIP: manualLock active, waiting for manual unlock")
+            AppLog.info(.unlock, "unlockSkip", [("reason", "manualLockActive")])
             recordUnlockThrottled(.manualLockActive)
             return
         }
@@ -107,8 +107,8 @@ extension UnlockOrchestrator {
         if m.state.screen == .displaySleeping && m.state.system == .awake
             && m.prefs.bool(forKey: "wakeOnProximity")
             && isSystemReadyForUnlock() {
-            Log.sm.debug("starting parallel wake + unlock")
-            timingLog("parallel wake path | displaySleeping + systemAwake, RSSI=\(String(format: "%.1f", snap.effectiveRSSI))")
+            AppLog.info(.unlock, "parallelWakeUnlockStart")
+            timingLog("event=parallelWakeUnlockStart rssi=\(String(format: "%.1f", snap.effectiveRSSI))")
             startWakeRetry()
             // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
             if snap.effectiveRSSI >= Double(m.fun.unlockRSSI) {
@@ -118,39 +118,39 @@ extension UnlockOrchestrator {
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    guard !self.manager.state.intent.isManualLockActive else { Log.sm.debug("SKIP: manualLock active in parallel wake task"); return }
+                    guard !self.manager.state.intent.isManualLockActive else { AppLog.info(.unlock, "unlockSkip", [("reason", "manualLockActiveParallel")]); return }
                     // 「只唤醒不解锁」开关同样约束并行解锁任务（与主路径 wakeWithoutUnlocking 门控一致）
-                    guard !self.manager.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking in parallel wake task"); timingLog("SKIP wakeWithoutUnlocking in parallel task"); self.recordUnlock(reason: .wakeWithoutUnlocking); return }
-                    timingLog("parallel unlock task fired after 0.8s")
-                    guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in parallel wake task"); timingLog("SKIP systemNotReady in parallel task"); self.recordUnlock(reason: .systemNotReady); return }
+                    guard !self.manager.prefs.bool(forKey: "wakeWithoutUnlocking") else { AppLog.info(.unlock, "unlockSkip", [("reason", "wakeWithoutUnlockingParallel")]); timingLog("event=unlockSkip reason=wakeWithoutUnlockingParallel"); self.recordUnlock(reason: .wakeWithoutUnlocking); return }
+                    timingLog("event=parallelUnlockTaskFired delay=0.8s")
+                    guard self.isSystemReadyForUnlock() else { AppLog.info(.unlock, "unlockSkip", [("reason", "systemNotReadyParallel")]); timingLog("event=unlockSkip reason=systemNotReadyParallel"); self.recordUnlock(reason: .systemNotReady); return }
                     await self.tryUnlock()
                 }
             } else {
-                Log.sm.debug("pre-wake only: effectiveRSSI=\(String(format: "%.1f", snap.effectiveRSSI)) < unlockRSSI=\(m.fun.unlockRSSI)")
+                AppLog.info(.unlock, "preWakeOnly", [("effectiveRSSI", String(format: "%.1f", snap.effectiveRSSI)), ("unlockRSSI", "\(m.fun.unlockRSSI)")])
             }
             return
         }
 
-        guard !m.prefs.bool(forKey: "wakeWithoutUnlocking") else { Log.sm.debug("SKIP: wakeWithoutUnlocking"); timingLog("SKIP wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
-        guard m.state.screen != .displaySleeping else { Log.sm.debug("SKIP: still displaySleeping"); timingLog("SKIP stillDisplaySleeping"); recordUnlock(reason: .displaySleeping); return }
+        guard !m.prefs.bool(forKey: "wakeWithoutUnlocking") else { AppLog.info(.unlock, "unlockSkip", [("reason", "wakeWithoutUnlocking")]); timingLog("event=unlockSkip reason=wakeWithoutUnlocking"); recordUnlock(reason: .wakeWithoutUnlocking); return }
+        guard m.state.screen != .displaySleeping else { AppLog.info(.unlock, "unlockSkip", [("reason", "stillDisplaySleeping")]); timingLog("event=unlockSkip reason=stillDisplaySleeping"); recordUnlock(reason: .displaySleeping); return }
 
         // 屏幕已解锁：无需尝试解锁，直接早退，避免每轮 RSSI 轮询走到 guardFetchPassword 刷 screenNotLocked 噪音日志
         // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
-        guard screenLocked else { Log.sm.debug("SKIP: screen already unlocked"); return }
+        guard screenLocked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenAlreadyUnlocked")]); return }
 
         // 屏幕已锁定等 0.3s
         let delay: UInt64 = 300_000_000
         unlockTask?.cancel()
         unlockTask = Task { @MainActor [weak self] in
-            Log.sm.debug("unlockTask STARTED — sleeping \(delay / 1_000_000)ms, isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self?.manager.state.screen ?? .unlocked))")
-            timingLog("delayed unlock task started | sleep 0.3s")
+            AppLog.info(.unlock, "delayedUnlockTaskStart", [("delayMs", "\(delay / 1_000_000)"), ("isScreenLocked", "\(SystemInteractionService.shared.isScreenLocked(screenState: self?.manager.state.screen ?? .unlocked))")])
+            timingLog("event=delayedUnlockTaskStart sleep=0.3s")
             try? await Task.sleep(nanoseconds: UInt64(delay))
-            guard !Task.isCancelled else { Log.sm.debug("unlockTask CANCELLED after sleep"); timingLog("delayed unlock task cancelled"); return }
+            guard !Task.isCancelled else { AppLog.info(.unlock, "delayedUnlockTaskCancelled", [("reason", "afterSleep")]); timingLog("event=delayedUnlockTaskCancelled reason=afterSleep"); return }
             guard let self else { return }
-            guard !self.manager.state.intent.isManualLockActive else { Log.sm.debug("SKIP: manualLock active in delayed unlock task"); return }
-            guard self.isSystemReadyForUnlock() else { Log.sm.debug("SKIP: system not ready in delayed unlock task"); timingLog("SKIP systemNotReady in delayed task"); self.recordUnlock(reason: .systemNotReady); return }
-            Log.sm.debug("unlockTask WOKE — isScreenLocked=\(SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen))")
-            timingLog("delayed unlock task fired | tryUnlock")
+            guard !self.manager.state.intent.isManualLockActive else { AppLog.info(.unlock, "unlockSkip", [("reason", "manualLockActiveDelayed")]); return }
+            guard self.isSystemReadyForUnlock() else { AppLog.info(.unlock, "unlockSkip", [("reason", "systemNotReadyDelayed")]); timingLog("event=unlockSkip reason=systemNotReadyDelayed"); self.recordUnlock(reason: .systemNotReady); return }
+            AppLog.info(.unlock, "delayedUnlockTaskWoke", [("isScreenLocked", "\(SystemInteractionService.shared.isScreenLocked(screenState: self.manager.state.screen))")])
+            timingLog("event=delayedUnlockTaskFired")
             await self.tryUnlock()
         }
     }
@@ -160,7 +160,7 @@ extension UnlockOrchestrator {
     func startWakeRetry() {
         manager.state.wake = .pending
         manager.state.screen = .locked(reason: .away)
-        timingLog("startWakeRetry begin")
+        timingLog("event=startWakeRetryBegin")
 
         wakeTask?.cancel()
         wakeTask = Task { @MainActor [weak self] in
@@ -176,17 +176,17 @@ extension UnlockOrchestrator {
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
                 let displayReady = SystemInteractionService.shared.isDisplayPoweredOn()
-                timingLog("wake attempt=\(attempt) done | displayReady=\(displayReady)")
+                timingLog("event=wakeAttemptDone attempt=\(attempt) displayReady=\(displayReady)")
                 // 唤醒成功：收到唤醒通知或检测到显示器已通电亮起
                 if self.manager.state.wake == .succeeded || displayReady {
                     self.manager.state.wake = .succeeded
-                    timingLog("wake succeeded")
+                    timingLog("event=wakeSucceeded")
                     self.attemptAutoUnlock()
                     return
                 }
             }
             self.manager.state.wake = .failed
-            timingLog("wake failed after 10 retries")
+            timingLog("event=wakeFailed retries=10")
             // 唤醒失败时不发起自动解锁，防止对黑屏盲打密码并消耗失败配额
         }
     }

@@ -142,14 +142,14 @@ final class SecurityService: Sendable {
         if case .failure = fetchPassword() { return }
         if case .success(nil) = fetchPassword() { return }
         if isSessionLocked {
-            Log.sm.debug("passwordChanged: session locked, deferring confirmation until unlock")
+            AppLog.info(.app, "passwordChangeDeferred", [("reason", "sessionLocked")])
             hasPendingPasswordChange = true
             return
         }
-        Log.sm.debug("system password changed, asking user confirmation before clearing")
+        AppLog.info(.app, "passwordChangePrompting")
         let confirmed = confirmHandler.map { $0() } ?? runPasswordChangeConfirmation()
         if confirmed {
-            Log.sm.debug("user confirmed password change, clearing stored password")
+            AppLog.info(.app, "passwordChangeConfirmed")
             deletePassword()
             if let handler = reEntryHandler { handler() } else { askPassword() }
         }

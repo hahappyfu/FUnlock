@@ -159,7 +159,7 @@ struct PermissionCheckView: View {
     private func refresh() {
         accessibilityGranted = AXIsProcessTrusted()
         bluetoothGranted = (CBManager.authorization == .allowedAlways)
-        logDebug(component: "PermissionCheck", "[DIAG] refresh() called - accessibility=\(accessibilityGranted), bluetooth=\(bluetoothGranted)")
+        AppLog.info(.app, "permissionCheckRefresh", [("accessibility", "\(accessibilityGranted)"), ("bluetooth", "\(bluetoothGranted)")])
     }
 
     private func requestAX() {
@@ -335,11 +335,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 if SystemInteractionService.sessionDictIndicatesUnlocked(dict) {
                     self.manager?.stateMachine.resetToActive()
                 } else {
-                    logDebug(component: "AppDelegate", "degraded notification tap ignored: session locked")
+                    AppLog.info(.app, "degradedNotificationTapIgnored", [("reason", "sessionLocked")])
                 }
             }
         default:
-            logDebug(component: "AppDelegate", "notification tap ignored: unknown identifier \(id)")
+            AppLog.info(.app, "notificationTapIgnored", [("reason", "unknownIdentifier"), ("id", id)])
         }
     }
 
@@ -483,7 +483,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 配置迁移），宿主只是承载单测的空壳，绝不干扰正在运行的正式版。
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
         // 启动时记录蓝牙权限状态
-        logDebug(component: "AppDelegate", "[DIAG] applicationDidFinishLaunching - bluetooth authorization=\(CBManager.authorization.rawValue)")
+        AppLog.info(.app, "launch", [("btAuth", "\(CBManager.authorization.rawValue)")])
 
         // 启动时把旧 standard 域配置迁移到独立 suite 域（一次性）
         ConfigStore.shared.migrateIfNeeded(fromKeys: ConfigStore.legacyKeys)
@@ -556,7 +556,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor @objc func toggleMenuBarPopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
-        logDebug(component: "AppDelegate", "[POPOVER] toggleMenuBarPopover clicked! sender=\(String(describing: sender))")
+        AppLog.debug(.app, "toggleMenuBarPopover", [("sender", String(describing: sender))])
         guard let popover = self.popover else { return }
         if popover.isShown {
             popover.performClose(nil)
@@ -713,15 +713,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func showPermissionCheck() {
         let ax = AXIsProcessTrusted()
         let bt = (CBManager.authorization == .allowedAlways)
-        logDebug(component: "PermissionCheck", "showPermissionCheck - accessibility=\(ax), bluetooth=\(bt)")
+        AppLog.info(.app, "permissionCheck", [("accessibility", "\(ax)"), ("bluetooth", "\(bt)")])
         if !ax || !bt {
             // 权限缺失：仅首次引导弹窗，之后转由设置窗口内的常驻提醒承担（避免每次启动打扰）
             guard !prefs.bool(forKey: "permissionOnboarded") else {
-                logDebug(component: "PermissionCheck", "permissions missing but onboarded - skip popup")
+                AppLog.info(.app, "permissionCheckSkipped", [("reason", "alreadyOnboarded")])
                 return
             }
             prefs.set(true, forKey: "permissionOnboarded")
-            logDebug(component: "PermissionCheck", "first-run permission guide - showing window")
+            AppLog.info(.app, "permissionGuideShown", [("reason", "firstRun")])
             let view = PermissionCheckView()
             let hosting = NSHostingController(rootView: view)
             let win = NSWindow(contentViewController: hosting)

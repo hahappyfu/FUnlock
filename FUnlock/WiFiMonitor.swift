@@ -20,11 +20,11 @@ class WiFiMonitor: NSObject, CLLocationManagerDelegate {
 
     var currentSSID: String? {
         guard let interface = CWWiFiClient.shared().interface() else {
-            throttledLog("CWWiFiClient has no interface (Wi-Fi off or not associated)")
+            throttledLog("wifiSSIDUnavailable", [("reason", "noInterface"), ("detail", "Wi-Fi off or not associated")])
             return nil
         }
         guard let ssid = interface.ssid() else {
-            throttledLog("interface.ssid() returned nil (check location permission or association)")
+            throttledLog("wifiSSIDUnavailable", [("reason", "nilSSID"), ("detail", "check location permission or association")])
             return nil
         }
         return ssid
@@ -33,11 +33,11 @@ class WiFiMonitor: NSObject, CLLocationManagerDelegate {
     /// SSID 读取失败诊断：60 秒限频，避免每秒轮询刷屏（区分 Wi-Fi 未关联与定位权限缺失）
     private var lastLogTime: TimeInterval = 0
 
-    private func throttledLog(_ msg: String) {
+    private func throttledLog(_ event: String, _ fields: [(String, String?)] = []) {
         let now = Date().timeIntervalSince1970
         if now - lastLogTime >= 60 {
             lastLogTime = now
-            Log.sm.debug("[WiFiMonitor] \(msg, privacy: .public)")
+            AppLog.debug(.app, event, fields)
         }
     }
 

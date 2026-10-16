@@ -102,7 +102,7 @@ final class UnlockOrchestrator {
     /// 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
     func tryUnlock() async {
-        timingLog("tryUnlock enter")
+        timingLog("event=tryUnlockEnter")
         guard let password = guardFetchPassword() else { return }
         await performInjectionAndVerify(password: password)
     }
@@ -112,18 +112,18 @@ final class UnlockOrchestrator {
         let m = manager
         let sys = SystemInteractionService.shared
         let locked = sys.isScreenLocked(screenState: m.state.screen)
-        timingLog("guardFetchPassword | locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
-        logDebug(component: "FUnManager", "tryUnlock() START - screen=\(m.state.screen), locked=\(locked)")
-        Log.sm.debug("screen locked check: \(locked)")
-        guard locked else { Log.sm.debug("SKIP: screen not locked"); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
+        timingLog("event=guardFetchPassword locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
+        AppLog.info(.unlock, "unlockStart", [("screen", "\(m.state.screen)"), ("locked", "\(locked)")])
+        AppLog.debug(.unlock, "screenLockedCheck", [("locked", "\(locked)")])
+        guard locked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenNotLocked")]); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = m.stateMachine.attemptUnlock()
-        guard smAllowed else { Log.sm.info("SKIP: state machine denied unlock attempt"); recordUnlock(reason: .stateMachineBlocked); return nil }
+        guard smAllowed else { AppLog.info(.unlock, "unlockSkip", [("reason", "stateMachineDenied")]); recordUnlock(reason: .stateMachineBlocked); return nil }
 
         let sinceUnlock = now.timeIntervalSince(m.state.unlockedAt)
         guard sinceUnlock > 3 else {
-            Log.sm.debug("SKIP: recently unlocked (\(String(format:"%.1f", sinceUnlock))s ago)")
+            AppLog.info(.unlock, "unlockSkip", [("reason", "recentlyUnlocked"), ("sinceUnlock", String(format: "%.1fs", sinceUnlock))])
             recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock)) 秒前解锁过")
             // attemptUnlock 已置 .unlocking，SKIP 出口回落 active，避免状态卡死
             m.stateMachine.transition(to: .active)
@@ -132,21 +132,21 @@ final class UnlockOrchestrator {
         let fetchResult = SecurityService.shared.fetchPassword(warn: true)
         guard case .success(let password) = fetchResult, let password = password else {
             if case .failure(let error) = fetchResult {
-                Log.sm.debug("SKIP: Keychain error - \(error)")
+                AppLog.info(.unlock, "unlockSkip", [("reason", "keychainError"), ("error", "\(error)")])
                 recordUnlock(reason: .keychainColdBoot, detail: "\(error)")
             } else {
-                Log.sm.debug("SKIP: no password")
+                AppLog.info(.unlock, "unlockSkip", [("reason", "noPassword")])
                 recordUnlock(reason: .noPassword)
             }
             m.stateMachine.transition(to: .active)
             return nil
         }
-        logDebug(component: "FUnManager", "tryUnlock() password fetched")
+        AppLog.info(.unlock, "passwordFetched")
 
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: m.state.screen)
-        logDebug(component: "FUnManager", "tryUnlock() isSecureToInject = \(secure), screen=\(m.state.screen)")
-        guard secure else { Log.sm.debug("SKIP: screen no longer secure for injection"); recordUnlock(reason: .notSecureForInjection); m.stateMachine.transition(to: .active); return nil }
+        AppLog.debug(.unlock, "secureToInjectCheck", [("secure", "\(secure)"), ("screen", "\(m.state.screen)")])
+        guard secure else { AppLog.info(.unlock, "unlockSkip", [("reason", "notSecureForInjection")]); recordUnlock(reason: .notSecureForInjection); m.stateMachine.transition(to: .active); return nil }
         return password
     }
 
@@ -157,17 +157,17 @@ final class UnlockOrchestrator {
         let sys = SystemInteractionService.shared
         let snap = m.fun.signalSnapshot()
         let injectStart = now
-        timingLog("performInjectionAndVerify | injecting password")
-        Log.sm.debug("typing password with Shift prelude")
+        timingLog("event=injectPasswordStart")
+        AppLog.debug(.unlock, "typePasswordPrelude")
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
-        logDebug(component: "FUnManager", "tryUnlock() calling injectPasswordWithPrelude")
+        AppLog.info(.unlock, "injectPasswordStart")
         let posted = await sys.injectPasswordWithPrelude(password) {
             m.state.screen != .unlocked
             && sys.isSecureToInject(screenState: m.state.screen)
         }
-        logDebug(component: "FUnManager", "tryUnlock() injectPasswordWithPrelude returned posted=\(posted)")
-        Log.sm.debug("fakeKeyStrokes done — posted=\(posted)")
+        AppLog.info(.unlock, "injectPasswordResult", [("posted", "\(posted)")])
+        AppLog.debug(.unlock, "fakeKeyStrokesDone", [("posted", "\(posted)")])
         guard posted else {
             // 注入失败，本次不算自动解锁，立即复位标记；状态回落 active，允许下次尝试
             isAutoUnlocking = false
@@ -181,17 +181,17 @@ final class UnlockOrchestrator {
                 consecutiveUnlockAttempts = 0
             } else if AXIsProcessTrusted() {
                 // 辅助功能权限依然有效：本次失败仅为瞬态竞态（如用户已手动解锁使屏幕脱离锁定态）
-                Log.sm.info("unlock injection aborted — screen state changed or user unlocked (AX permission intact)")
+                AppLog.info(.unlock, "injectionAborted", [("reason", "screenStateChangedOrUserUnlocked"), ("axIntact", "true")])
                 recordUnlock(.skipped, reason: nil, detail: "注入中止（用户手动解锁或屏幕已脱离锁定态）")
             } else {
                 // 辅助功能权限真实被撤销
-                Log.sm.error("WARN: CGEvent post failed — Accessibility permission revoked")
+                AppLog.error(.unlock, "cgEventPostFail", [("reason", "axRevoked")])
                 recordUnlock(.blocked, reason: .axRevoked, detail: "事件注入失败")
                 sys.showAXRevokedAlertIfNeeded(lastAlertTime: &lastAXRevokedAlertTime)
             }
             return
         }
-        Log.sm.debug("unlock attempt posted, waiting for dual verification")
+        AppLog.info(.unlock, "waitingDualVerification")
         // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
         // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
         // 验证任务挂入 unlockTask，cancelPendingTasks 可取消在途验证
@@ -199,12 +199,12 @@ final class UnlockOrchestrator {
             let sys = SystemInteractionService.shared
             let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
             guard let self else { return }
-            timingLog("verifyUnlock done | unlock=\(verification.unlock)")
+            timingLog("event=verifyUnlockDone unlock=\(verification.unlock)")
             // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
             defer { self.isAutoUnlocking = false }
             if verification.unlock {
                 // 通知或 CGSession 确认解锁成功
-                Log.sm.debug("dual verify: unlock confirmed")
+                AppLog.info(.unlock, "dualVerifyConfirmed")
                 // P1-2: 记录完成时间，供 isAutoUnlockingOrRecentlyCompleted 覆盖
                 // 慢速分布式通知先于 defer 复位到达的窗口
                 self.lastAutoUnlockSuccessTime = self.now
@@ -212,7 +212,7 @@ final class UnlockOrchestrator {
                 self.manager.state.unlockedAt = self.now
                 self.manager.lastUnlockTime = self.now
                 self.consecutiveUnlockAttempts = 0
-                logDebug(component: "FUnManager", "tryUnlock() - dual verify passed, counter reset")
+                AppLog.info(.unlock, "dualVerifyPassed", [("action", "counterReset")])
                 self.recordUnlock(.success, reason: .unlockSuccess)
                 iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: self.manager.monitoredDeviceName))
                 self.manager.resumeMediaIfNeeded()
@@ -229,7 +229,7 @@ final class UnlockOrchestrator {
                     injectTime: injectStart,
                     confirmTime: self.now
                 )
-                Log.sm.debug("unlock complete")
+                AppLog.info(.unlock, "unlockComplete")
                 // 状态机在 @MainActor 上串行更新（本 Task 已标注 @MainActor），无需再包 Task
                 self.manager.stateMachine.handleUnlockSuccess()
             } else {
@@ -244,7 +244,7 @@ final class UnlockOrchestrator {
                     }
                     self.consecutiveUnlockAttempts += 1
                     self.recordUnlockAttempt()
-                    Log.sm.debug("dual verify: still locked → #\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    AppLog.info(.unlock, "dualVerifyStillLocked", [("attempts", "\(self.consecutiveUnlockAttempts)"), ("maxAttempts", "\(self.maxUnlockAttempts)")])
                     TelemetryLogger.shared.log(
                         event: .autoUnlock, deviceModel: self.manager.monitoredDeviceName,
                         rawRSSI: self.manager.rssi ?? -100, kalmanRSSI: snap.kalmanEstimate,
@@ -256,10 +256,10 @@ final class UnlockOrchestrator {
                         confirmTime: nil
                     )
                     self.recordUnlock(.failed, reason: .unlockFailed, detail: "第 \(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts) 次尝试")
-                    logDebug(component: "FUnManager", "tryUnlock() - dual verify failed, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    AppLog.info(.unlock, "dualVerifyFailed", [("attempts", "\(self.consecutiveUnlockAttempts)"), ("maxAttempts", "\(self.maxUnlockAttempts)")])
                     self.manager.stateMachine.handleUnlockFailure()
                     ScriptRunner.shared.logEventIfNeeded("unlock_failed", rssi: self.manager.rssi, extraFields: self.unlockEventExtras(result: "fail"))
-                    logDebug(component: "FUnManager", "tryUnlock() - unlock_failed recorded, attempts=\(self.consecutiveUnlockAttempts)/\(self.maxUnlockAttempts)")
+                    AppLog.debug(.unlock, "unlockFailedRecorded", [("attempts", "\(self.consecutiveUnlockAttempts)"), ("maxAttempts", "\(self.maxUnlockAttempts)")])
                     if self.consecutiveUnlockAttempts >= self.maxUnlockAttempts {
                         self.recordUnlock(.blocked, reason: .passwordMismatch, detail: "失败次数过多")
                         sys.showPasswordMismatchAlert()
@@ -267,9 +267,9 @@ final class UnlockOrchestrator {
                     }
                 } else {
                     // CGSession 也显示已解锁（竞态下可能延迟发现）
-                    Log.sm.debug("dual verify: timeout but CGSession says unlocked")
+                    AppLog.info(.unlock, "dualVerifyTimeoutCGSessionUnlocked")
                     self.consecutiveUnlockAttempts = 0
-                    logDebug(component: "FUnManager", "tryUnlock() - dual verify timeout but screen unlocked, counter reset")
+                    AppLog.info(.unlock, "dualVerifyTimeoutScreenUnlocked", [("action", "counterReset")])
                     self.manager.stateMachine.handleUnlockSuccess()
                 }
             }

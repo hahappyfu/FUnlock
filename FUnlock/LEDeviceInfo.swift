@@ -16,13 +16,13 @@ private func connect() {
     if inited { return }
 
     if sqlite3_open("/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.paired.db", &db_paired) == SQLITE_OK {
-        Log.dev.debug("paired.db open success")
+        AppLog.debug(.app, "dbOpenSuccess", [("db", "paired.db")])
     } else {
         db_paired = nil
     }
 
     if sqlite3_open("/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.other.db", &db_other) == SQLITE_OK {
-        Log.dev.debug("other.db open success")
+        AppLog.debug(.app, "dbOpenSuccess", [("db", "other.db")])
     } else {
         db_other = nil
     }
@@ -47,7 +47,7 @@ private func getPairedDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_paired else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address, ResolvedAddress FROM PairedDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        Log.dev.error("failed to prepare PairedDevices: \(String(cString: sqlite3_errmsg(db)))")
+        AppLog.error(.app, "dbPrepareFailed", [("table", "PairedDevices"), ("error", String(cString: sqlite3_errmsg(db)))])
         return nil
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏
@@ -74,7 +74,7 @@ private func getOtherDeviceFromUUID(_ uuid: String) -> LEDeviceInfo? {
     guard let db = db_other else { return nil }
     var stmt: OpaquePointer?
     if sqlite3_prepare(db, "SELECT Name, Address FROM OtherDevices where Uuid=?", -1, &stmt, nil) != SQLITE_OK {
-        Log.dev.error("failed to prepare OtherDevices: \(String(cString: sqlite3_errmsg(db)))")
+        AppLog.error(.app, "dbPrepareFailed", [("table", "OtherDevices"), ("error", String(cString: sqlite3_errmsg(db)))])
         return nil
     }
     // prepare 成功后 stmt 已有效，defer 保证所有正常返回路径都释放 statement，避免泄漏

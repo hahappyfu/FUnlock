@@ -177,7 +177,7 @@ final class FUnManager {
 
     /// 被动扫描模式写路径唯一入口（设置页不再直写 FUn）：转发并记录切换
     func setPassiveMode(_ mode: Bool) {
-        Log.sm.info("[SM] passiveMode=\(mode)")
+        AppLog.info(.sm, "setPassiveMode", [("enabled", "\(mode)")])
         fun.setPassiveMode(mode)
     }
 

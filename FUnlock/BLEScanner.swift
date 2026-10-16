@@ -77,7 +77,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         self.host = host
         super.init()
         let btAuth = CBManager.authorization
-        logDebug(component: "FUn", "[DIAG] FUn.init() - CBCentralManager initializing, bluetooth authorization=\(btAuth.rawValue)")
+        AppLog.info(.ble, "initCBCentralManager", [("btAuth", "\(btAuth.rawValue)")])
         handler = BLEPeripheralHandler(lock: lock, scanner: self)
         centralMgr = CBCentralManager(delegate: self, queue: queue)
     }
@@ -216,20 +216,20 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        logDebug(component: "FUn", "[DIAG] centralManagerDidUpdateState - state=\(central.state.rawValue), authorization=\(CBManager.authorization.rawValue)")
+        AppLog.info(.ble, "centralStateUpdate", [("state", "\(central.state.rawValue)"), ("authorization", "\(CBManager.authorization.rawValue)")])
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: NSNotification.Name("com.funlock.bluetoothStateChanged"), object: nil)
         }
         switch central.state {
         case .poweredOn:
-            Log.ble.debug("Bluetooth powered on")
+            AppLog.info(.ble, "bluetoothPoweredOn")
             // activeModeTimer 锁内快照（修复锁外读 vs 锁内写竞态）
             if lock.withLock({ handler.activeModeTimer == nil }) {
                 scanForPeripherals()
             }
             host?.scannerDidPowerOn(self)
         case .poweredOff:
-            Log.ble.debug("Bluetooth powered off")
+            AppLog.info(.ble, "bluetoothPoweredOff")
             // 宿主负责：取消全部计时器、清在场态、按需派发电源告警
             host?.scannerDidPowerOff(self)
         default:
@@ -249,7 +249,13 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         let monitorInfo: (monitoredUUID: UUID?, isInList: Bool, uuidCount: Int, scanMode: Bool) = lock.withLock {
             (monitoredUUID, monitoredUUIDs.contains(peripheral.identifier), monitoredUUIDs.count, scanMode)
         }
-        throttledBleLog("didDiscover", interval: 1.0, "[DEBUG] didDiscover \(peripheral.name ?? "unknown") rssi=\(rssi) inList=\(monitorInfo.isInList) monitoredUUID=\(monitorInfo.monitoredUUID != nil ? "set" : "nil") uuidCount=\(monitorInfo.uuidCount)")
+        throttledBleLog("didDiscover", interval: 1.0, "didDiscover", [
+            ("name", peripheral.name ?? "unknown"),
+            ("rssi", "\(rssi)"),
+            ("inList", "\(monitorInfo.isInList)"),
+            ("monitoredUUID", monitorInfo.monitoredUUID != nil ? "set" : "nil"),
+            ("uuidCount", "\(monitorInfo.uuidCount)"),
+        ])
         let scanTimerTimeout = host?.scannerDeviceScanTimeout(self) ?? Self.defaultDeviceScanTimeout
 
         // 监控设备分支：上报宿主并确保连接（见 BLEPeripheralHandler）
