@@ -176,6 +176,9 @@ final class UnlockOrchestrator {
                 // 显示器未处于就绪状态，安全早退防止盲打
                 Log.sm.info("unlock injection aborted — display asleep (aborted to avoid blind typing)")
                 recordUnlock(.skipped, reason: .displaySleeping, detail: "注入中止（显示器休眠未点亮，已拦截盲打）")
+                // 密码事件从未投递，本次失败与密码是否正确无关，不计入连续失败次数
+                // （2026-10-16 误报根因：熄灭屏幕上的注入口必然失败，累加 3 次即弹出「密码可能已更改」）
+                consecutiveUnlockAttempts = 0
             } else if AXIsProcessTrusted() {
                 // 辅助功能权限依然有效：本次失败仅为瞬态竞态（如用户已手动解锁使屏幕脱离锁定态）
                 Log.sm.info("unlock injection aborted — screen state changed or user unlocked (AX permission intact)")

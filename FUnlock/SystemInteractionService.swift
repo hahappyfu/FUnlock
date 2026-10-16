@@ -26,6 +26,10 @@ final class SystemInteractionService: Sendable {
     static let shared = SystemInteractionService()
     private init() {}
 
+    /// 显示器是否点亮。默认读真实硬件（CGDisplayIsAsleep + IODisplayWrangler）；
+    /// 测试可注入以在无物理休眠的条件下验证注入门控。
+    nonisolated(unsafe) static var displayPoweredOnProvider: (() -> Bool)?
+
     /// 同时写 ~/Library/Logs/FUnlock/debug.log（logDebug）与 os.log（Log.sm.debug）
     private func logBoth(_ component: String, _ osMsg: String, fileMsg: String? = nil) {
         let fm = fileMsg ?? osMsg.replacingOccurrences(of: "PASSWORD: ", with: "")
@@ -84,6 +88,7 @@ final class SystemInteractionService: Sendable {
     /// 优先用 CoreGraphics 公共 API CGDisplayIsAsleep；IOKit IOEnginePower 在
     /// Apple Silicon 上不存在（日志打印 not found），仅作后备检查。
     func isDisplayPoweredOn() -> Bool {
+        if let provider = Self.displayPoweredOnProvider { return provider() }
         if CGDisplayIsAsleep(CGMainDisplayID()) != 0 {
             logDebug(component: "SystemInteraction", "isDisplayPoweredOn: CGDisplayIsAsleep == true")
             return false
@@ -362,16 +367,13 @@ final class SystemInteractionService: Sendable {
                     break
                 }
             }
-            if isDisplayPoweredOn() {
-                logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: display ready after \(waitedMs)ms")
-            } else {
-                logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: wait timed out after \(waitedMs)ms, display not ready")
-            }
+            logDebug(component: "SystemInteraction", "injectPasswordWithPrelude: display ready after \(waitedMs)ms")
         } else {
             logBoth("SystemInteraction", "PASSWORD: Shift prelude failed, proceeding without delay", fileMsg: "injectPasswordWithPrelude: Shift failed, proceeding without delay")
         }
 
-        // 关键门控：显示器若仍处于休眠未点亮状态，绝不盲打注入密码，防止按键丢失并触发改密误报
+        // 关键门控：显示器若仍处于休眠未点亮状态，绝不盲打注入密码，
+        // 防止按键丢失并触发改密误报（2026-10-16 误报根因：唤醒失败后仍继续注入）
         guard isDisplayPoweredOn() else {
             logBoth("SystemInteraction", "PASSWORD: display still asleep after \(waitedMs)ms wait, aborting injection", fileMsg: "injectPasswordWithPrelude: display still asleep after \(waitedMs)ms, aborting injection")
             return false

@@ -539,21 +539,32 @@ class DisplaySleepInjectionProtectionTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        SystemInteractionService.displayPoweredOnProvider = nil
         manager.orchestrator.cancelPendingTasks()
         try await super.tearDown()
     }
 
-    /// 显示器休眠导致验证未通过时，不得累加密码失败计数（防止误触发改密报警）
-    func testDisplayAsleepVerificationFailureDoesNotIncrementPasswordFailureCount() async {
+    /// 显示器始终未点亮（唤醒失败）时，injectPasswordWithPrelude 必须拒绝注入。
+    /// 回归护栏：2026-10-16 误报根因是唤醒失败后仍继续注入，密码打在熄灭的屏幕上必然失败，
+    /// 连续 3 次即弹出「密码可能已更改」。
+    func testInjectionAbortsWhenDisplayNeverPowersOn() async {
+        SystemInteractionService.displayPoweredOnProvider = { false }
+        let sut = SystemInteractionService.shared
+        let posted = await sut.injectPasswordWithPrelude("test-password") { true }
+        XCTAssertFalse(posted, "显示器始终未点亮时必须中止注入，禁止盲打")
+    }
+
+    /// 显示器休眠导致注入中止时，不得累加密码失败计数（防止误触发改密告警）
+    func testDisplayAsleepInjectionAbortDoesNotIncrementPasswordFailureCount() async {
         guard let orchestrator = manager.orchestrator else {
             XCTFail("orchestrator 不应为 nil")
             return
         }
         XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0)
 
-        // 模拟执行 performInjectionAndVerify 时屏幕未点亮
-        // 当 posted = false（因 isDisplayPoweredOn = false 中止）
-        // 验证 orchestrator consecutiveUnlockAttempts 依然保持为 0
+        SystemInteractionService.displayPoweredOnProvider = { false }
+        await orchestrator.performInjectionAndVerify(password: "test-password")
+
         XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0, "显示器休眠中止注入时不应累加连续失败次数")
     }
 
