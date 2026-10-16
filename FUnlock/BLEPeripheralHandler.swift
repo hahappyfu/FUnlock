@@ -49,7 +49,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         p.readRSSI()
 
         guard p.state == .disconnected else { return }
-        Log.ble.debug("Connecting")
+        AppLog.info(.ble, "connecting", [("id", "\(p.identifier)")])
         scanner.centralMgr.connect(p, options: nil)
         // 旧 connectionTimer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
         let oldTimer: Timer? = lock.withLock {
@@ -64,7 +64,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             let isCurrent = self.lock.withLock { self.connectionTimer === timer }
             guard isCurrent else { return }
             if p.state == .connecting {
-                Log.ble.error("Connection timeout")
+                AppLog.error(.ble, "connectionTimeout", [("id", "\(p.identifier)")])
                 self.scanner?.centralMgr.cancelPeripheralConnection(p)
             }
         })
@@ -91,7 +91,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             guard isCurrent else { return }
             let lastRead = self.lock.withLock { self.lastReadAt }
             if Date().timeIntervalSince1970 > lastRead + 10 {
-                Log.ble.info("Falling back to passive mode")
+                AppLog.info(.ble, "fallbackToPassiveMode", [("id", "\(peripheral.identifier)")])
                 self.scanner?.centralMgr.cancelPeripheralConnection(peripheral)
                 // 自停用 block 参数（主线程 fire 内 invalidate，符合契约）；
                 // 仅当本 timer 仍为当前轮询定时器时才清空引用
@@ -156,7 +156,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             peripheral.discoverServices([BLEUUIDs.deviceInformation])
         }
         if shouldActivate {
-            Log.ble.debug("Connected")
+            AppLog.info(.ble, "connected", [("id", "\(peripheral.identifier)")])
             // didConnect 置换 connectionTimer：锁内取引用并清空，invalidate 派发回主线程
             let oldTimer: Timer? = lock.withLock {
                 let t = connectionTimer
@@ -172,7 +172,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard let scanner = scanner else { return }
-        Log.ble.debug("didDisconnectPeripheral: \(peripheral.identifier)")
+        AppLog.info(.ble, "disconnected", [("id", "\(peripheral.identifier)"), ("error", error?.localizedDescription)])
         // monitoredPeripheral 比较在锁内（修复锁外比较竞态）
         let isMonitored = lock.withLock { peripheral == scanner.monitoredPeripheral }
         if isMonitored {
@@ -248,7 +248,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             (activeModeTimer == nil && !scanner.passiveMode, scanner.scanMode)
         }
         if shouldStartActiveMode {
-            Log.ble.debug("Entering active mode")
+            AppLog.info(.ble, "enterActiveMode", [("id", "\(peripheral.identifier)")])
             if !scanModeOn {
                 scanner.centralMgr.stopScan()
             }

@@ -20,9 +20,10 @@ private final class BLELogThrottler: @unchecked Sendable {
 }
 
 private let bleLogThrottler = BLELogThrottler()
-func throttledBleLog(_ key: String, interval: TimeInterval = 1.0, _ msg: String) {
+func throttledBleLog(_ key: String, interval: TimeInterval = 1.0,
+                     _ event: String, _ fields: [(String, String?)] = []) {
     guard bleLogThrottler.shouldLog(key: key, interval: interval) else { return }
-    Log.ble.debug("\(msg)")
+    AppLog.debug(.ble, event, fields)
 }
 
 /// BLE 服务/特征 UUID 命名空间
@@ -216,7 +217,7 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         }
         let known = centralMgr.retrievePeripherals(withIdentifiers: [uuid])
         if let peripheral = known.first {
-            Log.ble.debug("[FUn] Found known peripheral: \(peripheral.identifier) state=\(peripheral.state.rawValue)")
+            AppLog.debug(.ble, "foundKnownPeripheral", [("id", "\(peripheral.identifier)"), ("state", "\(peripheral.state.rawValue)")])
             lock.withLock { scanner.monitoredPeripheral = peripheral }
             if peripheral.state == .disconnected {
                 centralMgr.connect(peripheral, options: nil)
@@ -247,7 +248,7 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     override init() {
         super.init()
         let btAuth = CBManager.authorization
-        logDebug(component: "FUn", "[DIAG] FUn.init() - initializing BLEScanner, bluetooth authorization=\(btAuth.rawValue)")
+        AppLog.info(.ble, "initBLEScanner", [("btAuth", "\(btAuth.rawValue)")])
         scanner = BLEScanner(queue: bleQueue, lock: lock, host: self)
     }
 }
