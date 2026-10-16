@@ -36,7 +36,7 @@ struct BasicSettingsView: View {
                             do {
                                 if v { try SMAppService.mainApp.register() }
                                 else { try SMAppService.mainApp.unregister() }
-                            } catch { Log.sm.error("SMAppService error: \(error)") }
+                            } catch { AppLog.error(.app, "smAppServiceFailed", [("error", "\(error)")]) }
                         }
                     }
                 }

@@ -234,7 +234,7 @@ final class DecisionLogger {
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         } catch {
-            Log.sm.error("DecisionLogger createDirectory failed: \(error.localizedDescription)")
+            AppLog.error(.app, "decisionLoggerCreateDirectoryFailed", [("error", error.localizedDescription)])
         }
         appendLine(event, to: url)
 
@@ -249,7 +249,7 @@ final class DecisionLogger {
                 }
             }
         } catch {
-            Log.sm.error("DecisionLogger rotate failed: \(error.localizedDescription)")
+            AppLog.error(.app, "decisionLoggerRotateFailed", [("error", error.localizedDescription)])
         }
     }
 
@@ -257,7 +257,7 @@ final class DecisionLogger {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         guard var data = try? encoder.encode(event) else {
-            Log.sm.error("DecisionLogger encode failed for event id=\(event.id)")
+            AppLog.error(.app, "decisionLoggerEncodeFailed", [("id", "\(event.id)")])
             return
         }
         data.append(0x0A)
@@ -271,7 +271,7 @@ final class DecisionLogger {
                 try data.write(to: url)
             }
         } catch {
-            Log.sm.error("DecisionLogger append failed: \(error.localizedDescription)")
+            AppLog.error(.app, "decisionLoggerAppendFailed", [("error", error.localizedDescription)])
         }
     }
 
