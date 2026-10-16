@@ -174,7 +174,7 @@ final class UnlockOrchestrator {
             m.stateMachine.transition(to: .active)
             if !sys.isDisplayPoweredOn() {
                 // 显示器未处于就绪状态，安全早退防止盲打
-                Log.sm.info("unlock injection aborted — display asleep (aborted to avoid blind typing)")
+                AppLog.info(.unlock, "unlockInjectionAborted", [("reason", "displayAsleep"), ("detail", "避免盲打")])
                 recordUnlock(.skipped, reason: .displaySleeping, detail: "注入中止（显示器休眠未点亮，已拦截盲打）")
                 // 密码事件从未投递，本次失败与密码是否正确无关，不计入连续失败次数
                 // （2026-10-16 误报根因：熄灭屏幕上的注入口必然失败，累加 3 次即弹出「密码可能已更改」）
@@ -237,7 +237,7 @@ final class UnlockOrchestrator {
                 if sys.isScreenLocked(screenState: self.manager.state.screen) {
                     guard sys.isDisplayPoweredOn() else {
                         // 显示器非点亮状态，解锁未成功属硬件/显示休眠问题，不可归咎为密码错误
-                        Log.sm.info("unlock verify failed while display asleep — skipping password failure counter")
+                        AppLog.info(.unlock, "unlockVerifySkipped", [("reason", "displayAsleep"), ("detail", "不计入密码失败")])
                         self.recordUnlock(.skipped, reason: .displaySleeping, detail: "解锁验证未通过（显示器未处于唤醒状态，不计入密码失败）")
                         self.manager.stateMachine.transition(to: .active)
                         return
