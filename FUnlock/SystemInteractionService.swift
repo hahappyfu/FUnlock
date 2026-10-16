@@ -150,21 +150,21 @@ final class SystemInteractionService: Sendable {
         AppLog.info(.unlock, "keystrokeLevelTry", [("level", "1"), ("tap", "cgSessionEventTap"), ("vk", "0")])
         if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
             AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "1")])
-            timingLog("keystrokeLevel1=SUCCESS")
+            timingLog("event=keystrokeLevelSuccess level=1")
             return true
         }
         AppLog.info(.unlock, "keystrokeLevelFailed", [("level", "1"), ("next", "2")])
-        timingLog("keystrokeLevel1=FAIL")
+        timingLog("event=keystrokeLevelFailed level=1")
 
         // 尝试第2级：cghidEventTap + virtualKey 0
         AppLog.info(.unlock, "keystrokeLevelTry", [("level", "2"), ("tap", "cghidEventTap"), ("vk", "0")])
         if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
             AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "2")])
-            timingLog("keystrokeLevel2=SUCCESS")
+            timingLog("event=keystrokeLevelSuccess level=2")
             return true
         }
         AppLog.info(.unlock, "keystrokeLevelFailed", [("level", "2"), ("next", "3")])
-        timingLog("keystrokeLevel2=FAIL")
+        timingLog("event=keystrokeLevelFailed level=2")
 
         // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
         guard string.canBeConverted(to: .ascii) else {
@@ -175,10 +175,10 @@ final class SystemInteractionService: Sendable {
         let result = injectWithAppleScript(string, isSecureCheck: isSecureCheck)
         if result {
             AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "3")])
-            timingLog("keystrokeLevel3=SUCCESS")
+            timingLog("event=keystrokeLevelSuccess level=3")
         } else {
             AppLog.error(.unlock, "keystrokeLevelFailed", [("level", "3"), ("exhausted", "true")])
-            timingLog("keystrokeLevel3=FAIL")
+            timingLog("event=keystrokeLevelFailed level=3")
         }
         AppLog.debug(.unlock, "keystrokeInjectionEnd", [("result", "\(result)")])
         return result

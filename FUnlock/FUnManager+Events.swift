@@ -200,7 +200,7 @@ extension FUnManager {
             ("stair", "\(fun.unlockStairThreshold)"),
             ("wakeOnProximity", "\(prefs.bool(forKey: "wakeOnProximity"))")
         ])
-        timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
+        timingLog("event=deviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
 
         // 清除锁屏通知
         SystemInteractionService.shared.clearLockNotification()

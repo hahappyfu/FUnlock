@@ -102,7 +102,7 @@ final class UnlockOrchestrator {
     /// 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
     func tryUnlock() async {
-        timingLog("tryUnlock enter")
+        timingLog("event=tryUnlockEnter")
         guard let password = guardFetchPassword() else { return }
         await performInjectionAndVerify(password: password)
     }
@@ -112,7 +112,7 @@ final class UnlockOrchestrator {
         let m = manager
         let sys = SystemInteractionService.shared
         let locked = sys.isScreenLocked(screenState: m.state.screen)
-        timingLog("guardFetchPassword | locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
+        timingLog("event=guardFetchPassword locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
         AppLog.info(.unlock, "unlockStart", [("screen", "\(m.state.screen)"), ("locked", "\(locked)")])
         AppLog.debug(.unlock, "screenLockedCheck", [("locked", "\(locked)")])
         guard locked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenNotLocked")]); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
@@ -157,7 +157,7 @@ final class UnlockOrchestrator {
         let sys = SystemInteractionService.shared
         let snap = m.fun.signalSnapshot()
         let injectStart = now
-        timingLog("performInjectionAndVerify | injecting password")
+        timingLog("event=injectPasswordStart")
         AppLog.debug(.unlock, "typePasswordPrelude")
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
@@ -192,7 +192,7 @@ final class UnlockOrchestrator {
             let sys = SystemInteractionService.shared
             let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
             guard let self else { return }
-            timingLog("verifyUnlock done | unlock=\(verification.unlock)")
+            timingLog("event=verifyUnlockDone unlock=\(verification.unlock)")
             // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
             defer { self.isAutoUnlocking = false }
             if verification.unlock {
