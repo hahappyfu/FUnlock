@@ -17,18 +17,14 @@ extension FUnManager {
     // MARK: - 系统事件入口
 
     func onDisplaySleep() {
-        Log.sm.debug("[SM] displaySleep")
+        AppLog.info(.sm, "displaySleep", [("screen", "\(self.state.screen)")])
         recordSystem(.displaySleep)
-        Log.sm.debug("EVENT: onDisplaySleep screen=\(self.state.screen) system=\(self.state.system)")
-        logDebug(component: "BLE", "[BLE] displaySleep — screen=\(self.state.screen)")
         state.screen = .displaySleeping
     }
 
     func onDisplayWake() {
-        Log.sm.debug("[SM] displayWake")
+        AppLog.info(.sm, "displayWake", [("screen", "\(self.state.screen)")])
         recordSystem(.displayWake)
-        Log.sm.debug("EVENT: onDisplayWake screen=\(self.state.screen) system=\(self.state.system)")
-        logDebug(component: "BLE", "[BLE] displayWake — screen=\(self.state.screen)")
         // 审计修复 #4/#10：必须在 cancelWakeRetry 复位 displayWakeRequested 之前捕获——
         // true 表示本次唤醒由 FUn 预唤醒（startWakeRetry）发起，属程序自唤醒而非用户手动唤醒
         let isSelfWake = orchestrator.displayWakeRequested
@@ -53,7 +49,7 @@ extension FUnManager {
     }
 
     func onSystemSleep() {
-        Log.sm.debug("[SM] systemSleep")
+        AppLog.info(.sm, "systemSleep")
         recordSystem(.systemSleep)
         state.system = .sleeping
         // 休眠期间临时转 regular：睡眠/唤醒窗口内可能需要弹出交互窗（改密确认、更新安装确认），
@@ -62,7 +58,7 @@ extension FUnManager {
     }
 
     func onSystemWake() {
-        Log.sm.debug("[SM] systemWake")
+        AppLog.info(.sm, "systemWake")
         recordSystem(.systemWake)
         // 延迟等待蓝牙栈恢复（默认 1s，测试注入更小值）
         let delay = systemWakeDelay
@@ -82,13 +78,13 @@ extension FUnManager {
     /// 审计修复 #4/#10：现仅由 onDisplayWake 的"用户手动唤醒"分支调用（原 AppDelegate
     /// 独立 screensDidWake 观察者已合并），程序自唤醒不会再触发本方法
     func onUserIntervention() {
-        Log.sm.debug("[SM] userIntervention — force reset to active")
+        AppLog.info(.sm, "userIntervention", [("action", "forceResetToActive")])
         stateMachine.resetToActive(clearFailures: false)
         orchestrator.cancelPendingTasks()
     }
 
     func onUnlock() {
-        Log.sm.debug("[SM] userUnlocked")
+        AppLog.info(.sm, "userUnlocked")
         state.screen = .unlocked
         state.unlockedAt = Date()
         state.intent = .autoLock
@@ -140,7 +136,7 @@ extension FUnManager {
     }
 
     func onScreensaverStart() {
-        Log.sm.debug("[SM] screensaverStart")
+        AppLog.info(.sm, "screensaverStart")
         // 审计修复 #1：手动启动屏保（热角等）等同手动锁定——只改 screen 不设 intent 时，
         // 屏保结束后设备靠近仍会自动解锁。与 onSystemScreenLocked 的手动锁分支同语义；
         // isSelfLocking（FUnlock 自锁走屏保路径）时不标记，消费逻辑见 onSystemScreenLocked
@@ -151,7 +147,7 @@ extension FUnManager {
     }
 
     func onScreensaverStop() {
-        Log.sm.debug("[SM] screensaverStop")
+        AppLog.info(.sm, "screensaverStop")
         if state.screen == .screensaver {
             state.screen = .locked(reason: .manual)
             state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
@@ -161,7 +157,7 @@ extension FUnManager {
     /// 系统原生锁屏通知（Apple 菜单 → Lock Screen，或快捷键）
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
-        Log.sm.debug("[SM] systemScreenLocked")
+        AppLog.info(.sm, "systemScreenLocked")
         // 审计修复 #2a：isSelfLocking 置位超过 10s 视为过期——
         // com.apple.screenIsLocked 通知丢失时标志残留，会把用户下一次手动锁屏误判为自动锁屏
         let selfLockingExpired: Bool
@@ -197,7 +193,13 @@ extension FUnManager {
         guard enabled else { return }
         guard fun.unlockRSSI != FUn.UNLOCK_DISABLED else { return }
         let smoothed = snap.effectiveRSSI
-        lockLog("[LOCK] onDeviceApproached screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProximity=\(prefs.bool(forKey: "wakeOnProximity"))")
+        AppLog.info(.lock, "deviceApproached", [
+            ("screen", "\(state.screen)"),
+            ("eff", String(format: "%.1f", smoothed)),
+            ("preWake", "\(fun.preWakeThreshold)"),
+            ("stair", "\(fun.unlockStairThreshold)"),
+            ("wakeOnProximity", "\(prefs.bool(forKey: "wakeOnProximity"))")
+        ])
         timingLog("onDeviceApproached | screen=\(state.screen) eff=\(String(format: "%.1f", smoothed)) preWake=\(fun.preWakeThreshold) stair=\(fun.unlockStairThreshold) wakeOnProx=\(prefs.bool(forKey: "wakeOnProximity"))")
 
         // 清除锁屏通知
@@ -224,14 +226,21 @@ extension FUnManager {
         let enabled = ConfigStore.shared.bool(forKey: "enabled", default: true)
         let screenState = state.screen
         let lockDisabled = fun.lockRSSI == FUn.LOCK_DISABLED
-        lockLog("[LOCK] onDeviceLeft reason=\(reason) enabled=\(enabled) screen=\(screenState) lockRSSI=\(fun.lockRSSI) lockDisabled=\(lockDisabled) eff=\(String(format: "%.1f", snap.effectiveRSSI))")
-        guard enabled else { lockLog("[LOCK] onDeviceLeft blocked: enabled=false"); return }
-        guard screenState == .unlocked else { lockLog("[LOCK] onDeviceLeft blocked: screen=\(screenState) != unlocked"); return }
-        guard !lockDisabled else { lockLog("[LOCK] onDeviceLeft blocked: lock disabled"); return }
+        AppLog.info(.lock, "deviceLeft", [
+            ("reason", reason),
+            ("enabled", "\(enabled)"),
+            ("screen", "\(screenState)"),
+            ("lockRSSI", "\(fun.lockRSSI)"),
+            ("lockDisabled", "\(lockDisabled)"),
+            ("eff", String(format: "%.1f", snap.effectiveRSSI))
+        ])
+        guard enabled else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "enabledFalse")]); return }
+        guard screenState == .unlocked else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "screenNotUnlocked"), ("screen", "\(screenState)")]); return }
+        guard !lockDisabled else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "lockDisabled")]); return }
         // 锁冷静期：解锁成功后短时间内（proximityGracePeriod=5s）信号再弱也不锁，
         // 覆盖 lost 快速锁屏路径（3 次 BLE 超时 → markSignalLost），防止刚解锁又秒锁
         guard !fun.isWithinLockGracePeriod() else {
-            lockLog("[LOCK] onDeviceLeft blocked: within unlock grace period")
+            AppLog.info(.lock, "deviceLeftBlocked", [("reason", "withinUnlockGracePeriod")])
             return
         }
 
@@ -275,7 +284,7 @@ extension FUnManager {
             let screensaverRunning = !NSRunningApplication.runningApplications(
                 withBundleIdentifier: "com.apple.ScreenSaver.Engine").isEmpty
             if !sessionLocked && !screensaverRunning {
-                Log.sm.error("[SM] lock verify failed: session not locked 2s after lock call, rolling back")
+                AppLog.error(.lock, "lockVerifyFailed", [("action", "rollbackToUnlocked")])
                 self.state.screen = .unlocked
                 self.isSelfLocking = false
                 selfLockingStartedAt = nil
@@ -296,7 +305,7 @@ extension FUnManager {
             let smoothed = fun.currentSmoothedRSSI
             if smoothed >= Double(fun.preWakeThreshold) {
                 orchestrator.displayWakeRequested = true
-                Log.sm.debug("[SM] pre-wake triggered at smoothed RSSI \(String(format: "%.1f", smoothed))")
+                AppLog.info(.sm, "preWakeTriggered", [("smoothedRSSI", String(format: "%.1f", smoothed))])
                 orchestrator.startWakeRetry()
             }
         }

@@ -140,7 +140,7 @@ extension FUn {
                     }
                     self.markSignalLost()
                 } else {
-                    Log.sm.debug("Signal timeout \(self.lock.withLock { self.signalLostCount })/3, waiting...")
+                    AppLog.debug(.lock, "signalTimeoutWaiting", [("count", "\(self.lock.withLock { self.signalLostCount })"), ("max", "3")])
                 }
             })
             signalTimer = timer
@@ -163,7 +163,7 @@ extension FUn {
             }
             return was
         }
-        Log.sm.debug("Device is lost (3 consecutive timeouts)")
+        AppLog.info(.lock, "deviceLost", [("reason", "consecutiveTimeouts"), ("count", "3")])
         Task { @MainActor [weak self] in
             self?.delegate?.updateRSSI(rssi: nil, active: false)
         }
@@ -250,7 +250,7 @@ extension FUn {
             // 平稳在场期每 60s 补一条摘要，避免 debug.log 被稳定态心跳刷爆
             let nearThreshold = eff < threshold + 10
             if heartbeatLogGate.shouldLog(nearThreshold: nearThreshold, hasTimer: hasTimer, inputActive: inputActive) {
-                lockLog("[LOCK] heartbeat eff=\(String(format: "%.1f", eff)) threshold=\(Int(threshold)) hasTimer=\(hasTimer) graceElapsed=\(String(format: "%.1f", graceElapsed)) inputActive=\(inputActive)")
+                AppLog.debug(.lock, "heartbeat", [("eff", String(format: "%.1f", eff)), ("threshold", "\(Int(threshold))"), ("hasTimer", "\(hasTimer)"), ("graceElapsed", String(format: "%.1f", graceElapsed)), ("inputActive", "\(inputActive)")])
             }
             if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
                 if inputActive {
@@ -260,7 +260,7 @@ extension FUn {
                         self.pipeline.decayBaseline = Date()
                     }
                 } else {
-                    Log.sm.debug("[HB] effectiveRSSI=\(Int(eff)) < threshold=\(Int(threshold)), starting lock timer")
+                    AppLog.info(.lock, "heartbeatLockTimerStart", [("effectiveRSSI", "\(Int(eff))"), ("threshold", "\(Int(threshold))")])
                     self.startLockTimer()
                 }
             }
@@ -270,7 +270,7 @@ extension FUn {
             let rebuild: (newTimer: Timer, oldTimer: Timer?)? = self.lock.withLock {
                 let lastInterval = self.lastHeartbeatInterval
                 guard abs(newInterval - lastInterval) > 0.5 else { return nil }
-                Log.sm.debug("[HB] interval \(lastInterval)s → \(newInterval)s")
+                AppLog.debug(.lock, "heartbeatIntervalChange", [("from", "\(lastInterval)s"), ("to", "\(newInterval)s")])
                 let newTimer = self.makeHeartbeatTimer(interval: newInterval)
                 let oldTimer = self.heartbeatTimer
                 self.lastHeartbeatInterval = newInterval
@@ -332,9 +332,9 @@ extension FUn {
             let (uRSSI, lRSSI) = self.lock.withLock { (self._unlockRSSI, self._lockRSSI) }
             let nowThreshold = Double(SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: uRSSI, lockRSSI: lRSSI))
             let nowPresence = self.lock.withLock { self.presence }
-            lockLog("[LOCK] timer FIRED eff=\(String(format: "%.1f", nowEff)) threshold=\(Int(nowThreshold)) presence=\(nowPresence) lockOnIdle=\(lockOnIdle) inputActive=\(self.isUserInputActive) effAboveThreshold=\(nowEff >= nowThreshold)")
+            AppLog.info(.lock, "lockTimerFired", [("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))"), ("presence", "\(nowPresence)"), ("lockOnIdle", "\(lockOnIdle)"), ("inputActive", "\(self.isUserInputActive)"), ("effAboveThreshold", "\(nowEff >= nowThreshold)")])
             if nowEff >= nowThreshold {
-                lockLog("[LOCK] timer fired but signal recovered (eff=\(String(format: "%.1f", nowEff)) >= threshold=\(Int(nowThreshold))), skipping lock")
+                AppLog.info(.lock, "lockTimerSkipped", [("reason", "signalRecovered"), ("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))")])
                 // 身份校验：仅清空仍是当前锁屏 timer 的引用（防过期 fire 误清新 timer）
                 self.lock.withLock {
                     if self.proximityTimer === timer { self.proximityTimer = nil }
@@ -342,8 +342,7 @@ extension FUn {
                 return
             }
             if lockOnIdle && self.isUserInputActive {
-                lockLog("[LOCK] timer fired but input active, deferring lock")
-                Log.sm.debug("[SM] input active at lock timer fire, deferring")
+                AppLog.info(.lock, "lockTimerDeferred", [("reason", "inputActive")])
                 self.lock.withLock {
                     if self.proximityTimer === timer { self.proximityTimer = nil }
                     self.lastReceiveTime = Date()
@@ -352,13 +351,13 @@ extension FUn {
                 return
             }
             if self.isWithinLockGracePeriod() {
-                lockLog("[LOCK] timer fired but within unlock grace period, skipping lock")
+                AppLog.info(.lock, "lockTimerSkipped", [("reason", "withinUnlockGracePeriod")])
                 self.lock.withLock {
                     if self.proximityTimer === timer { self.proximityTimer = nil }
                 }
                 return
             }
-            Log.sm.debug("Device is away")
+            AppLog.info(.lock, "deviceAway")
             // P1: 记录锁定事件
             SignalDataStore.shared.record(
                 rawRSSI: -100, kalmanEstimate: -100,
@@ -403,35 +402,33 @@ extension FUn {
             if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }
         } else {
             let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
-            lockLog("[LOCK] applyLockTimer eff=\(String(format: "%.1f", effectiveRSSI)) threshold=\(Int(threshold)) presence=\(curPresence) hasTimer=\(curTimer != nil)")
+            AppLog.debug(.lock, "applyLockTimer", [("eff", String(format: "%.1f", effectiveRSSI)), ("threshold", "\(Int(threshold))"), ("presence", "\(curPresence)"), ("hasTimer", "\(curTimer != nil)")])
             if curPresence && curTimer == nil {
                 // 冷静期：刚解锁后不立即触发锁定，防止 effectiveRSSI 衰减导致振荡
                 // （lastProximityEventTime 锁内读，修复锁外读 vs 锁内写竞态）
                 let lastUnlock = lock.withLock { lastProximityEventTime }
                 let now = Date()
                 let elapsed = now.timeIntervalSince(lastUnlock)
-                lockLog("[LOCK] graceElapsed=\(String(format: "%.1f", elapsed))s gracePeriod=\(self.proximityGracePeriod)s")
+                AppLog.debug(.lock, "lockGraceCheck", [("elapsed", String(format: "%.1fs", elapsed)), ("gracePeriod", "\(self.proximityGracePeriod)s")])
                 if SignalHysteresisEngine.isWithinLockGracePeriod(
                     lastUnlockTime: lastUnlock,
                     gracePeriod: self.proximityGracePeriod, now: now) {
-                    lockLog("[LOCK] BLOCKED by proximityGracePeriod")
-                    Log.sm.debug("[SM] grace period \(String(format: "%.1f", elapsed))s < \(self.proximityGracePeriod)s, deferring lock")
+                    AppLog.info(.lock, "lockBlocked", [("reason", "proximityGracePeriod"), ("elapsed", String(format: "%.1fs", elapsed)), ("gracePeriod", "\(self.proximityGracePeriod)s")])
                     return
                 }
                 let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
                 if lockOnIdle && isUserInputActive {
-                    lockLog("[LOCK] BLOCKED by isUserInputActive (lockOnIdle=\(lockOnIdle) inputActive=\(isUserInputActive))")
-                    Log.sm.debug("[SM] input active, rejecting lock signal + resetting decay")
+                    AppLog.info(.lock, "lockBlocked", [("reason", "userInputActive"), ("lockOnIdle", "\(lockOnIdle)"), ("inputActive", "\(isUserInputActive)")])
                     lock.withLock {
                         lastReceiveTime = Date()
                         pipeline.decayBaseline = Date()
                     }
                 } else {
-                    lockLog("[LOCK] all guards passed -> startLockTimer")
+                    AppLog.info(.lock, "lockTimerStart", [("trigger", "allGuardsPassed")])
                     startLockTimer()
                 }
             } else {
-                lockLog("[LOCK] SKIPPED: presence=\(curPresence) hasTimer=\(curTimer != nil)")
+                AppLog.debug(.lock, "applyLockTimerSkipped", [("presence", "\(curPresence)"), ("hasTimer", "\(curTimer != nil)")])
             }
         }
     }

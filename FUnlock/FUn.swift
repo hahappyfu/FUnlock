@@ -2,9 +2,6 @@ import Foundation
 @preconcurrency import CoreBluetooth
 import os
 
-func lockLog(_ msg: String) {
-    logDebug(component: "Lock", msg)
-}
 
 /// 日志节流器：内部锁保护时间戳字典，消除裸全局可变状态
 private final class BLELogThrottler: @unchecked Sendable {
