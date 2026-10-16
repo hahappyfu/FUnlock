@@ -67,8 +67,25 @@ FUnlock 采用统一日志门面 `AppLog`，实现一次调用同时写入系统
    正向成功与跳过/失败不要混用同一事件名称。
    - 正向：`unlockStart`、`unlockSuccess`
    - 跳过：`unlockSkip`，并通过 `reason` 字段标明具体原因（如 `reason=screenNotLocked`、`reason=gateRejected`）。
-3. **跨通道命名统一**：
-   同一个业务阶段在 `AppLog` 和 `timingLog` 中使用相同的 event 名字（如均命名为 `unlockStart`），便于后续联合排查与机器解析。
+3. **跨通道命名倾向性对齐**：
+   当 `AppLog` 与 `timingLog` 记录的是**同一个业务事件或决策分支**时，约定使用相同的 event 名字（如 `unlockSkip`、`injectPasswordStart`），便于后续联合排查时跨日志关联检索（如 `grep -h 'event=unlockSkip' debug.log timing.log`）。
+
+   > **注意通道粒度差异**：两通道并非 1:1 硬性镜像。`timingLog` 是纯时序性能埋点通道，侧重于记录函数入口与细粒度时序节点；`AppLog` 是业务日志通道，侧重于记录业务阶段起止与决策结果。因此跨通道命名为**倾向性约定**而非硬性一致。
+   >
+   > - **同名对齐事件（共 8 个）**：`unlockSkip`、`injectPasswordStart`、`delayedUnlockTaskStart`、`delayedUnlockTaskCancelled`、`parallelWakeUnlockStart`、`deviceApproached`、`keystrokeLevelSuccess`、`keystrokeLevelFailed`。
+   > - **timingLog 独有时序事件（共 10 个）**：`tryUnlockEnter`（函数入口时刻，对应 AppLog 业务起始 `unlockStart`）、`guardFetchPassword`（密码前置检查时刻）、`verifyUnlockDone`（双重验证执行完毕时刻，对应 AppLog 的 `dualVerifyConfirmed` 等）、`attemptAutoUnlock`、`parallelUnlockTaskFired`、`delayedUnlockTaskFired`、`startWakeRetryBegin`、`wakeAttemptDone`、`wakeSucceeded`、`wakeFailed`。排查时在 `AppLog` 未搜到此类细粒度时序事件属于正常设计预期，非日志遗漏。
+
+   **关键阶段对照参考**：
+
+   | 业务阶段 / 时序节点 | AppLog Event | timingLog Event | 关联说明 |
+   |---|---|---|---|
+   | 解锁流程发起 | `unlockStart` | `tryUnlockEnter`<br/>`guardFetchPassword` | 粒度差异：`timingLog` 记录函数入口与密码前置检查微观时刻；`AppLog` 记录业务解锁开始 |
+   | 解锁前置跳过分支 | `unlockSkip` | `unlockSkip` | **同名对齐**：均携带 `reason=...`，用于跨文件联合分析与过滤 |
+   | 密码注入开始 | `injectPasswordStart` | `injectPasswordStart` | **同名对齐**：时序埋点与业务起点一致 |
+   | 按键事件逐级注入 | `keystrokeLevelSuccess`<br/>`keystrokeLevelFailed` | `keystrokeLevelSuccess`<br/>`keystrokeLevelFailed` | **同名对齐**：1~3 级注入成败双写对齐 |
+   | 并发与延时任务生命周期 | `parallelWakeUnlockStart`<br/>`delayedUnlockTaskStart`<br/>`delayedUnlockTaskCancelled` | `parallelWakeUnlockStart`<br/>`delayedUnlockTaskStart`<br/>`delayedUnlockTaskCancelled` | **同名对齐**：异步并发与延时任务生命周期对齐 |
+   | 设备接近信号触发 | `deviceApproached` | `deviceApproached` | **同名对齐**：门控前置触发时刻对齐 |
+   | 验证与时序完成 | `dualVerifyConfirmed`<br/>`dualVerifyPassed` | `verifyUnlockDone`<br/>`delayedUnlockTaskFired`<br/>`parallelUnlockTaskFired` | 粒度差异：`timingLog` 记录耗时打点（含唤醒重试 `wakeAttemptDone`、`wakeSucceeded` 等）；`AppLog` 记录验证结果 |
 
 ---
 
