@@ -366,6 +366,19 @@
 "im_send_test" = "Send Test Notification";
 "im_test_success" = "Sent. Check your Apple Watch.";
 
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark Push Notifications";
+"bark_settings_desc" = "Push lock/unlock events to iPhone via Bark";
+"bark_key_label" = "Key";
+"bark_key_placeholder" = "Bark device key";
+"bark_key_invalid" = "Please enter your Bark key";
+"bark_server_label" = "Server";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "Only https:// is supported";
+"bark_test_title" = "Bark Test Notification";
+"bark_send_test" = "Send Test Notification";
+"bark_test_success" = "Sent — check your iPhone";
+
 // 诊断页屏幕状态（DecisionEvent.screen）
 "screen_unlocked" = "Unlocked";
 "screen_locked_away" = "Locked - device away";

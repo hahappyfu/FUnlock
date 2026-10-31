@@ -305,3 +305,16 @@
 "im_go_authorize" = "承認する";
 "im_send_test" = "テスト通知を送信";
 "im_test_success" = "送信しました。Apple Watch を確認してください";
+
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark プッシュ通知";
+"bark_settings_desc" = "ロック/解除時に Bark で iPhone へ通知";
+"bark_key_label" = "キー";
+"bark_key_placeholder" = "Bark のキー";
+"bark_key_invalid" = "Bark のキーを入力してください";
+"bark_server_label" = "サーバー";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "https:// のみ対応";
+"bark_test_title" = "Bark テスト通知";
+"bark_send_test" = "テスト通知を送信";
+"bark_test_success" = "送信しました。iPhone を確認してください";

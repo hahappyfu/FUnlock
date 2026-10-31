@@ -301,3 +301,16 @@
 "im_go_authorize" = "Yetki Ver";
 "im_send_test" = "Test Bildirimi Gönder";
 "im_test_success" = "Gönderildi. Apple Watch'unuzu kontrol edin.";
+
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark Anlık Bildirimleri";
+"bark_settings_desc" = "Kilit/kilidi açma olaylarını Bark ile iPhone'a gönder";
+"bark_key_label" = "Anahtar";
+"bark_key_placeholder" = "Bark cihaz anahtarı";
+"bark_key_invalid" = "Bark anahtarınızı girin";
+"bark_server_label" = "Sunucu";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "Yalnızca https:// desteklenir";
+"bark_test_title" = "Bark Test Bildirimi";
+"bark_send_test" = "Test Bildirimi Gönder";
+"bark_test_success" = "Gönderildi – iPhone'una bak";

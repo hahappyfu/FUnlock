@@ -301,3 +301,16 @@
 "im_go_authorize" = "Auktorisera";
 "im_send_test" = "Skicka testmeddelande";
 "im_test_success" = "Skickat. Kontrollera din Apple Watch.";
+
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark-pushnotiser";
+"bark_settings_desc" = "Skicka lås-/upplåsningshändelser till iPhone via Bark";
+"bark_key_label" = "Nyckel";
+"bark_key_placeholder" = "Bark-enhetsnyckel";
+"bark_key_invalid" = "Ange din Bark-nyckel";
+"bark_server_label" = "Server";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "Endast https:// stöds";
+"bark_test_title" = "Bark-testnotis";
+"bark_send_test" = "Skicka testnotis";
+"bark_test_success" = "Skickat – kolla din iPhone";

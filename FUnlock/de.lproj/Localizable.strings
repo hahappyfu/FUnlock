@@ -301,3 +301,16 @@
 "im_go_authorize" = "Autorisieren";
 "im_send_test" = "Testbenachrichtigung senden";
 "im_test_success" = "Gesendet. Bitte auf der Apple Watch prüfen.";
+
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark-Push-Benachrichtigungen";
+"bark_settings_desc" = "Sperr-/Entsperr-Ereignisse per Bark an das iPhone senden";
+"bark_key_label" = "Schlüssel";
+"bark_key_placeholder" = "Bark-Geräteschlüssel";
+"bark_key_invalid" = "Bitte Bark-Schlüssel eingeben";
+"bark_server_label" = "Server";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "Nur https:// wird unterstützt";
+"bark_test_title" = "Bark-Testbenachrichtigung";
+"bark_send_test" = "Testbenachrichtigung senden";
+"bark_test_success" = "Gesendet – siehe iPhone";

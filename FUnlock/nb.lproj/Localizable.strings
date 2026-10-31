@@ -301,3 +301,16 @@
 "im_go_authorize" = "Autoriser";
 "im_send_test" = "Send testvarsel";
 "im_test_success" = "Sendt. Sjekk Apple Watch.";
+
+// Bark 推送通知卡（BarkSettingsCard）
+"bark_settings_title" = "Bark-pushvarsler";
+"bark_settings_desc" = "Send låse-/opplåsingshendelser til iPhone via Bark";
+"bark_key_label" = "Nøkkel";
+"bark_key_placeholder" = "Bark-enhetsnøkkel";
+"bark_key_invalid" = "Angi Bark-nøkkelen din";
+"bark_server_label" = "Server";
+"bark_server_placeholder" = "https://api.day.app";
+"bark_server_https_only" = "Bare https:// støttes";
+"bark_test_title" = "Bark-testvarsel";
+"bark_send_test" = "Send testvarsel";
+"bark_test_success" = "Sendt – sjekk iPhone";
