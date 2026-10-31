@@ -64,3 +64,4 @@ session_log_*.txt
 .superpowers/
 .scratch/
 node_modules/
+.worktrees/
