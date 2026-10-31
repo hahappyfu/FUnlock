@@ -259,6 +259,7 @@ extension FUnManager {
         let lockReason: DecisionReason = (reason == "lost") ? .lockedLost : .lockedAway
         recordLock(lockReason)
         iMessageNotifier.shared.send(.locked(reason: reason, rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
+        BarkNotifier.shared.send(.locked(reason: reason, rssi: snap.effectiveRSSI, deviceName: monitoredDeviceName))
         // P3: 形子模式遥测 — 记录自动锁屏事件
         TelemetryLogger.shared.log(
             event: .autoLock,

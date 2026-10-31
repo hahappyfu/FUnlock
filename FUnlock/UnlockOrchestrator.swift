@@ -215,6 +215,7 @@ final class UnlockOrchestrator {
                 AppLog.info(.unlock, "dualVerifyPassed", [("action", "counterReset")])
                 self.recordUnlock(.success, reason: .unlockSuccess)
                 iMessageNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: self.manager.monitoredDeviceName))
+                BarkNotifier.shared.send(.unlocked(rssi: snap.effectiveRSSI, deviceName: self.manager.monitoredDeviceName))
                 self.manager.resumeMediaIfNeeded()
                 ScriptRunner.shared.logEventIfNeeded("unlock_confirmed", rssi: self.manager.rssi, extraFields: self.unlockEventExtras(result: "success"))
                 ScriptRunner.shared.runScript("unlocked", rssi: self.manager.rssi, deviceName: self.manager.monitoredDeviceName)
