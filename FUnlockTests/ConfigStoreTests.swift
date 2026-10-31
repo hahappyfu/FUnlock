@@ -146,7 +146,7 @@ final class ConfigStoreTests: XCTestCase {
         "wakeOnProximity", "wakeWithoutUnlocking", "sleepDisplay", "screensaver",
         "pauseOnWiFi", "pauseItunes", "iMessageNotify", "manualLockNoAutoUnlock",
         "hasCompletedOnboarding", "hasShownGuide", "hasCheckedAccessibility",
-        "permissionOnboarded",
+        "permissionOnboarded", "barkNotify",
     ]
     private static let intKeys: [String: Int] = [
         "lockRSSI": -75, "unlockRSSI": -62, "wakeAdvance": 12, "preUnlockTrigger": 8,
@@ -156,6 +156,7 @@ final class ConfigStoreTests: XCTestCase {
         "device": "AA:BB:CC:DD:EE:FF", "deviceName": "iPhone 15",
         "pauseOnWiFiSSID": "Home-5G", "iMessageNotifyRecipient": "user@icloud.com",
         "activeProfileID": "work-profile",
+        "barkNotifyKey": "testBarkKey123", "barkNotifyServer": "https://api.day.app",
     ]
     private static let dataKey = "profiles"
     private static let doubleKey = "lastUpdateCheck"

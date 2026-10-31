@@ -190,6 +190,7 @@ extension ConfigStore {
         "lockOnIdle", "passiveMode", "wakeOnProximity", "wakeWithoutUnlocking",
         "sleepDisplay", "screensaver", "pauseOnWiFi", "pauseOnWiFiSSID",
         "pauseItunes", "iMessageNotify", "iMessageNotifyRecipient",
+        "barkNotify", "barkNotifyKey", "barkNotifyServer",
         "thresholdRSSI", "timeout", "lockDelay",
         "profiles", "activeProfileID",
         "hasCompletedOnboarding", "hasShownGuide", "hasCheckedAccessibility",
