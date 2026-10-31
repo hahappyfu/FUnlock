@@ -48,6 +48,7 @@
 		DV0000020000000100000002 /* DiagnosticsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000002 /* DiagnosticsViewTests.swift */; };
 		UAT000020000000100000001 /* UATVisualTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UAT000010000000100000001 /* UATVisualTests.swift */; };
 		IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000001 /* iMessageNotifierTests.swift */; };
+		IM0000040000000100000001 /* BarkNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000030000000100000001 /* BarkNotifierTests.swift */; };
 		LR0000020000000100000001 /* LogRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LR0000010000000100000001 /* LogRotationTests.swift */; };
 		DV0000020000000100000001 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000001 /* DiagnosticsView.swift */; };
 		MB0000020000000100000001 /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000001 /* MenuBarPopover.swift */; };
@@ -62,6 +63,7 @@
 		AA0000DD00000007 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000017 /* NetworkSettingsView.swift */; };
 		AA0000DD00000008 /* ConfigSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000018 /* ConfigSettingsView.swift */; };
 		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
+		AA0000DD0000001D /* BarkNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001C /* BarkNotifier.swift */; };
 		AA0000DD0000000A /* IMMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001A /* IMMessageComposer.swift */; };
 		AA0000DD0000000B /* IMSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001B /* IMSettingsCard.swift */; };
 		5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB83070CD04DF366146E88B /* ConfigStore.swift */; };
@@ -164,6 +166,7 @@
 		DV0000010000000100000002 /* DiagnosticsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsViewTests.swift; sourceTree = "<group>"; };
 		UAT000010000000100000001 /* UATVisualTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UATVisualTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000001 /* iMessageNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifierTests.swift; sourceTree = "<group>"; };
+		IM0000030000000100000001 /* BarkNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkNotifierTests.swift; sourceTree = "<group>"; };
 		LR0000010000000100000001 /* LogRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogRotationTests.swift; sourceTree = "<group>"; };
 		AA0000DD00000011 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		AA0000DD00000012 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
@@ -174,6 +177,7 @@
 		AA0000DD00000017 /* NetworkSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000018 /* ConfigSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
+		AA0000DD0000001C /* BarkNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkNotifier.swift; sourceTree = "<group>"; };
 		AA0000DD0000001A /* IMMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposer.swift; sourceTree = "<group>"; };
 		AA0000DD0000001B /* IMSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMSettingsCard.swift; sourceTree = "<group>"; };
 		3FB83070CD04DF366146E88B /* ConfigStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
@@ -292,6 +296,7 @@
 				AA0000DD00000017 /* NetworkSettingsView.swift */,
 				AA0000DD00000018 /* ConfigSettingsView.swift */,
 				AA0000DD00000019 /* iMessageNotifier.swift */,
+				AA0000DD0000001C /* BarkNotifier.swift */,
 				AA0000DD0000001A /* IMMessageComposer.swift */,
 				AA0000DD0000001B /* IMSettingsCard.swift */,
 				3FB83070CD04DF366146E88B /* ConfigStore.swift */,
@@ -329,6 +334,7 @@
 				DV0000010000000100000002 /* DiagnosticsViewTests.swift */,
 				UAT000010000000100000001 /* UATVisualTests.swift */,
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
+				IM0000030000000100000001 /* BarkNotifierTests.swift */,
 				LR0000010000000100000001 /* LogRotationTests.swift */,
 				IM0000010000000100000002 /* IMMessageComposerTests.swift */,
 				SW0000010000000100000001 /* TestSupport.swift */,
@@ -522,6 +528,7 @@
 				AA0000DD00000007 /* NetworkSettingsView.swift in Sources */,
 				AA0000DD00000008 /* ConfigSettingsView.swift in Sources */,
 				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
+				AA0000DD0000001D /* BarkNotifier.swift in Sources */,
 				AA0000DD0000000A /* IMMessageComposer.swift in Sources */,
 				AA0000DD0000000B /* IMSettingsCard.swift in Sources */,
 				5B288026CD46727A0E3069E0 /* ConfigStore.swift in Sources */,
@@ -550,6 +557,7 @@
 				DV0000020000000100000002 /* DiagnosticsViewTests.swift in Sources */,
 				UAT000020000000100000001 /* UATVisualTests.swift in Sources */,
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
+				IM0000040000000100000001 /* BarkNotifierTests.swift in Sources */,
 				LR0000020000000100000001 /* LogRotationTests.swift in Sources */,
 				IM0000020000000100000002 /* IMMessageComposerTests.swift in Sources */,
 				SW0000020000000100000001 /* TestSupport.swift in Sources */,
