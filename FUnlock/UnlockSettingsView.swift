@@ -48,6 +48,10 @@ struct UnlockSettingsView: View {
                 // iMessage 通知卡：独立晶体卡片
                 IMSettingsCard()
                     .liquidGlassCard(cornerRadius: 16, padding: 14)
+
+                // Bark 推送通知卡：独立晶体卡片
+                BarkSettingsCard()
+                    .liquidGlassCard(cornerRadius: 16, padding: 14)
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)

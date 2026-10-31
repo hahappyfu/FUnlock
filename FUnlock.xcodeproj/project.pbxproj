@@ -63,6 +63,7 @@
 		AA0000DD00000007 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000017 /* NetworkSettingsView.swift */; };
 		AA0000DD00000008 /* ConfigSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000018 /* ConfigSettingsView.swift */; };
 		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
+		AA0000DD0000001F /* BarkSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001E /* BarkSettingsCard.swift */; };
 		AA0000DD0000001D /* BarkNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001C /* BarkNotifier.swift */; };
 		AA0000DD0000000A /* IMMessageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001A /* IMMessageComposer.swift */; };
 		AA0000DD0000000B /* IMSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001B /* IMSettingsCard.swift */; };
@@ -177,6 +178,7 @@
 		AA0000DD00000017 /* NetworkSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000018 /* ConfigSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
+		AA0000DD0000001E /* BarkSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkSettingsCard.swift; sourceTree = "<group>"; };
 		AA0000DD0000001C /* BarkNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkNotifier.swift; sourceTree = "<group>"; };
 		AA0000DD0000001A /* IMMessageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMMessageComposer.swift; sourceTree = "<group>"; };
 		AA0000DD0000001B /* IMSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMSettingsCard.swift; sourceTree = "<group>"; };
@@ -296,6 +298,7 @@
 				AA0000DD00000017 /* NetworkSettingsView.swift */,
 				AA0000DD00000018 /* ConfigSettingsView.swift */,
 				AA0000DD00000019 /* iMessageNotifier.swift */,
+				AA0000DD0000001E /* BarkSettingsCard.swift */,
 				AA0000DD0000001C /* BarkNotifier.swift */,
 				AA0000DD0000001A /* IMMessageComposer.swift */,
 				AA0000DD0000001B /* IMSettingsCard.swift */,
@@ -528,6 +531,7 @@
 				AA0000DD00000007 /* NetworkSettingsView.swift in Sources */,
 				AA0000DD00000008 /* ConfigSettingsView.swift in Sources */,
 				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
+				AA0000DD0000001F /* BarkSettingsCard.swift in Sources */,
 				AA0000DD0000001D /* BarkNotifier.swift in Sources */,
 				AA0000DD0000000A /* IMMessageComposer.swift in Sources */,
 				AA0000DD0000000B /* IMSettingsCard.swift in Sources */,
