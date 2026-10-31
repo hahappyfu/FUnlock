@@ -15,7 +15,7 @@
 - iMessage 通知链路（`iMessageNotifier.swift`、`IMSettingsCard.swift`、`IMMessageComposer.swift`）**零改动**。
 - Bark API：`POST {server}/{key}`，JSON `{"title", "body", "group": "funlock", "level": "timeSensitive"}`，HTTP 200 即成功；`timeoutInterval: 10`。
 - 默认值唯一来源：`BarkNotifier.Defaults`（key = `swMSCpBr9baWGYCiu6ijoK`，server = `https://api.day.app`）；UI placeholder 与 notifier fallback 都引用它，不重复硬编码。
-- 配置键：`barkNotify`（开关）、`barkNotifyKey`、`barkNotifyServer`；`barkNotifyKey`/`barkNotifyServer` 登记 `ConfigStore.legacyKeys`（`barkNotify` 不登记——缺失回退 false 与业务默认一致，且 defaultBool 表勿动）。
+- 配置键：`barkNotify`（开关）、`barkNotifyKey`、`barkNotifyServer`；三键全部登记 `ConfigStore.legacyKeys`（defaultBool 表勿动，开关缺失仍回退 false）。**修订（终审后书面确认）**：原稿写"`barkNotify` 不登记"，但实现时三键全登记——与既有先例 `iMessageNotify`（本就在 legacyKeys）对称，开关状态随"导出全部设置"备份走，两通道导出/导入/迁移行为一致；防漂移测试双向断言已覆盖三键。保留三键登记为最终决定。
 - 并发约束（strict concurrency）：`IMEvent` 非 Sendable——**在调用线程先 `compose` 取 `(title, body)`，再闭包捕获进 `queue.async`**，禁止把 `IMEvent` 捕获进队列闭包（照 `iMessageNotifier.swift:81-83`）。
 - 日志：失败静默记 `AppLog.error(.app, "barkSendFailed", [("status", …), ("code", …)])`，**禁止打完整 URL 或 NSError 描述**（两者含 key）。
 - 防抖语义**有意对齐 iMessage**（`iMessageNotifier.swift:72-79`）：按事件类型（lock/unlock/test）各 30 秒、先占窗口后发送、失败也消耗窗口；测试通知绕过防抖且不写窗口（`iMessageNotifier.swift:94-118`）。不得改成"成功后计时"。
