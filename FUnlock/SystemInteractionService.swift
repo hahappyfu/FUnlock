@@ -30,6 +30,11 @@ final class SystemInteractionService: Sendable {
     /// 测试可注入以在无物理休眠的条件下验证注入门控。
     nonisolated(unsafe) static var displayPoweredOnProvider: (() -> Bool)?
 
+    /// 锁屏动作注入点：非 nil 时整体替代真实锁屏（SACLockScreenImmediate / 屏保启动 / 关显示器）。
+    /// 测试进程必须装 no-op——否则每个门控用例都会真的锁住用户电脑
+    /// （2026-11-02 实测：跑一轮全量测试触发 36 次 systemScreenLocked）。
+    nonisolated(unsafe) static var lockActionOverride: (() -> Void)?
+
     // MARK: - Screen State Detection
 
     /// Check if screen is locked (CGSession + screensaver + state fallback)
@@ -126,6 +131,11 @@ final class SystemInteractionService: Sendable {
 
     /// Lock screen or start screensaver based on user preference
     func lockOrSaveScreen(useScreensaver: Bool, sleepDisplayAfter: Bool) {
+        // 测试注入优先：整体跳过真实锁屏与灭屏，防止跑测试锁住用户电脑
+        if let override = Self.lockActionOverride {
+            override()
+            return
+        }
         if useScreensaver {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ScreenSaver.Engine") {
                 let config = NSWorkspace.OpenConfiguration()

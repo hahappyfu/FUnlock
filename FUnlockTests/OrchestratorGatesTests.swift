@@ -30,9 +30,13 @@ class OrchestratorGatesTests: XCTestCase {
                              decisionLogger: logger)
         fun.unlockRSSI = -60
         fun.lockRSSI = -80
+        // 本套用例走 onDeviceLeft 的真实锁屏路径，必须拦截真实锁屏动作，
+        // 否则每跑一次测试就真的锁住用户电脑（2026-11-02 实测全量测试触发 36 次）
+        SystemInteractionService.lockActionOverride = {}
     }
 
     override func tearDown() async throws {
+        SystemInteractionService.lockActionOverride = nil
         manager?.orchestrator.cancelPendingTasks()
         manager = nil
         logger = nil
@@ -455,6 +459,15 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertTrue(logger.events.contains { $0.category == .unlock && $0.reason == .noPresence },
                       "断连后解锁尝试必须被 noPresence 门控拦截")
         XCTAssertNil(manager.orchestrator.unlockTask)
+    }
+
+    /// 回归：锁屏动作必须经注入点。本类用例走真实锁屏路径，
+    /// 缺注入点时每跑一次测试就真的锁住用户电脑（2026-11-02 实测全量测试 36 次）。
+    func testLockScreenGoesThroughInjectionPoint() {
+        var invoked = false
+        SystemInteractionService.lockActionOverride = { invoked = true }
+        SystemInteractionService.shared.lockOrSaveScreen(useScreensaver: false, sleepDisplayAfter: false)
+        XCTAssertTrue(invoked, "锁屏必须走注入点，不得直接调用系统锁屏 API")
     }
 
     // MARK: - 阈值漂移端到端
