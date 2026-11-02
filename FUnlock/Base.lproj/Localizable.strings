@@ -200,7 +200,7 @@
 "menu_quit" = "Quit Funlock";
 
 // WiFi Pause
-"pause_on_wifi" = "Pause Unlock on Wi-Fi";
+"pause_on_wifi" = "Pause Lock/Unlock on Wi-Fi";
 "wifi_ssid" = "Wi-Fi Name";
 "wifi_ssid_placeholder" = "e.g. Office-WiFi";
 "current_wifi" = "Use Current";
@@ -234,7 +234,7 @@
 "sleep_display_on_lock_desc" = "Turn off display when screen locks";
 "defer_lock_on_input_desc" = "Defer auto-lock while keyboard or mouse is active";
 "manual_lock_no_auto_unlock_desc" = "Skip auto-unlock after a manual lock";
-"pause_on_wifi_desc" = "Pause auto-unlock when connected to specified Wi-Fi";
+"pause_on_wifi_desc" = "Pause both auto-unlock and auto-lock when connected to specified Wi-Fi";
 "passive_mode_desc" = "Stop scanning; lock/unlock only on manual trigger";
 "diagnostics" = "Diagnostics";
 "diagnostics_subtitle" = "Funlock decision timeline";

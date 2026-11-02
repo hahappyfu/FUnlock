@@ -18,7 +18,12 @@ class WiFiMonitor: NSObject, CLLocationManagerDelegate {
         locationManager.delegate = self
     }
 
+    /// 测试注入点：非 nil 时替代真实 CoreWLAN 读取，使门控可确定性构造
+    /// （与 SystemInteractionService.displayPoweredOnProvider 同款模式）
+    nonisolated(unsafe) static var ssidProvider: (() -> String?)?
+
     var currentSSID: String? {
+        if let provider = Self.ssidProvider { return provider() }
         guard let interface = CWWiFiClient.shared().interface() else {
             throttledLog("wifiSSIDUnavailable", [("reason", "noInterface"), ("detail", "Wi-Fi off or not associated")])
             return nil

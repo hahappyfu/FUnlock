@@ -188,7 +188,7 @@
 "profile_delete_confirm" = "Profil löschen";
 "profile_delete_hint" = "Dieses Profil löschen? Dies kann nicht rückgängig gemacht werden.";
 "profile_default" = "Standard";
-"pause_on_wifi" = "Entsperren bei Wi-Fi pausieren";
+"pause_on_wifi" = "Sperren/Entsperren bei Wi-Fi pausieren";
 "wifi_ssid" = "Wi-Fi-Name";
 "wifi_ssid_placeholder" = "z.B. Büro-WiFi";
 "current_wifi" = "Aktuelles verwenden";
@@ -212,7 +212,7 @@
 "sleep_display_on_lock_desc" = "Bildschirm beim Sperren ausschalten";
 "defer_lock_on_input_desc" = "Automatisches Sperren bei Tastatur- oder Mausaktivität verzögern";
 "manual_lock_no_auto_unlock_desc" = "Automatisches Entsperren nach manuellem Sperren überspringen";
-"pause_on_wifi_desc" = "Automatisches Entsperren bei Verbindung mit angegebenem Wi-Fi pausieren";
+"pause_on_wifi_desc" = "Automatisches Entsperren und Sperren bei Verbindung mit angegebenem Wi-Fi pausieren";
 "passive_mode_desc" = "Scannen stoppen; nur bei manueller Auslösung sperren/entsperren";
 "sidebar_group_common" = "Common";
 "sidebar_group_settings" = "Settings";

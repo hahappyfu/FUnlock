@@ -30,7 +30,7 @@ class OrchestratorGatesTests: XCTestCase {
                              decisionLogger: logger)
         fun.unlockRSSI = -60
         fun.lockRSSI = -80
-        // 本套用例走 onDeviceLeft 的真实锁屏路径，必须拦截真实锁屏动作，
+        // 本套用例大量走 onDeviceLeft 的真实锁屏路径，必须拦截真实锁屏动作，
         // 否则每跑一次测试就真的锁住用户电脑（2026-11-02 实测全量测试触发 36 次）
         SystemInteractionService.lockActionOverride = {}
     }
@@ -461,7 +461,94 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertNil(manager.orchestrator.unlockTask)
     }
 
-    /// 回归：锁屏动作必须经注入点。本类用例走真实锁屏路径，
+    /// 安全 Wi-Fi 下离开不锁屏：pauseOnWiFi 命中时 onDeviceLeft 不得执行锁屏动作。
+    /// 用 ssidProvider 注入点确定性构造匹配（原实现无注入点，该路径此前不可测）。
+    func testDeviceLeftSkippedOnTrustedWiFi() async {
+        snapshotKeys(["pauseOnWiFi", "pauseOnWiFiSSID", "enabled"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set("Home-WiFi", forKey: "pauseOnWiFiSSID")
+        WiFiMonitor.ssidProvider = { "Home-WiFi" }
+        addTeardownBlock { WiFiMonitor.ssidProvider = nil }
+
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -50
+        // 直接置解锁态并越过解锁冷静期（onUnlock 会开启 proximityGracePeriod 拦截锁屏）
+        manager.state.screen = .unlocked
+        currentTime = currentTime.addingTimeInterval(60)
+        let lockTime = manager.lastLockTime
+
+        manager.onDeviceLeft(reason: "away")
+
+        XCTAssertFalse(manager.isSelfLocking, "安全 Wi-Fi 下离开不得执行锁屏动作")
+        XCTAssertEqual(manager.lastLockTime, lockTime, "被 WiFi 门控拦截时不得改写 lastLockTime")
+        XCTAssertTrue(logger.events.filter { $0.category == .lock }.isEmpty,
+                      "安全 Wi-Fi 下离开不得产生锁屏记录")
+    }
+
+    /// 非安全 Wi-Fi 下离开仍正常锁屏：SSID 不匹配时必须放行，防止门控过度拦截。
+    func testDeviceLeftStillLocksOnUntrustedWiFi() async {
+        snapshotKeys(["pauseOnWiFi", "pauseOnWiFiSSID", "enabled"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set("Home-WiFi", forKey: "pauseOnWiFiSSID")
+        WiFiMonitor.ssidProvider = { "Cafe-WiFi" }
+        addTeardownBlock { WiFiMonitor.ssidProvider = nil }
+
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -50
+        manager.state.screen = .unlocked
+        currentTime = currentTime.addingTimeInterval(60)
+        let lockTime = manager.lastLockTime
+
+        manager.onDeviceLeft(reason: "away")
+
+        XCTAssertTrue(manager.isSelfLocking, "非安全 Wi-Fi 下离开必须正常锁屏")
+        XCTAssertNotEqual(manager.lastLockTime, lockTime, "锁屏路径应改写 lastLockTime")
+        XCTAssertFalse(logger.events.filter { $0.category == .lock }.isEmpty,
+                       "非安全 Wi-Fi 下离开应产生锁屏记录")
+    }
+
+    /// SSID 读不到（定位权限缺失）时不得拦截锁屏：读不到不等于命中，
+    /// 否则权限问题会静默变成「永远不锁屏」的安全漏洞。
+    func testDeviceLeftLocksWhenSSIDUnavailable() async {
+        snapshotKeys(["pauseOnWiFi", "pauseOnWiFiSSID", "enabled"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set("Home-WiFi", forKey: "pauseOnWiFiSSID")
+        WiFiMonitor.ssidProvider = { nil }
+        addTeardownBlock { WiFiMonitor.ssidProvider = nil }
+
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -50
+        manager.state.screen = .unlocked
+        currentTime = currentTime.addingTimeInterval(60)
+
+        manager.onDeviceLeft(reason: "away")
+
+        XCTAssertTrue(manager.isSelfLocking, "SSID 不可读时必须保守锁屏，不得静默禁用锁屏")
+    }
+
+    /// 开关关闭时不拦截：pauseOnWiFi=false 时即使 SSID 匹配也应正常锁屏。
+    func testDeviceLeftLocksWhenWiFiPauseDisabled() async {
+        snapshotKeys(["pauseOnWiFi", "pauseOnWiFiSSID", "enabled"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(false, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set("Home-WiFi", forKey: "pauseOnWiFiSSID")
+        WiFiMonitor.ssidProvider = { "Home-WiFi" }
+        addTeardownBlock { WiFiMonitor.ssidProvider = nil }
+
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -50
+        manager.state.screen = .unlocked
+        currentTime = currentTime.addingTimeInterval(60)
+
+        manager.onDeviceLeft(reason: "away")
+
+        XCTAssertTrue(manager.isSelfLocking, "开关关闭时不得拦截锁屏")
+    }
+
+    /// 回归：锁屏动作必须经注入点。本类大量用例走真实锁屏路径，
     /// 缺注入点时每跑一次测试就真的锁住用户电脑（2026-11-02 实测全量测试 36 次）。
     func testLockScreenGoesThroughInjectionPoint() {
         var invoked = false
@@ -471,7 +558,6 @@ class OrchestratorGatesTests: XCTestCase {
     }
 
     // MARK: - 阈值漂移端到端
-
     /// 信号管线 → 解锁决策端到端:缓慢漂移的 RSSI 序列(-50 起每 0.5s 衰减 1dB 至 -95)
     /// 经 Kalman 管线平滑后,effectiveRSSI 滞后于原始信号地穿过「靠近 / 保持 / 离开」三区,
     /// 迟滞判定与 attemptAutoUnlock 决策在漂移全程保持正确。

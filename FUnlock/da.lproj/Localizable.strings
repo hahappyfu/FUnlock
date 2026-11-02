@@ -188,7 +188,7 @@
 "profile_delete_confirm" = "Slet profil";
 "profile_delete_hint" = "Slet denne profil? Dette kan ikke fortrydes.";
 "profile_default" = "Standard";
-"pause_on_wifi" = "Pausér oplåsning ved Wi-Fi";
+"pause_on_wifi" = "Pausér låsning/oplåsning ved Wi-Fi";
 "wifi_ssid" = "Wi-Fi-navn";
 "wifi_ssid_placeholder" = "f.eks. Kontor-WiFi";
 "current_wifi" = "Brug aktuel";
@@ -212,7 +212,7 @@
 "sleep_display_on_lock_desc" = "Sluk skærmen ved låsning";
 "defer_lock_on_input_desc" = "Udsæt automatisk låsning, mens tastatur eller mus er aktiv";
 "manual_lock_no_auto_unlock_desc" = "Spring automatisk oplåsning over efter manuel låsning";
-"pause_on_wifi_desc" = "Sæt automatisk oplåsning på pause, når der er forbundet til specificeret Wi-Fi";
+"pause_on_wifi_desc" = "Sæt både automatisk oplåsning og automatisk låsning på pause, når der er forbundet til specificeret Wi-Fi";
 "passive_mode_desc" = "Stop scanning; lås/lås op kun ved manuel udløsning";
 "sidebar_group_common" = "Common";
 "sidebar_group_settings" = "Settings";

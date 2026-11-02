@@ -188,7 +188,7 @@
 "profile_delete_confirm" = "Profili sil";
 "profile_delete_hint" = "Bu profil silinsin mi? Bu işlem geri alınamaz.";
 "profile_default" = "Varsayılan";
-"pause_on_wifi" = "Wi-Fi'de kilidi açmayı duraklat";
+"pause_on_wifi" = "Wi-Fi'de kilitleme/kilit açmayı duraklat";
 "wifi_ssid" = "Wi-Fi Adı";
 "wifi_ssid_placeholder" = "ör. Ofis-WiFi";
 "current_wifi" = "Mevcut Kullan";
@@ -212,7 +212,7 @@
 "sleep_display_on_lock_desc" = "Ekran kilitlendiğinde ekranı kapat";
 "defer_lock_on_input_desc" = "Klavye veya fare aktifken otomatik kilitlemeyi ertele";
 "manual_lock_no_auto_unlock_desc" = "Manuel kilitlemeden sonra otomatik kilidi açmayı atla";
-"pause_on_wifi_desc" = "Belirli Wi-Fi'ye bağlıyken otomatik kilidi açmayı duraklat";
+"pause_on_wifi_desc" = "Belirli Wi-Fi'ye bağlıyken otomatik kilitlemeyi ve kilit açmayı duraklat";
 "passive_mode_desc" = "Taramayı durdur; sadece manuel tetikleme ile kilitle/kilidi aç";
 "sidebar_group_common" = "Common";
 "sidebar_group_settings" = "Settings";

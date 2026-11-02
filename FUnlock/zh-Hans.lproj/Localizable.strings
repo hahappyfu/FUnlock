@@ -198,7 +198,7 @@
 "menu_quit" = "退出 Funlock";
 
 // WiFi Pause
-"pause_on_wifi" = "连接指定Wi-Fi时暂停解锁";
+"pause_on_wifi" = "连接指定Wi-Fi时暂停锁定/解锁";
 "wifi_ssid" = "Wi-Fi名称";
 "wifi_ssid_placeholder" = "如 Office-WiFi";
 "current_wifi" = "使用当前Wi-Fi";
@@ -232,7 +232,7 @@
 "sleep_display_on_lock_desc" = "锁定屏幕时关闭显示器";
 "defer_lock_on_input_desc" = "有键盘或鼠标活动时暂缓自动锁定";
 "manual_lock_no_auto_unlock_desc" = "手动锁屏后跳过自动解锁";
-"pause_on_wifi_desc" = "连接指定 Wi-Fi 时暂停自动解锁";
+"pause_on_wifi_desc" = "连接指定 Wi-Fi 时，暂停自动解锁与自动锁屏（安全网络下不再自动上锁）";
 "passive_mode_desc" = "停止扫描，仅在手动触发时锁定/解锁";
 "diagnostics" = "诊断";
 "diagnostics_subtitle" = "Funlock 决策时间线";

@@ -192,7 +192,7 @@
 "profile_delete_confirm" = "プロファイルを削除";
 "profile_delete_hint" = "このプロファイルを削除しますか？この操作は元に戻せません。";
 "profile_default" = "デフォルト";
-"pause_on_wifi" = "Wi-Fi接続時にロック解除を一時停止";
+"pause_on_wifi" = "Wi-Fi接続時にロック/解除を一時停止";
 "wifi_ssid" = "Wi-Fi名";
 "wifi_ssid_placeholder" = "例：Office-WiFi";
 "current_wifi" = "現在のWi-Fiを使用";
@@ -216,7 +216,7 @@
 "sleep_display_on_lock_desc" = "ロック時にディスプレイをオフにします";
 "defer_lock_on_input_desc" = "キーボードまたはマウスがアクティブな間、自動ロックを遅延します";
 "manual_lock_no_auto_unlock_desc" = "手動ロック後、自動ロック解除をスキップします";
-"pause_on_wifi_desc" = "指定したWi-Fiに接続中、自動ロック解除を一時停止します";
+"pause_on_wifi_desc" = "指定したWi-Fiに接続中、自動ロック解除と自動ロックの両方を一時停止します";
 "passive_mode_desc" = "スキャンを停止し、手動トリガー時のみロック/ロック解除します";
 "sidebar_group_common" = "Common";
 "sidebar_group_settings" = "Settings";

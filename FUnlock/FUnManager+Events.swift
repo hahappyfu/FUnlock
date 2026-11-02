@@ -244,6 +244,17 @@ extension FUnManager {
             return
         }
 
+        // 安全 Wi-Fi：连接指定 Wi-Fi 时不自动锁屏（与 pauseOnWiFi 同一开关，双向暂停：不自动解锁也不自动锁屏）。
+        // SSID 读不到时不拦截——读不到不等于命中，否则定位权限缺失会静默变成「永不锁屏」的安全漏洞。
+        // 此处直读不复用 UnlockOrchestrator 的 5s 缓存：锁屏是低频事件，不需为性能付陈旧代价——
+        // 刚离开安全 Wi-Fi 时缓存可能仍是旧值，会误判命中而漏锁。
+        if ConfigStore.shared.bool(forKey: "pauseOnWiFi", default: false),
+           let targetSSID = ConfigStore.shared.string(forKey: "pauseOnWiFiSSID"), !targetSSID.isEmpty,
+           let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
+            AppLog.info(.lock, "deviceLeftSkipped", [("reason", "trustedWiFi"), ("ssid", currentSSID)])
+            return
+        }
+
         orchestrator.displayWakeRequested = false
         state.screen = .displaySleeping
         lastLockTime = now
