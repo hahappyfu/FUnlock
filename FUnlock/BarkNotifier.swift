@@ -150,10 +150,14 @@ final class BarkNotifier: @unchecked Sendable {
     }
 
     /// 组装 Bark 推送请求（POST JSON：title/body/group/level）。
+    /// Content-Type 必须显式设为 application/json：Bark 服务端按它分流，缺失即走 V1
+    /// （只解析 query / form-urlencoded / URL path），JSON 体被整段丢弃，推送退化成
+    /// "Empty Message" 空消息，group 与 timeSensitive 也一并失效。
     private static func makeRequest(url: URL, title: String, body: String) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "title": title,
             "body": body,

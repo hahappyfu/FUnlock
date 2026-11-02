@@ -138,6 +138,8 @@ final class BarkNotifierTests: XCTestCase {
         let req = try XCTUnwrap(capturedRequests.first)
         XCTAssertEqual(req.httpMethod, "POST")
         XCTAssertEqual(req.timeoutInterval, 10)
+        // 回归点：缺 Content-Type 时 Bark 服务端走 V1，丢弃 JSON 体 → 空消息 "Empty Message"
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Content-Type"), "application/json")
         let json = try XCTUnwrap(
             JSONSerialization.jsonObject(with: XCTUnwrap(req.httpBody)) as? [String: Any])
         XCTAssertEqual(json.count, 4)
