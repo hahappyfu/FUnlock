@@ -113,7 +113,8 @@ extension FUn {
     func updateMonitoredPeripheral(_ rssi: Int) {
         let now = Date()
         // 预唤醒观测（阶段 1）：监测广播采样断流缺口，帮助定位休眠期扫描停顿成因
-        let gap = now.timeIntervalSince(lastReceiveTime)
+        let lastReceive = lock.withLock { lastReceiveTime }
+        let gap = now.timeIntervalSince(lastReceive)
         if gap >= 30.0 {
             AppLog.info(.ble, "scanGap", [("gap", String(format: "%.1fs", gap))])
         }

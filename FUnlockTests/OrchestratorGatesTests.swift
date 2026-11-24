@@ -884,4 +884,53 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertFalse(fun.isDeviceSignalAlive(now: t0.addingTimeInterval(16)),
                        "超过 15s 无信号应视为不活跃")
     }
+
+    // MARK: - P0：解锁通知延迟复核
+
+    /// 通知早于 CGSession 翻 0 到达：延迟窗口内会话解锁 → 必须完成解锁
+    func testDelayedUnlockNotificationAppliedWhenSessionUnlocksWithinWindow() async {
+        final class LockFlag: @unchecked Sendable { var locked = true }
+        let flag = LockFlag()
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": flag.locked ? 1 : 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        manager.screenUnlockVerifyDelay = 0.1
+
+        manager.onSystemScreenLocked()
+        manager.onUnlock()
+        XCTAssertNotEqual(manager.state.screen, .unlocked, "会话仍锁时不得立即解锁")
+
+        flag.locked = false
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(manager.state.screen, .unlocked, "延迟复核确认后应完成解锁")
+        XCTAssertFalse(manager.state.intent.isManualLockActive)
+    }
+
+    /// 会话持续锁定：延迟复核后仍必须丢弃，且不清除手动锁意图
+    func testDelayedUnlockNotificationStillIgnoredWhenSessionStaysLocked() async {
+        manager.screenUnlockVerifyDelay = 0.05
+        manager.onSystemScreenLocked()
+        manager.onUnlock()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "持续锁定时必须保持手动锁意图")
+        XCTAssertNotEqual(manager.state.screen, .unlocked)
+    }
+
+    // MARK: - P0：锁屏期间暂存更新安装确认
+
+    func testUpdatePromptDeferredWhileLockedAndConsumedOnUnlock() {
+        var presented: [URL] = []
+        manager.presentInstallConfirmationOverride = { presented.append($0) }
+        let app = URL(fileURLWithPath: "/tmp/FUnlock.app")
+
+        // setUp 默认会话已锁
+        manager.promptInstallConfirmation(appPath: app)
+        XCTAssertTrue(presented.isEmpty, "锁屏时不得弹模态")
+        XCTAssertEqual(manager.pendingUpdateAppPath, app)
+
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        manager.onUnlock()
+        XCTAssertNil(manager.pendingUpdateAppPath, "解锁后应消费暂存路径")
+        XCTAssertEqual(presented, [app], "解锁后应弹出安装确认")
+    }
 }

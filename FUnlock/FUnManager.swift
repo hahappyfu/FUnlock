@@ -67,6 +67,9 @@ final class FUnManager {
     var trustedWiFiRecheckInterval: TimeInterval = 10.0
     /// 系统锁屏通知复核延迟（测试可注入）
     var screenLockVerifyDelay: TimeInterval = 0.3
+    /// 解锁通知复核延迟：`com.apple.screenIsUnlocked` 常早于 CGSession 翻 0 约 100–300ms，
+    /// 会话仍显示锁定时延迟复核，避免把合法解锁永久丢弃（测试可注入）
+    var screenUnlockVerifyDelay: TimeInterval = 0.4
     /// 锁屏通知复核任务：会话未锁时 0.3s 后复查，onUnlock 可取消
     @ObservationIgnored var screenLockVerifyTask: Task<Void, Never>?
     @ObservationIgnored private var mediaWasPlaying = false
@@ -165,6 +168,20 @@ final class FUnManager {
                               screen: state.screen.description)
     }
 
+    /// 自动解锁成功后的统一收尾（双保险两条成功路径共用）：
+    /// 清自锁窗口、对齐 screen/intent、消费锁屏期间暂存的改密与告警。
+    func finalizeAutoUnlockSuccess() {
+        clearSelfLockWindow()
+        state.screen = .unlocked
+        state.unlockedAt = now
+        state.intent = .autoLock
+        if SecurityService.shared.hasPendingPasswordChange {
+            SecurityService.shared.hasPendingPasswordChange = false
+            SecurityService.shared.handlePasswordChanged()
+        }
+        SystemInteractionService.shared.flushPendingAlerts()
+    }
+
     // MARK: Init
 
     init(fun: FUn, nowProvider: @escaping () -> Date = { Date() }, decisionLogger: DecisionLogger = .shared) {
@@ -217,6 +234,7 @@ final class FUnManager {
         unlockRSSI = value
         fun.unlockRSSI = value
         ConfigStore.shared.set(value, forKey: "unlockRSSI")
+        defer { thresholdVersion += 1 }
         if value != FUn.UNLOCK_DISABLED {
             // 迟滞联动仅修正「违反序关系」的锁定阈值：
             // 用户已自定义合法更远的 lock（lock < value）时不覆写；
@@ -364,6 +382,11 @@ final class FUnManager {
         updateChecker.forceCheck(completion: completion)
     }
 
+    /// 三态检查结果（UI 用于区分「已是最新」与「检查失败」）
+    func forceCheckUpdateResult(completion: @escaping @MainActor (UpdateChecker.CheckResult) -> Void) {
+        updateChecker.forceCheckResult(completion: completion)
+    }
+
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
 
     func cleanup() {
@@ -408,8 +431,36 @@ final class FUnManager {
 
     // MARK: - 更新安装确认
 
-    /// 下载完成后的安装确认弹窗：由用户主动确认后执行替换与重启，防止静默换装
-    private func promptInstallConfirmation(appPath: URL) {
+    /// 锁屏期间暂存的待安装包路径：解锁后由 onUnlock 消费，
+    /// 避免在锁屏时直接 runModal 阻塞 @MainActor 主线程
+    @ObservationIgnored var pendingUpdateAppPath: URL?
+    /// 测试注入：替代真实 NSAlert 的安装确认弹窗
+    @ObservationIgnored var presentInstallConfirmationOverride: ((URL) -> Void)?
+
+    /// 下载完成后的安装确认入口：锁屏时只暂存，解锁后消费
+    func promptInstallConfirmation(appPath: URL) {
+        if SystemInteractionService.shared.isSystemSessionLocked() {
+            pendingUpdateAppPath = appPath
+            AppLog.info(.app, "updatePromptDeferred", [("reason", "sessionLocked")])
+            return
+        }
+        presentInstallConfirmation(appPath: appPath)
+    }
+
+    /// 解锁后消费锁屏期间暂存的安装确认
+    func consumePendingUpdatePromptIfNeeded() {
+        guard let appPath = pendingUpdateAppPath else { return }
+        pendingUpdateAppPath = nil
+        AppLog.info(.app, "updatePromptConsumed")
+        presentInstallConfirmation(appPath: appPath)
+    }
+
+    /// 真正展示安装确认（可被测试注入替代）
+    private func presentInstallConfirmation(appPath: URL) {
+        if let override = presentInstallConfirmationOverride {
+            override(appPath)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = NSLocalizedString("update_ready_title", value: "新版本已准备就绪", comment: "")
         alert.informativeText = NSLocalizedString("update_ready_info", value: "新版本已下载并验证签名完成，是否立即退出并更新？", comment: "")

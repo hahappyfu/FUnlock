@@ -289,8 +289,7 @@ final class UnlockOrchestrator {
                 // 慢速分布式通知先于 defer 复位到达的窗口
                 self.lastAutoUnlockSuccessTime = self.now
                 // 乐观时间戳移到验证通过后：注入失败不再误触发 3s 防抖与 5s 冷却
-                self.manager.state.screen = .unlocked
-                self.manager.state.unlockedAt = self.now
+                self.manager.finalizeAutoUnlockSuccess()
                 self.manager.lastUnlockTime = self.now
                 self.manager.fun.refreshProximityGrace()
                 self.consecutiveUnlockAttempts = 0
@@ -351,12 +350,14 @@ final class UnlockOrchestrator {
                 } else {
                     // CGSession 也显示已解锁（竞态下可能延迟发现）
                     AppLog.info(.unlock, "dualVerifyTimeoutCGSessionUnlocked")
-                    self.manager.state.screen = .unlocked
-                    self.manager.state.unlockedAt = self.now
+                    self.lastAutoUnlockSuccessTime = self.now
+                    self.manager.finalizeAutoUnlockSuccess()
                     self.manager.lastUnlockTime = self.now
                     self.manager.fun.refreshProximityGrace()
                     self.consecutiveUnlockAttempts = 0
                     AppLog.info(.unlock, "dualVerifyTimeoutScreenUnlocked", [("action", "counterReset")])
+                    self.recordUnlock(.success, reason: .unlockSuccess)
+                    self.manager.resumeMediaIfNeeded()
                     self.manager.stateMachine.handleUnlockSuccess()
                 }
             }

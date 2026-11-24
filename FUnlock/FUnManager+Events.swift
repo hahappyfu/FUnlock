@@ -101,11 +101,27 @@ extension FUnManager {
         AppLog.info(.sm, "userUnlocked")
         screenLockVerifyTask?.cancel()
         screenLockVerifyTask = nil
-        // 分布式通知可被本地进程伪造：会话仍锁定时忽略，且不得清除 manualLock
-        guard !SystemInteractionService.shared.isSystemSessionLocked() else {
-            AppLog.info(.sm, "spoofedUnlockIgnored", [("reason", "systemSessionStillLocked")])
+        // 分布式通知可能被伪造，也可能早于 CGSession 翻 0 100–300ms 到达：
+        // 会话仍显示锁定时不立即丢弃，延迟复核一次（与 onSystemScreenLocked 的复核对称）。
+        if SystemInteractionService.shared.isSystemSessionLocked() {
+            AppLog.info(.sm, "unlockNotificationDeferred", [("reason", "systemSessionStillLocked")])
+            let delay = screenUnlockVerifyDelay
+            screenLockVerifyTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                guard !SystemInteractionService.shared.isSystemSessionLocked() else {
+                    AppLog.info(.sm, "spoofedUnlockIgnored", [("reason", "systemSessionStillLocked")])
+                    return
+                }
+                self.completeUnlockNotification()
+            }
             return
         }
+        completeUnlockNotification()
+    }
+
+    /// 锁定通知确认（或延迟复核确认）后真正落库的解锁处理
+    private func completeUnlockNotification() {
         cancelDeferredLockRecheck()
         clearSelfLockWindow()
         state.screen = .unlocked
@@ -114,6 +130,8 @@ extension FUnManager {
         orchestrator.resetAfterUserUnlock()
         lastUnlockTime = now
         fun.refreshProximityGrace()
+        // 锁屏期间暂存的更新安装确认：解锁后消费
+        consumePendingUpdatePromptIfNeeded()
         // 区分解锁来源：FUn 自动解锁的 unlockSuccess 已在 performInjectionAndVerify 记录，
         // 这里只在真正手动解锁时记录 userUnlocked，避免自动解锁被误标为"用户手动解锁"
         // P1-2: isAutoUnlocking 在 unlockTask 的 defer 中早于慢速分布式通知复位，

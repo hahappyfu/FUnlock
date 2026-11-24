@@ -82,6 +82,21 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         centralMgr = CBCentralManager(delegate: self, queue: queue)
     }
 
+    // MARK: - 纯函数（供单元测试）
+
+    /// 清洗 CoreBluetooth 原始 RSSI：`127` 是不可用哨兵，`>= 0` 与 `< -127` 均为非法值。
+    /// 返回 nil 表示本次样本必须丢弃，绝不能钳制为 0 dBm（会被误判为极近距离）。
+    static func sanitizeRSSI(_ raw: Int) -> Int? {
+        guard raw < 0, raw >= -127 else { return nil }
+        return raw
+    }
+
+    /// 是否应丢弃本次设备发现：仅在「非扫描模式 + 已绑定 + 非目标」时过滤。
+    /// 扫描模式（用户点「更换设备」）必须放行其他设备，否则永远搜不到候选。
+    static func shouldDropDiscovery(monitoredUUID: UUID?, isInList: Bool, scanMode: Bool) -> Bool {
+        !scanMode && monitoredUUID != nil && !isInList
+    }
+
     // MARK: - 扫描 / 监控生命周期
 
     /// 当前扫描是否需要 AllowDuplicates（调用方必须持锁）。
@@ -269,7 +284,13 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
                         advertisementData: [String : Any],
                         rssi RSSI: NSNumber)
     {
-        let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
+        guard let rssi = Self.sanitizeRSSI(RSSI.intValue) else {
+            throttledBleLog("didDiscoverInvalidRSSI", interval: 5.0, "didDiscoverInvalidRSSI", [
+                ("raw", "\(RSSI.intValue)"),
+                ("name", peripheral.name ?? "unknown")
+            ])
+            return
+        }
 
         // 监控上下文与 scanMode 一次锁内快照（修复 monitoredUUIDs 锁外 contains 与
         // scanMode 锁外读的竞态）
@@ -288,8 +309,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         // 监控设备分支：上报宿主并确保连接（见 BLEPeripheralHandler）
         handler.handleMonitoredAdvertisement(peripheral, rssi: rssi)
 
-        // 优化 1：监控模式下，非目标设备直接丢弃
-        if monitorInfo.monitoredUUID != nil && !monitorInfo.isInList {
+        // 优化 1：监控模式下，非目标设备直接丢弃；扫描模式（更换设备）必须放行
+        if Self.shouldDropDiscovery(monitoredUUID: monitorInfo.monitoredUUID,
+                                    isInList: monitorInfo.isInList,
+                                    scanMode: monitorInfo.scanMode) {
             return
         }
 

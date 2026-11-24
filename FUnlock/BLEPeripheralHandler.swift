@@ -172,7 +172,13 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         peripheral.delegate = self
         // scanMode 与 monitoredPeripheral 比较统一锁内快照（修复锁外读/锁外比较竞态）
         let (shouldDiscover, shouldActivate): (Bool, Bool) = lock.withLock {
-            (scanner.scanMode, peripheral == scanner.monitoredPeripheral && !scanner.passiveMode)
+            // 同 UUID 的新 CBPeripheral 实例可能不等于旧对象，按 identifier 匹配并刷新引用
+            let isMonitored = peripheral.identifier == scanner.monitoredUUID
+                || peripheral.identifier == scanner.monitoredPeripheral?.identifier
+            if peripheral.identifier == scanner.monitoredUUID {
+                scanner.monitoredPeripheral = peripheral
+            }
+            return (scanner.scanMode, isMonitored && !scanner.passiveMode)
         }
         if shouldDiscover {
             peripheral.discoverServices([BLEUUIDs.deviceInformation])
@@ -214,13 +220,21 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
 
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
         guard let scanner = scanner else { return }
+        guard error == nil else {
+            AppLog.error(.ble, "readRSSIError", [("error", error?.localizedDescription)])
+            return
+        }
+        // 127 为不可用哨兵；任何非负值与越界值都必须丢弃，不能钳成 0 dBm
+        guard let rssi = BLEScanner.sanitizeRSSI(RSSI.intValue) else {
+            AppLog.error(.ble, "invalidRSSI", [("raw", "\(RSSI.intValue)"), ("id", "\(peripheral.identifier)")])
+            return
+        }
         let shouldProcess: Bool = lock.withLock {
             guard peripheral.identifier == scanner.monitoredUUID else { return false }
             if scanner.monitoredPeripheral == nil { scanner.monitoredPeripheral = peripheral }
             return true
         }
         guard shouldProcess else { return }
-        let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
         guard let host = scanner.host else { return }
         host.scanner(scanner, didSampleMonitoredRSSI: rssi)
 
@@ -324,7 +338,8 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
                     if characteristic.uuid == BLEUUIDs.modelName {
                         device.model = s
                     }
-                    if device.model != nil && device.manufacture != nil && device.peripheral != scanner.monitoredPeripheral {
+                    if device.model != nil && device.manufacture != nil
+                        && device.peripheral?.identifier != scanner.monitoredPeripheral?.identifier {
                         scanner.centralMgr.cancelPeripheralConnection(peripheral)
                     }
                     return true
