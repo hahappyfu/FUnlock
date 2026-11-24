@@ -88,3 +88,32 @@ final class SecurityServiceKeychainRoundTripTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Task 10：锁屏期间延迟告警
+
+@MainActor
+final class DeferredAlertTests: XCTestCase {
+
+    func testAlertsAreDeferredWhileScreenLockedAndFlushedOnUnlock() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        var presented: [DeferredAlertKind] = []
+        SystemInteractionService.alertPresenterOverride = { presented.append($0) }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+            SystemInteractionService.alertPresenterOverride = nil
+            SystemInteractionService.shared.clearPendingAlertsForTesting()
+        }
+
+        SystemInteractionService.shared.enqueueOrPresentAlert(.passwordMismatch)
+        SystemInteractionService.shared.enqueueOrPresentAlert(.passwordMismatch)  // 去重
+        XCTAssertTrue(presented.isEmpty, "锁屏态不得同步弹模态窗")
+        XCTAssertEqual(SystemInteractionService.shared.pendingAlertsCount, 1)
+
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.shared.flushPendingAlerts()
+        XCTAssertEqual(presented, [.passwordMismatch])
+        XCTAssertEqual(SystemInteractionService.shared.pendingAlertsCount, 0)
+    }
+}

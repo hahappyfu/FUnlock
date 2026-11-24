@@ -64,7 +64,7 @@ final class SecurityService: Sendable {
         var item: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound {
-            if warn { UIHelper.errorModal(t("password_not_set")) }
+            if warn { SystemInteractionService.shared.enqueueOrPresentAlert(.noPassword) }
             return .success(nil)
         }
         if status == errSecInteractionNotAllowed {

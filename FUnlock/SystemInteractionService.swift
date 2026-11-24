@@ -3,6 +3,14 @@ import Cocoa
 import UserNotifications
 import IOKit
 
+/// 锁屏期间需要延迟展示的告警类型（按类型去重）。
+enum DeferredAlertKind: Hashable {
+    case noPassword
+    case axRevoked
+    case passwordMismatch
+    case abnormalUnlock(count: Int, window: Int)
+}
+
 
 /// 跨线程唤醒标志：由 NSLock 保护，供通知回调（任意线程）与轮询循环共享
 private final class WakeFlag: @unchecked Sendable {
@@ -48,6 +56,9 @@ final class SystemInteractionService: Sendable {
     nonisolated(unsafe) static var verifyUnlockOverride: (@MainActor (TimeInterval, TimeInterval) async -> UnlockNotification)?
     /// 测试注入：替换按键注入（保留前奏等待/门控），用于取消与安全门控测试，避免真实按键
     nonisolated(unsafe) static var fakeKeyStrokesOverride: ((String, () -> Bool) -> Bool)?
+
+    /// 测试注入：告警展示器（nil = 真实 NSAlert）
+    nonisolated(unsafe) static var alertPresenterOverride: (@MainActor (DeferredAlertKind) -> Void)?
 
     // MARK: - Screen State Detection
 
@@ -648,6 +659,114 @@ final class SystemInteractionService: Sendable {
 
     // MARK: - Alert Dialogs
 
+    /// 锁屏期间待展示告警（按类型去重，避免锁屏中 runModal 阻塞主线程）
+    @MainActor private(set) var pendingAlerts: [DeferredAlertKind] = []
+    @MainActor var pendingAlertsCount: Int { pendingAlerts.count }
+
+    /// 锁屏时入队并投递非阻塞本地通知；已解锁时立即展示。
+    @MainActor
+    func enqueueOrPresentAlert(_ kind: DeferredAlertKind) {
+        if isSystemSessionLocked() {
+            if !pendingAlerts.contains(kind) {
+                pendingAlerts.append(kind)
+            }
+            postDeferredAlertNotification(kind)
+            return
+        }
+        presentAlert(kind)
+    }
+
+    /// 解锁后统一展示积压告警（由 FUnManager.onUnlock 调用）。
+    @MainActor
+    func flushPendingAlerts() {
+        let alerts = pendingAlerts
+        pendingAlerts.removeAll()
+        for kind in alerts {
+            presentAlert(kind)
+        }
+    }
+
+    @MainActor
+    func clearPendingAlertsForTesting() {
+        pendingAlerts.removeAll()
+    }
+
+    @MainActor
+    private func presentAlert(_ kind: DeferredAlertKind) {
+        if let presenter = Self.alertPresenterOverride {
+            presenter(kind)
+            return
+        }
+        switch kind {
+        case .noPassword:
+            UIHelper.errorModal(t("password_not_set"))
+        case .axRevoked:
+            let alert = NSAlert()
+            alert.messageText = t("ax_revoked_title")
+            alert.informativeText = t("ax_revoked_info")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: t("open_settings"))
+            alert.addButton(withTitle: t("ok"))
+            alert.window.title = "Funlock"
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                openAccessibilitySettings()
+            }
+        case .passwordMismatch:
+            let alert = NSAlert()
+            alert.messageText = t("password_mismatch_title")
+            alert.informativeText = t("password_mismatch_info")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: t("re_enter_password"))
+            alert.addButton(withTitle: t("cancel"))
+            alert.window.title = "Funlock"
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                SecurityService.shared.askPassword()
+            }
+        case .abnormalUnlock(let count, let window):
+            AppLog.info(.app, "abnormalUnlockAlert", [("count", "\(count)"), ("window", "\(window)s")])
+            let alert = NSAlert()
+            alert.messageText = t("abnormal_unlock_title")
+            alert.informativeText = t("abnormal_unlock_info")
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: t("ok"))
+            alert.window.title = "Funlock"
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    @MainActor
+    private func postDeferredAlertNotification(_ kind: DeferredAlertKind) {
+        let content = UNMutableNotificationContent()
+        content.title = "Funlock"
+        content.body = deferredAlertTitle(kind)
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: deferredAlertIdentifier(kind),
+                                            content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    private func deferredAlertTitle(_ kind: DeferredAlertKind) -> String {
+        switch kind {
+        case .noPassword: return t("password_not_set")
+        case .axRevoked: return t("ax_revoked_title")
+        case .passwordMismatch: return t("password_mismatch_title")
+        case .abnormalUnlock: return t("abnormal_unlock_title")
+        }
+    }
+
+    private func deferredAlertIdentifier(_ kind: DeferredAlertKind) -> String {
+        switch kind {
+        case .noPassword: return "funlock-deferred-no-password"
+        case .axRevoked: return "funlock-deferred-ax-revoked"
+        case .passwordMismatch: return "funlock-deferred-password-mismatch"
+        case .abnormalUnlock(let count, let window):
+            return "funlock-deferred-abnormal-\(count)-\(window)"
+        }
+    }
+
     /// Show AX permission revoked alert (throttled to once per hour)
     @MainActor
     func showAXRevokedAlertIfNeeded(lastAlertTime: inout Date) {
@@ -656,18 +775,7 @@ final class SystemInteractionService: Sendable {
             return
         }
         lastAlertTime = Date()
-        let alert = NSAlert()
-        alert.messageText = t("ax_revoked_title")
-        alert.informativeText = t("ax_revoked_info")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("open_settings"))
-        alert.addButton(withTitle: t("ok"))
-        alert.window.title = "Funlock"
-        NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openAccessibilitySettings()
-        }
+        enqueueOrPresentAlert(.axRevoked)
     }
 
     /// 打开系统「辅助功能」权限设置页
@@ -677,33 +785,15 @@ final class SystemInteractionService: Sendable {
         }
     }
 
-    /// 弹出密码不匹配告警（主线程 UI）
+    /// 弹出密码不匹配告警（主线程 UI；锁屏时延迟到解锁后）
     @MainActor
     func showPasswordMismatchAlert() {
-        let alert = NSAlert()
-        alert.messageText = t("password_mismatch_title")
-        alert.informativeText = t("password_mismatch_info")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("re_enter_password"))
-        alert.addButton(withTitle: t("cancel"))
-        alert.window.title = "Funlock"
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            SecurityService.shared.askPassword()
-        }
+        enqueueOrPresentAlert(.passwordMismatch)
     }
 
-    /// 弹出异常解锁告警（主线程 UI）
+    /// 弹出异常解锁告警（主线程 UI；锁屏时延迟到解锁后）
     @MainActor
     func showAbnormalUnlockAlert(count: Int, window: Int) {
-        AppLog.info(.app, "abnormalUnlockAlert", [("count", "\(count)"), ("window", "\(window)s")])
-        let alert = NSAlert()
-        alert.messageText = t("abnormal_unlock_title")
-        alert.informativeText = t("abnormal_unlock_info")
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: t("ok"))
-        alert.window.title = "Funlock"
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        enqueueOrPresentAlert(.abnormalUnlock(count: count, window: window))
     }
 }

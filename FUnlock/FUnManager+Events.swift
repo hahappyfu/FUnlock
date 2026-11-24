@@ -122,6 +122,8 @@ extension FUnManager {
             SecurityService.shared.hasPendingPasswordChange = false
             SecurityService.shared.handlePasswordChanged()
         }
+        // 锁屏期间被延迟的告警在解锁后统一展示
+        SystemInteractionService.shared.flushPendingAlerts()
 
         // 2 秒后检查是否为入侵（非 FUn 自动解锁）
         // Task 是逃逸闭包，内部再读 isAutoUnlocking 会拿到 2 秒后的值，
