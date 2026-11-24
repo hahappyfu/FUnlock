@@ -189,10 +189,16 @@ final class UnlockOrchestrator {
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
         AppLog.info(.unlock, "injectPasswordStart")
-        let posted = await sys.injectPasswordWithPrelude(password) {
-            m.state.screen != .unlocked
-            && sys.isSecureToInject(screenState: m.state.screen)
-        }
+        let posted = await sys.injectPasswordWithPrelude(
+            password,
+            isSecureCheck: {
+                m.state.screen != .unlocked
+                && sys.isSecureToInject(screenState: m.state.screen)
+            },
+            keystrokeSecureCheck: {
+                m.state.screen != .unlocked
+                && sys.isSecureToInject(screenState: m.state.screen, allowScreensaver: false)
+            })
         AppLog.info(.unlock, "injectPasswordResult", [("posted", "\(posted)")])
         AppLog.debug(.unlock, "fakeKeyStrokesDone", [("posted", "\(posted)")])
         guard posted else {

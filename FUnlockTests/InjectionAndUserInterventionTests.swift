@@ -581,3 +581,46 @@ class DisplaySleepInjectionProtectionTests: XCTestCase {
     }
 }
 
+// MARK: - Task 5：真实会话锁态与注入安全门控
+
+final class SecureInjectionSessionTests: XCTestCase {
+
+    func testIsScreenLockedDoesNotTrustStaleScreenStateWhenSessionUnlocked() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+        }
+        XCTAssertFalse(SystemInteractionService.shared.isScreenLocked(screenState: .locked(reason: .away)))
+    }
+
+    func testIsSecureToInjectBlocksNilFrontmostUnlessCGSessionLockedAndAllowsScreensaverOnlyInPrelude() {
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+            SystemInteractionService.frontmostBundleIDProvider = nil
+        }
+        // 未锁会话 + nil 前台 → 必须拒绝
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        SystemInteractionService.frontmostBundleIDProvider = { nil }
+        XCTAssertFalse(SystemInteractionService.shared.isSecureToInject(screenState: .locked(reason: .away)))
+
+        // CGSession 已锁 + nil 前台（macOS 14+ LSUIElement 锁屏界面）→ 允许
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        XCTAssertTrue(SystemInteractionService.shared.isSecureToInject(screenState: .locked(reason: .away)))
+
+        // 已锁会话 + 非锁屏前台应用 → 必须拒绝
+        SystemInteractionService.frontmostBundleIDProvider = { "com.apple.Safari" }
+        XCTAssertFalse(SystemInteractionService.shared.isSecureToInject(screenState: .locked(reason: .away)))
+
+        // 屏保运行但 CGSession 未锁：前奏允许 ScreenSaver.Engine，按键注入阶段拒绝
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { true }
+        SystemInteractionService.frontmostBundleIDProvider = { "com.apple.ScreenSaver.Engine" }
+        XCTAssertTrue(SystemInteractionService.shared.isSecureToInject(screenState: .screensaver, allowScreensaver: true))
+        XCTAssertFalse(SystemInteractionService.shared.isSecureToInject(screenState: .screensaver, allowScreensaver: false))
+    }
+}
+

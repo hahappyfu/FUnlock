@@ -415,3 +415,23 @@ final class InputActivityMonitorTests: XCTestCase {
         XCTAssertFalse(nan.isActive)
     }
 }
+
+// MARK: - Task 5：显示器唤醒时核实真实锁态
+
+@MainActor
+final class DisplayWakeSessionStateTests: XCTestCase {
+
+    func testDisplayWakeWithoutActualLockRestoresUnlockedState() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+        }
+        let manager = FUnManager(fun: FUn())
+        manager.onDisplaySleep()
+        XCTAssertEqual(manager.state.screen, .displaySleeping)
+        manager.onDisplayWake()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+    }
+}

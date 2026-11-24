@@ -31,7 +31,13 @@ extension FUnManager {
         state.wake = .succeeded
         orchestrator.cancelWakeRetry()
         if state.screen == .displaySleeping {
-            state.screen = .locked(reason: .away)
+            // 息屏不等于会话已锁：唤醒后按外部真实锁态恢复，避免永久卡在 .locked
+            let systemLocked = SystemInteractionService.shared.isSystemSessionLocked()
+            state.screen = systemLocked ? .locked(reason: .away) : .unlocked
+            AppLog.info(.sm, "displayWakeSessionState", [
+                ("systemLocked", "\(systemLocked)"),
+                ("screen", "\(state.screen)")
+            ])
         }
         if isSelfWake {
             // 程序自唤醒：只调度自动解锁。若再走用户干预（resetToActive + cancelPendingTasks），

@@ -35,25 +35,48 @@ final class SystemInteractionService: Sendable {
     /// （2026-11-02 实测：跑一轮全量测试触发 36 次 systemScreenLocked）。
     nonisolated(unsafe) static var lockActionOverride: (() -> Void)?
 
+    /// 测试注入：当前会话字典（nil = 读真实 CGSessionCopyCurrentDictionary()）
+    nonisolated(unsafe) static var sessionDictProvider: (() -> [String: Any]?)?
+    /// 测试注入：屏保是否运行（nil = 读真实 NSRunningApplication）
+    nonisolated(unsafe) static var screensaverRunningProvider: (() -> Bool)?
+    /// 测试注入：前台应用 bundle id（nil = 读真实 NSWorkspace.frontmostApplication）
+    nonisolated(unsafe) static var frontmostBundleIDProvider: (() -> String?)?
+
     // MARK: - Screen State Detection
 
-    /// Check if screen is locked (CGSession + screensaver + state fallback)
+    /// 屏幕是否处于锁定/屏保态。
+    /// 只要 CGSession 有字典，就以它（+ 屏保进程）为准，不再信任可能陈旧的 screenState；
+    /// 仅当系统完全拿不到会话字典时才退回 screenState。锁屏失败/漏通知不会被应用内状态掩盖。
     func isScreenLocked(screenState: ScreenState?) -> Bool {
-        if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
-            if dict["CGSSessionScreenIsLocked"] as? Int == 1 { return true }
+        if let dict = currentSessionDict {
+            let cgLocked = dict["CGSSessionScreenIsLocked"] as? Int == 1
+            return cgLocked || isScreenSaverRunning
         }
-        if NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").count > 0 {
-            return true
-        }
+        if isScreenSaverRunning { return true }
         if let screen = screenState { return screen != .unlocked }
         return false
+    }
+
+    /// 纯外部系统事实：CGSession 明确锁定，或屏保正在运行。
+    func isSystemSessionLocked() -> Bool {
+        if let dict = currentSessionDict,
+           dict["CGSSessionScreenIsLocked"] as? Int == 1 {
+            return true
+        }
+        return isScreenSaverRunning
+    }
+
+    private var currentSessionDict: [String: Any]? {
+        if let provider = Self.sessionDictProvider { return provider() }
+        return CGSessionCopyCurrentDictionary() as? [String: Any]
     }
 
     /// ScreenSaver.Engine 是否正在运行（审计修复 #3）：
     /// 屏保激活时会话未锁（CGSSessionScreenIsLocked 缺失），仅凭 CGSession 判"已解锁"
     /// 会把屏保期间的注入失败误报为解锁成功（失败计数被清零、degraded 保护被绕过）
     private var isScreenSaverRunning: Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").isEmpty
+        if let provider = Self.screensaverRunningProvider { return provider() }
+        return !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.ScreenSaver.Engine").isEmpty
     }
 
     /// 判断 CGSession 字典是否表示屏幕已解锁。
@@ -64,19 +87,34 @@ final class SystemInteractionService: Sendable {
         return (dict["CGSSessionScreenIsLocked"] as? Int ?? 0) == 0
     }
 
-    /// Double safety check: screen locked + frontmost app is loginwindow
-    func isSecureToInject(screenState: ScreenState?) -> Bool {
-        let locked = isScreenLocked(screenState: screenState)
-        guard locked else {
-            AppLog.debug(.unlock, "secureCheckFailed", [("reason", "screenNotLocked")])
+    /// Double safety check: session really locked + frontmost is a lock-screen app.
+    /// - Parameter allowScreensaver: 前奏阶段允许屏保引擎；实际按键注入阶段必须传 false。
+    func isSecureToInject(screenState: ScreenState?, allowScreensaver: Bool = true) -> Bool {
+        guard isSystemSessionLocked() else {
+            AppLog.debug(.unlock, "secureCheckFailed", [("reason", "systemSessionUnlocked")])
             return false
         }
-        if let frontApp = NSWorkspace.shared.frontmostApplication,
-           frontApp.bundleIdentifier != "com.apple.loginwindow" {
-            AppLog.error(.unlock, "secureCheckFailed", [("reason", "frontmostNotLoginWindow"), ("frontmost", frontApp.bundleIdentifier ?? "nil")])
+        let frontmost = Self.frontmostBundleIDProvider?()
+            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        if let frontmost {
+            if frontmost == "com.apple.loginwindow" {
+                AppLog.debug(.unlock, "secureCheckPassed", [("frontmost", frontmost)])
+                return true
+            }
+            if allowScreensaver && frontmost == "com.apple.ScreenSaver.Engine" {
+                AppLog.debug(.unlock, "secureCheckPassed", [("frontmost", frontmost), ("phase", "prelude")])
+                return true
+            }
+            AppLog.error(.unlock, "secureCheckFailed", [("reason", "frontmostNotLockScreen"), ("frontmost", frontmost)])
             return false
         }
-        AppLog.debug(.unlock, "secureCheckPassed")
+        // macOS 14+ LSUIElement 菜单栏进程在锁屏界面可能拿不到前台应用：
+        // 只有 CGSession 明确锁定才放行；仅屏保运行（会话未锁）不放行。
+        guard currentSessionDict?["CGSSessionScreenIsLocked"] as? Int == 1 else {
+            AppLog.error(.unlock, "secureCheckFailed", [("reason", "nilFrontmostWithoutCGSessionLock")])
+            return false
+        }
+        AppLog.debug(.unlock, "secureCheckPassed", [("frontmost", "nil"), ("cgLocked", "true")])
         return true
     }
 
@@ -337,6 +375,15 @@ final class SystemInteractionService: Sendable {
     /// 首次注入丢失；改为自适应轮询——熄屏唤醒最多等 2.5s，亮屏 300ms 不变。
     @MainActor
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) async -> Bool {
+        await injectPasswordWithPrelude(string, isSecureCheck: isSecureCheck, keystrokeSecureCheck: nil)
+    }
+
+    /// 带按键阶段独立安全校验的注入前奏。
+    /// Shift 前奏与等待阶段允许屏保引擎（`allowScreensaver: true`），
+    /// 真正投递密码前必须使用更严格的按键阶段校验（`allowScreensaver: false`）。
+    @MainActor
+    public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool,
+                                          keystrokeSecureCheck: (() -> Bool)?) async -> Bool {
         AppLog.info(.unlock, "injectPasswordWithPreludeStart", [("passwordLength", "\(string.count)")])
 
         let displayWasOff = !isDisplayPoweredOn()
@@ -378,7 +425,7 @@ final class SystemInteractionService: Sendable {
         }
 
         AppLog.info(.unlock, "injectPasswordStart")
-        let result = fakeKeyStrokes(string, isSecureCheck: isSecureCheck)
+        let result = fakeKeyStrokes(string, isSecureCheck: keystrokeSecureCheck ?? isSecureCheck)
         AppLog.info(.unlock, "injectPasswordWithPreludeEnd", [("result", "\(result)")])
         return result
     }
