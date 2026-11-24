@@ -49,11 +49,13 @@ extension FUn {
     static func decayedEffectiveRSSI(effectiveRSSI: Double, elapsedSinceLastReceive: TimeInterval) -> Double {
         decayedEffectiveRSSI(effectiveRSSI: effectiveRSSI,
                              elapsedSinceLastReceive: elapsedSinceLastReceive,
-                             lockThreshold: nil)
+                             lockThreshold: nil,
+                             pollInterval: 2.0)
     }
 
     /// 信号中断期间的有效信号衰减：分段的温和曲线 + 与锁定阈值联动的封顶。
-    /// 目的：BLE 采样短暂间隙（几秒）不应把信号强行压到锁阈值之下造成误锁；
+    /// 免罚期与轮询间隔联动：max(6, pollInterval + 2)，8s 慢轮询不会因几秒采样间隙被额外惩罚。
+    /// 目的：BLE 采样短暂间隙不应把信号强行压到锁阈值之下造成误锁；
     /// 但同时保证真实离场（长时间无采样）仍能衰减到阈值以下触发锁定。
     /// - Parameters:
     ///   - effectiveRSSI: 最近一次采样的有效信号（dBm）
@@ -61,35 +63,67 @@ extension FUn {
     ///   - lockThreshold: 锁定阈值（dBm）。封顶与阈值联动：
     ///     cap = max(20, effectiveRSSI − lockThreshold + 6)——强在场信号（≥阈值-20）
     ///     长时间衰减后仍能跌破锁定阈值，心跳锁路径不因封顶失效；nil 时封顶固定 20 dB
+    ///   - pollInterval: 当前主动轮询间隔（0.5/2/8s），用于放宽免罚期
     static func decayedEffectiveRSSI(effectiveRSSI: Double, elapsedSinceLastReceive: TimeInterval,
-                                     lockThreshold: Int?) -> Double {
+                                     lockThreshold: Int?, pollInterval: TimeInterval = 2.0) -> Double {
         // 封顶：无阈值上下文固定 20 dB；有阈值时保证衰减深度足以跌破锁定阈值 6 dB
         let cap: Double = lockThreshold.map { max(20.0, effectiveRSSI - Double($0) + 6.0) } ?? 20.0
+        let grace = max(6.0, pollInterval + 2.0)
         let penalty: Double
-        if elapsedSinceLastReceive <= 6.0 {
-            // 6 秒内：不额外惩罚，信任管道 effectiveRSSI（缓冲 BLE 采样间隙）
+        if elapsedSinceLastReceive <= grace {
+            // 免罚期：信任管道 effectiveRSSI（覆盖当前轮询间隔的采样间隙）
             penalty = 0
-        } else if elapsedSinceLastReceive <= 10.0 {
-            // 6~10 秒：温和线性（0.75 dB/s，最多 3 dB）
-            penalty = (elapsedSinceLastReceive - 6.0) * 0.75
+        } else if elapsedSinceLastReceive <= grace + 4.0 {
+            // 免罚期后 4 秒：温和线性（0.75 dB/s，最多 3 dB）
+            penalty = (elapsedSinceLastReceive - grace) * 0.75
         } else {
-            // 10 秒后：1 dB/s，累计封顶 cap（长时间陈旧值不剧烈下探，但仍能触发锁定）
-            penalty = min(3.0 + (elapsedSinceLastReceive - 10.0), cap)
+            // 之后 1 dB/s，累计封顶 cap（长时间陈旧值不剧烈下探，但仍能触发锁定）
+            penalty = min(3.0 + (elapsedSinceLastReceive - grace - 4.0), cap)
         }
         return max(effectiveRSSI - penalty, -100.0)
     }
 
     func getEffectiveRSSI() -> Double {
-        // 阈值与信号状态锁内成对快照（修复 unlockRSSI/lockRSSI 裸读竞态）
-        let (lastRecv, effRSSI, uRSSI, lRSSI) = lock.withLock {
-            (lastReceiveTime, effectiveRSSI, _unlockRSSI, _lockRSSI)
+        // 阈值、信号状态与轮询间隔锁内一次快照（修复裸读竞态）
+        let (lastRecv, effRSSI, uRSSI, lRSSI, timerActive, pollBefore, activePoll) = lock.withLock {
+            (lastReceiveTime, effectiveRSSI, _unlockRSSI, _lockRSSI,
+             proximityTimer != nil, pollIntervalBeforeLockTimer, scanner.handler.activePollInterval)
         }
         let elapsed = Date().timeIntervalSince(lastRecv)
         // 封顶与锁定阈值联动（强在场信号突然消失时心跳锁路径仍能触发）
         let lockThreshold = SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: uRSSI, lockRSSI: lRSSI)
+        // 锁屏计时器在途时使用启动前保存的间隔，防止切到 0.5s 快档后免罚期骤降
+        let pollInterval = timerActive ? pollBefore : activePoll
         return Self.decayedEffectiveRSSI(effectiveRSSI: effRSSI,
                                          elapsedSinceLastReceive: elapsed,
-                                         lockThreshold: lockThreshold)
+                                         lockThreshold: lockThreshold,
+                                         pollInterval: pollInterval)
+    }
+
+    // MARK: - 锁屏计时器单样本守卫
+
+    /// 锁屏计时器结算决策。
+    enum LockTimerSettlement: Equatable {
+        case settleNow
+        /// 尚无新样本且未到失联结算期限：单次延长指定秒数
+        case extend(TimeInterval)
+    }
+
+    /// 失联结算期限：至少 10s；8s 轮询档为 12s（一个半周期）。
+    static func staleLossDeadline(forPollInterval pollInterval: TimeInterval) -> TimeInterval {
+        max(10.0, pollInterval + 4.0)
+    }
+
+    /// 计时器触发时的结算决策：
+    /// 已收到新样本（恢复则已取消，确认跌落则照常锁）→ 立即结算；
+    /// 已到失联结算期限，或已经延长过一次 → 立即结算；否则单次延长到期限，等待确认样本。
+    static func lockTimerSettlementAction(hasFreshSample: Bool, elapsed: TimeInterval,
+                                          pollIntervalBeforeTimer: TimeInterval,
+                                          alreadyExtended: Bool) -> LockTimerSettlement {
+        if hasFreshSample { return .settleNow }
+        let deadline = staleLossDeadline(forPollInterval: pollIntervalBeforeTimer)
+        if elapsed >= deadline || alreadyExtended { return .settleNow }
+        return .extend(deadline - elapsed)
     }
 
     // MARK: - 信号超时链
@@ -321,66 +355,111 @@ extension FUn {
         // 方案 C：锁屏超时随下降斜率自适应
         let slope = lock.withLock { pipeline.smoothedSlope }
         let timeout = Self.lockTimeout(slope: slope, base: proximityTimeout)
-        let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] timer in
-            guard let self = self else { return }
-            // 身份守卫：本 timer 已被置换/取消时直接丢弃过期 fire（与 resetSignalTimer
-            // 的 signalTimer 守卫同款），防孤立 Timer 执行锁定逻辑
-            guard self.lock.withLock({ self.proximityTimer === timer }) else { return }
-            let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
-            let nowEff = self.getEffectiveRSSI()
-            // 阈值锁内成对快照（修复裸读竞态）
-            let (uRSSI, lRSSI) = self.lock.withLock { (self._unlockRSSI, self._lockRSSI) }
-            let nowThreshold = Double(SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: uRSSI, lockRSSI: lRSSI))
-            let nowPresence = self.lock.withLock { self.presence }
-            AppLog.info(.lock, "lockTimerFired", [("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))"), ("presence", "\(nowPresence)"), ("lockOnIdle", "\(lockOnIdle)"), ("inputActive", "\(self.isUserInputActive)"), ("effAboveThreshold", "\(nowEff >= nowThreshold)")])
-            if nowEff >= nowThreshold {
-                AppLog.info(.lock, "lockTimerSkipped", [("reason", "signalRecovered"), ("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))")])
-                // 身份校验：仅清空仍是当前锁屏 timer 的引用（防过期 fire 误清新 timer）
-                self.lock.withLock {
-                    if self.proximityTimer === timer { self.proximityTimer = nil }
-                }
-                return
-            }
-            if lockOnIdle && self.isUserInputActive {
-                AppLog.info(.lock, "lockTimerDeferred", [("reason", "inputActive")])
-                self.lock.withLock {
-                    if self.proximityTimer === timer { self.proximityTimer = nil }
-                    self.lastReceiveTime = Date()
-                    self.pipeline.decayBaseline = Date()
-                }
-                return
-            }
-            if self.isWithinLockGracePeriod() {
-                AppLog.info(.lock, "lockTimerSkipped", [("reason", "withinUnlockGracePeriod")])
-                self.lock.withLock {
-                    if self.proximityTimer === timer { self.proximityTimer = nil }
-                }
-                return
-            }
-            AppLog.info(.lock, "deviceAway")
-            // P1: 记录锁定事件
-            SignalDataStore.shared.record(
-                rawRSSI: -100, kalmanEstimate: -100,
-                effectiveRSSI: -100, slope: 0, isAnomalous: false,
-                event: .locked)
-            self.lock.withLock {
-                self.presence = false
-                if self.proximityTimer === timer { self.proximityTimer = nil }
-            }
-            self.cancelHeartbeat()
-            Task { @MainActor [weak self] in
-                self?.delegate?.updatePresence(presence: false, reason: "away")
-            }
-        })
+        let timer = makeProximityTimer(timeout: timeout)
         // 锁内原子置换并取出旧 timer（P1-3）：防并发触发时后写覆盖前写，
         // 旧 Timer 沦为 RunLoop 中的孤立僵尸；invalidate 派发回主线程（注册在主 RunLoop）
         let oldTimer: Timer? = lock.withLock {
             let old = proximityTimer
             proximityTimer = timer
+            lockTimerStartedAt = Date()
+            pollIntervalBeforeLockTimer = scanner.handler.activePollInterval
+            lockTimerExtended = false
             return old
         }
         if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }
         RunLoop.main.add(timer, forMode: .common)
+        // 立即补采一次：让单样本骤降在定时器到期前拿到确认样本
+        scanner.handler.triggerImmediateRSSIProbe()
+    }
+
+    private func makeProximityTimer(timeout: TimeInterval) -> Timer {
+        Timer(timeInterval: timeout, repeats: false, block: { [weak self] timer in
+            self?.handleLockTimerFire(timer)
+        })
+    }
+
+    /// 仅在 lock 内调用：清空（若仍是当前）计时器引用并复位结算守卫。
+    private func clearProximityTimerLocked(ifMatches timer: Timer) {
+        if proximityTimer === timer { proximityTimer = nil }
+        lockTimerStartedAt = .distantPast
+        lockTimerExtended = false
+    }
+
+    /// 锁屏计时器触发：先做单样本结算守卫，再执行常规阈值/输入/冷静期判定。
+    private func handleLockTimerFire(_ timer: Timer) {
+        guard lock.withLock({ proximityTimer === timer }) else { return }
+
+        let (startedAt, pollBefore, extended, lastRecv) = lock.withLock {
+            (lockTimerStartedAt, pollIntervalBeforeLockTimer, lockTimerExtended, lastReceiveTime)
+        }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        let settlement = Self.lockTimerSettlementAction(
+            hasFreshSample: lastRecv > startedAt,
+            elapsed: elapsed,
+            pollIntervalBeforeTimer: pollBefore,
+            alreadyExtended: extended)
+        if case .extend(let remaining) = settlement {
+            lock.withLock {
+                lockTimerExtended = true
+                if proximityTimer === timer { proximityTimer = nil }
+            }
+            timer.invalidate()
+            let extensionTimer = makeProximityTimer(timeout: max(1.0, remaining))
+            let installed: Bool = lock.withLock {
+                guard proximityTimer == nil else { return false }
+                proximityTimer = extensionTimer
+                return true
+            }
+            if installed {
+                RunLoop.main.add(extensionTimer, forMode: .common)
+                scanner.handler.triggerImmediateRSSIProbe()
+                AppLog.info(.lock, "lockTimerExtended", [("elapsed", String(format: "%.1fs", elapsed)), ("remaining", String(format: "%.1fs", remaining))])
+            } else {
+                extensionTimer.invalidate()
+            }
+            return
+        }
+
+        let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
+        let nowEff = getEffectiveRSSI()
+        // 阈值锁内成对快照（修复裸读竞态）
+        let (uRSSI, lRSSI) = lock.withLock { (_unlockRSSI, _lockRSSI) }
+        let nowThreshold = Double(SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: uRSSI, lockRSSI: lRSSI))
+        let nowPresence = lock.withLock { presence }
+        AppLog.info(.lock, "lockTimerFired", [("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))"), ("presence", "\(nowPresence)"), ("lockOnIdle", "\(lockOnIdle)"), ("inputActive", "\(isUserInputActive)"), ("effAboveThreshold", "\(nowEff >= nowThreshold)")])
+        if nowEff >= nowThreshold {
+            AppLog.info(.lock, "lockTimerSkipped", [("reason", "signalRecovered"), ("eff", String(format: "%.1f", nowEff)), ("threshold", "\(Int(nowThreshold))")])
+            lock.withLock { clearProximityTimerLocked(ifMatches: timer) }
+            return
+        }
+        if lockOnIdle && isUserInputActive {
+            AppLog.info(.lock, "lockTimerDeferred", [("reason", "inputActive")])
+            lock.withLock {
+                clearProximityTimerLocked(ifMatches: timer)
+                lastReceiveTime = Date()
+                pipeline.decayBaseline = Date()
+            }
+            return
+        }
+        if isWithinLockGracePeriod() {
+            AppLog.info(.lock, "lockTimerSkipped", [("reason", "withinUnlockGracePeriod")])
+            lock.withLock { clearProximityTimerLocked(ifMatches: timer) }
+            return
+        }
+        AppLog.info(.lock, "deviceAway")
+        // P1: 记录锁定事件
+        SignalDataStore.shared.record(
+            rawRSSI: -100, kalmanEstimate: -100,
+            effectiveRSSI: -100, slope: 0, isAnomalous: false,
+            event: .locked)
+        lock.withLock {
+            presence = false
+            clearProximityTimerLocked(ifMatches: timer)
+        }
+        cancelHeartbeat()
+        Task { @MainActor [weak self] in
+            self?.delegate?.updatePresence(presence: false, reason: "away")
+        }
     }
 
     /// 锁定决策：信号低于锁定阈值（离开迟滞下沿）时按斜率启动锁屏计时器，
@@ -397,6 +476,8 @@ extension FUn {
             let oldTimer: Timer? = lock.withLock {
                 let t = proximityTimer
                 proximityTimer = nil
+                lockTimerStartedAt = .distantPast
+                lockTimerExtended = false
                 return t
             }
             if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }

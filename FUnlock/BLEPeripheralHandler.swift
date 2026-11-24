@@ -33,6 +33,28 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     /// 快速轮询间隔（s）：信号接近阈值时降低感知延迟
     private static let fastPollInterval: TimeInterval = 0.5
 
+    /// 主动轮询回退被动模式的超时（s）：至少覆盖 2.5 个轮询周期。
+    /// 旧硬编码 10s 不足以覆盖 8s 档的一个完整周期，轻微丢读就被误判断流。
+    static func fallbackTimeout(forPollInterval pollInterval: TimeInterval) -> TimeInterval {
+        max(12.0, pollInterval * 2.5)
+    }
+
+    /// 立即补采一次 RSSI 并切到快轮询档：锁屏结算前的确认样本，避免单样本骤降误锁。
+    /// 调用方不得持锁（内部取锁并调用 CoreBluetooth）。
+    func triggerImmediateRSSIProbe() {
+        guard let scanner = scanner else { return }
+        let peripheral: CBPeripheral? = lock.withLock {
+            if activePollInterval > Self.fastPollInterval {
+                activePollInterval = Self.fastPollInterval
+                stableCount = 0
+            }
+            return scanner.monitoredPeripheral
+        }
+        if peripheral?.state == .connected {
+            peripheral?.readRSSI()
+        }
+    }
+
     init(lock: UnfairLock, scanner: BLEScanner) {
         self.lock = lock
         self.scanner = scanner
@@ -90,7 +112,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             let isCurrent = self.lock.withLock { self.activeModeTimer === timer }
             guard isCurrent else { return }
             let lastRead = self.lock.withLock { self.lastReadAt }
-            if Date().timeIntervalSince1970 > lastRead + 10 {
+            if Date().timeIntervalSince1970 > lastRead + Self.fallbackTimeout(forPollInterval: pollInterval) {
                 AppLog.info(.ble, "fallbackToPassiveMode", [("id", "\(peripheral.identifier)")])
                 self.scanner?.centralMgr.cancelPeripheralConnection(peripheral)
                 // 自停用 block 参数（主线程 fire 内 invalidate，符合契约）；
@@ -173,8 +195,11 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard let scanner = scanner else { return }
         AppLog.info(.ble, "disconnected", [("id", "\(peripheral.identifier)"), ("error", error?.localizedDescription)])
-        // monitoredPeripheral 比较在锁内（修复锁外比较竞态）
-        let isMonitored = lock.withLock { peripheral == scanner.monitoredPeripheral }
+        // 同 UUID 的新 CBPeripheral 实例可能不等于旧对象，按 identifier 匹配防漏触发重扫
+        let isMonitored = lock.withLock {
+            peripheral.identifier == scanner.monitoredUUID ||
+            peripheral.identifier == scanner.monitoredPeripheral?.identifier
+        }
         if isMonitored {
             invalidateAllTimers()
             // 不立即锁屏 — BLE 连接可能因干扰短暂断开

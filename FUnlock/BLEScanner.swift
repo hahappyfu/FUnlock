@@ -84,22 +84,21 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
 
     // MARK: - 扫描 / 监控生命周期
 
+    /// 当前扫描是否需要 AllowDuplicates（调用方必须持锁）。
+    /// 已绑定设备且处于被动模式、或主动模式尚未进入轮询（连接/重连期）时需要重复广播；
+    /// 未绑定设备或主动轮询健康（readRSSI 驱动）时不需要。
+    func computeAllowDuplicatesLocked() -> Bool {
+        guard monitoredUUID != nil else { return false }
+        if passiveMode { return true }
+        return handler.activeModeTimer == nil
+    }
+
     func scanForPeripherals() {
         // 优化：根据当前模式动态决定 AllowDuplicates。
         // monitoredUUID/passiveMode/currentScanAllowDuplicates 均为跨线程共享状态
         // （主线程写 vs bleQueue 读），统一锁内快照并锁内完成 AllowDuplicates 状态置换
         let (restartNeeded, allowDuplicates): (Bool, Bool) = lock.withLock {
-            let duplicates: Bool
-            if monitoredUUID == nil {
-                // 未绑定设备，只需发现列表，不需要重复广播
-                duplicates = false
-            } else if passiveMode {
-                // 被动模式：靠扫描回调获取 RSSI，需要重复
-                duplicates = true
-            } else {
-                // 主动模式 + 有目标：靠 readRSSI 轮询，不需要重复
-                duplicates = false
-            }
+            let duplicates = computeAllowDuplicatesLocked()
             // 参数没变且正在扫描，跳过重启
             if centralMgr.isScanning && currentScanAllowDuplicates == duplicates {
                 return (false, duplicates)

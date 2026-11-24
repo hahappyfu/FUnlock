@@ -424,3 +424,52 @@ class StaircaseThresholdTests: XCTestCase {
                        "解锁禁用哨兵应原样返回（不参与 -100 钳制）")
     }
 }
+
+// MARK: - Task 3：慢轮询回退、重连广播与快锁单样本守卫
+
+final class LockTimerGuardTests: XCTestCase {
+
+    func testFallbackTimeoutScalesWithPollInterval() {
+        XCTAssertEqual(BLEPeripheralHandler.fallbackTimeout(forPollInterval: 0.5), 12.0)
+        XCTAssertEqual(BLEPeripheralHandler.fallbackTimeout(forPollInterval: 2.0), 12.0)
+        XCTAssertEqual(BLEPeripheralHandler.fallbackTimeout(forPollInterval: 8.0), 20.0)
+    }
+
+    func testDecayedEffectiveRSSIRespects8sPollGrace() {
+        // 8s 轮询 → 免罚期 max(6, 8+2)=10s；9s 时惩罚必须为 0
+        let at9s = FUn.decayedEffectiveRSSI(effectiveRSSI: -65, elapsedSinceLastReceive: 9.0,
+                                            lockThreshold: -80, pollInterval: 8.0)
+        XCTAssertEqual(at9s, -65.0, accuracy: 0.01)
+
+        // 旧 2 参数调用保持 6s 免罚期
+        let defaultAt8s = FUn.decayedEffectiveRSSI(effectiveRSSI: -65, elapsedSinceLastReceive: 8.0)
+        XCTAssertLessThan(defaultAt8s, -65.0)
+    }
+
+    func testSingleSampleFastLockDefersUntilFreshSampleOrStaleDeadline() {
+        // 8s 轮询 → 失联结算期限 12s；2.5s 时无新样本 → 延长 9.5s
+        let first = FUn.lockTimerSettlementAction(hasFreshSample: false, elapsed: 2.5,
+                                                  pollIntervalBeforeTimer: 8.0, alreadyExtended: false)
+        XCTAssertEqual(first, .extend(9.5))
+
+        // 已收到新样本 → 立即结算
+        let fresh = FUn.lockTimerSettlementAction(hasFreshSample: true, elapsed: 2.5,
+                                                  pollIntervalBeforeTimer: 8.0, alreadyExtended: false)
+        XCTAssertEqual(fresh, .settleNow)
+
+        // 已达失联结算期限 → 立即结算
+        let stale = FUn.lockTimerSettlementAction(hasFreshSample: false, elapsed: 12.0,
+                                                  pollIntervalBeforeTimer: 8.0, alreadyExtended: true)
+        XCTAssertEqual(stale, .settleNow)
+    }
+
+    func testScanAllowDuplicatesEnabledDuringActiveReconnect() {
+        let fun = FUn()
+        fun.lock.withLock {
+            fun.scanner.monitoredUUID = UUID()
+            fun.scanner.passiveMode = false
+            fun.scanner.handler.activeModeTimer = nil
+        }
+        XCTAssertTrue(fun.scanner.computeAllowDuplicatesLocked())
+    }
+}

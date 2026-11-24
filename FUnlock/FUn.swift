@@ -147,6 +147,10 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     let proximityGracePeriod: TimeInterval = 5.0
     var proximityTimer: Timer?
     var signalTimer: Timer?
+    // 锁屏计时器结算守卫（共享 lock 保护）：启动时间、启动前轮询间隔、是否已延长一次
+    var lockTimerStartedAt: Date = .distantPast
+    var pollIntervalBeforeLockTimer: TimeInterval = 2.0
+    var lockTimerExtended = false
 
     func scanForPeripherals() {
         scanner.scanForPeripherals()
@@ -209,6 +213,8 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         let oldProximity: Timer? = lock.withLock {
             let t = proximityTimer
             proximityTimer = nil
+            lockTimerStartedAt = .distantPast
+            lockTimerExtended = false
             return t
         }
         if let t = oldProximity { DispatchQueue.main.async { t.invalidate() } }
