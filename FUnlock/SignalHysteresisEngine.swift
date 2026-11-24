@@ -102,14 +102,16 @@ enum SignalHysteresisEngine {
 
     /// 双阈值迟滞判定：靠近（有效信号 ≥ 解锁阈值）与离开（有效信号 < 锁定阈值）之间为保持区。
     /// 判定统一基于 effectiveRSSI（与锁计时器同源），避免原始 RSSI 尖峰导致振荡。
+    /// `lockRSSI == lockDisabled` 表示禁用自动锁屏：isAway 恒为 false，任何信号都不触发离场锁屏。
     static func checkProximity(effectiveRSSI: Double, unlockRSSI: Int, lockRSSI: Int) -> ProximityDecision {
         let unlockThreshold = unlockRSSI == unlockDisabled ? lockRSSI : unlockRSSI
         let lockThreshold = resolvedLockThreshold(unlockRSSI: unlockRSSI, lockRSSI: lockRSSI)
+        let isAway = lockRSSI == lockDisabled ? false : effectiveRSSI < Double(lockThreshold)
         return ProximityDecision(
             unlockThreshold: unlockThreshold,
             lockThreshold: lockThreshold,
             isClose: effectiveRSSI >= Double(unlockThreshold),
-            isAway: effectiveRSSI < Double(lockThreshold)
+            isAway: isAway
         )
     }
 

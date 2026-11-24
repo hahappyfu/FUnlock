@@ -310,7 +310,9 @@ extension FUn {
                 let stair = _unlockRSSI - trigger
                 let nearClimb = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(stair))
                 let lockThreshold = SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: _unlockRSSI, lockRSSI: _lockRSSI)
-                let nearLock = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockThreshold))
+                let nearLock = _lockRSSI == Self.LOCK_DISABLED
+                    ? false
+                    : SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(lockThreshold))
                 isNear = nearClimb || nearLock
             } else if _lockRSSI != Self.LOCK_DISABLED {
                 isNear = SignalHysteresisEngine.isNearThreshold(effectiveRSSI, threshold: Double(_lockRSSI))

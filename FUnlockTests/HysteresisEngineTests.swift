@@ -82,8 +82,8 @@ final class SignalHysteresisProximityTests: XCTestCase {
         XCTAssertTrue(d.isAway)
     }
 
-    func testLockDisabledSentinelCollapsesHysteresisBand() {
-        // 锁定禁用哨兵：锁定阈值回退解锁阈值 → 无保持区，isClose 与 isAway 互补
+    func testLockDisabledSentinelDisablesAwayDetection() {
+        // 锁定禁用哨兵：自动锁屏关闭；isClose 仍按解锁阈值，isAway 恒 false
         let near = SignalHysteresisEngine.checkProximity(
             effectiveRSSI: -59.9, unlockRSSI: unlock, lockRSSI: FUn.LOCK_DISABLED)
         XCTAssertTrue(near.isClose)
@@ -92,8 +92,16 @@ final class SignalHysteresisProximityTests: XCTestCase {
         let away = SignalHysteresisEngine.checkProximity(
             effectiveRSSI: -60.1, unlockRSSI: unlock, lockRSSI: FUn.LOCK_DISABLED)
         XCTAssertFalse(away.isClose)
-        XCTAssertTrue(away.isAway, "窗口坍缩后跌破单阈值即离开，无迟滞保护")
-        XCTAssertEqual(away.lockThreshold, unlock)
+        XCTAssertFalse(away.isAway, "锁定禁用后，任何信号都不得报告离开")
+        XCTAssertEqual(away.lockThreshold, unlock, "解析阈值仍可回退用于展示/衰减封顶")
+    }
+
+    /// LOCK_DISABLED = 禁用自动锁屏：不得再报告 isAway（否则心跳/计时器仍会误锁）
+    func testLockDisabledSentinelNeverReportsAway() {
+        let d = SignalHysteresisEngine.checkProximity(
+            effectiveRSSI: -95, unlockRSSI: -60, lockRSSI: SignalHysteresisEngine.lockDisabled)
+        XCTAssertFalse(d.isAway, "LOCK_DISABLED 表示禁用自动锁屏，必须恒 isAway == false")
+        XCTAssertFalse(d.isClose)
     }
 }
 

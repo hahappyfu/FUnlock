@@ -476,6 +476,18 @@ extension FUn {
     func applyLockTimer(rssi: Int, effectiveRSSI: Double) {
         // 阈值锁内成对快照（修复 unlockRSSI/lockRSSI 裸读竞态与中间态撕裂）
         let (uRSSI, lRSSI) = lock.withLock { (_unlockRSSI, _lockRSSI) }
+        // 锁定禁用（-100）：统一语义为「关闭自动锁屏」，不启动/不保留锁屏计时器
+        if lRSSI == Self.LOCK_DISABLED {
+            let oldTimer: Timer? = lock.withLock {
+                let t = proximityTimer
+                proximityTimer = nil
+                lockTimerStartedAt = .distantPast
+                lockTimerExtended = false
+                return t
+            }
+            oldTimer?.invalidateOnMain()
+            return
+        }
         let decision = SignalHysteresisEngine.checkProximity(
             rssi: Double(rssi), effectiveRSSI: effectiveRSSI,
             unlockRSSI: uRSSI, lockRSSI: lRSSI)
