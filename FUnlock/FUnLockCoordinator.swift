@@ -126,6 +126,12 @@ extension FUn {
         return .extend(deadline - elapsed)
     }
 
+    /// 锁屏结算使用的静默时长：必须以上次采样为基准，而不是计时器启动时刻。
+    /// 心跳可能在设备已失联 10s 后才启动计时器；从启动时刻算会重复计算并多延长一个期限。
+    static func lockTimerSilenceElapsed(now: Date, lastReceiveTime: Date) -> TimeInterval {
+        now.timeIntervalSince(lastReceiveTime)
+    }
+
     // MARK: - 信号超时链
 
     /// 事件驱动的信号超时链（幂等「确保存在」）：
@@ -392,7 +398,7 @@ extension FUn {
         let (startedAt, pollBefore, extended, lastRecv) = lock.withLock {
             (lockTimerStartedAt, pollIntervalBeforeLockTimer, lockTimerExtended, lastReceiveTime)
         }
-        let elapsed = Date().timeIntervalSince(startedAt)
+        let elapsed = Self.lockTimerSilenceElapsed(now: Date(), lastReceiveTime: lastRecv)
         let settlement = Self.lockTimerSettlementAction(
             hasFreshSample: lastRecv > startedAt,
             elapsed: elapsed,

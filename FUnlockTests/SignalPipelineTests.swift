@@ -463,6 +463,22 @@ final class LockTimerGuardTests: XCTestCase {
         XCTAssertEqual(stale, .settleNow)
     }
 
+    /// Review 修正：静默时长必须以「上次采样」为基准，而不是计时器启动时刻。
+    /// 心跳可能在失联 10s 后才启动计时器；若从启动时刻算，会把已静默的 10s 再延长一轮。
+    func testLockTimerSilenceElapsedUsesLastReceiveBaseline() {
+        let lastReceive = Date(timeIntervalSince1970: 1_000)
+        let now = lastReceive.addingTimeInterval(12.5)
+        XCTAssertEqual(FUn.lockTimerSilenceElapsed(now: now, lastReceiveTime: lastReceive),
+                       12.5, accuracy: 0.001)
+        // 12.5s 已超过 8s 轮询的 12s 失联期限 → 直接结算，不得再延长
+        let action = FUn.lockTimerSettlementAction(
+            hasFreshSample: false,
+            elapsed: FUn.lockTimerSilenceElapsed(now: now, lastReceiveTime: lastReceive),
+            pollIntervalBeforeTimer: 8.0,
+            alreadyExtended: false)
+        XCTAssertEqual(action, .settleNow)
+    }
+
     func testScanAllowDuplicatesEnabledDuringActiveReconnect() {
         let fun = FUn()
         fun.lock.withLock {

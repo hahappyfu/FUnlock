@@ -94,8 +94,14 @@ final class SystemInteractionService: Sendable {
             AppLog.debug(.unlock, "secureCheckFailed", [("reason", "systemSessionUnlocked")])
             return false
         }
-        let frontmost = Self.frontmostBundleIDProvider?()
-            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // 注入 provider 时必须尊重其 nil 返回值（模拟 macOS 14+ 锁屏无前台应用），
+        // 不能用 `??` 穿透到宿主真实前台（测试会读到 Xcode/Terminal）。
+        let frontmost: String?
+        if let provider = Self.frontmostBundleIDProvider {
+            frontmost = provider()
+        } else {
+            frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        }
         if let frontmost {
             if frontmost == "com.apple.loginwindow" {
                 AppLog.debug(.unlock, "secureCheckPassed", [("frontmost", frontmost)])
