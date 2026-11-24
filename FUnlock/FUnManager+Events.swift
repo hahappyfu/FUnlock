@@ -6,12 +6,6 @@
 import Foundation
 import Cocoa
 
-/// isSelfLocking 置位时间戳（审计修复 #2a：com.apple.screenIsLocked 通知可能丢失，
-/// 标志残留会把用户下一次手动锁屏误判为自动锁屏；消费时距置位超过 10s 视为过期）。
-/// extension 无法添加存储属性，故放文件作用域；FUnManager 全类 @MainActor 隔离，
-/// 本标记同样限定主线程访问。internal 可见性供测试注入时间戳。
-@MainActor var selfLockingStartedAt: Date?
-
 extension FUnManager {
 
     // MARK: - 系统事件入口
@@ -91,6 +85,7 @@ extension FUnManager {
 
     func onUnlock() {
         AppLog.info(.sm, "userUnlocked")
+        clearSelfLockWindow()
         state.screen = .unlocked
         state.unlockedAt = Date()
         state.intent = .autoLock
@@ -145,8 +140,8 @@ extension FUnManager {
         AppLog.info(.sm, "screensaverStart")
         // 审计修复 #1：手动启动屏保（热角等）等同手动锁定——只改 screen 不设 intent 时，
         // 屏保结束后设备靠近仍会自动解锁。与 onSystemScreenLocked 的手动锁分支同语义；
-        // isSelfLocking（FUnlock 自锁走屏保路径）时不标记，消费逻辑见 onSystemScreenLocked
-        if !isSelfLocking {
+        // 自锁窗口内不标记手动锁，也不清空窗口（系统锁屏与屏保通知可能任意顺序到达）
+        if !isWithinSelfLockWindow {
             markManualLock()
         }
         state.screen = .screensaver
@@ -164,30 +159,20 @@ extension FUnManager {
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
         AppLog.info(.sm, "systemScreenLocked")
-        // 审计修复 #2a：isSelfLocking 置位超过 10s 视为过期——
-        // com.apple.screenIsLocked 通知丢失时标志残留，会把用户下一次手动锁屏误判为自动锁屏
-        let selfLockingExpired: Bool
-        if let startedAt = selfLockingStartedAt {
-            selfLockingExpired = now.timeIntervalSince(startedAt) > 10
-        } else {
-            selfLockingExpired = false
-        }
-        let isManualLock = !isSelfLocking || selfLockingExpired
-        if isSelfLocking && !selfLockingExpired {
-            // FUnlock 自动锁屏，不标记为手动锁定
+        // 自锁窗口内：按自动锁处理且不清空窗口（屏保通知可能随后到达）；
+        // 窗口外：手动锁，永久阻止自动解锁直到 onUnlock。
+        let isSelfLock = isWithinSelfLockWindow
+        if isSelfLock {
             state.intent = .autoLock
         } else {
-            // 用户手动锁屏（⌘+Ctrl+Q 等）→ 永久阻止自动解锁，直到手动解锁
             markManualLock()
         }
-        isSelfLocking = false
-        selfLockingStartedAt = nil
         state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
         lastLockTime = now
         // 在 state.screen 更新后记录，保证诊断日志的屏幕状态为锁屏后的 .locked(manual)，
         // 与 onUnlock 记录 userUnlocked 的时机语义一致
-        if isManualLock { recordUser(.userLocked) }
+        if !isSelfLock { recordUser(.userLocked) }
     }
 
     // MARK: - FUn 设备事件
@@ -265,8 +250,7 @@ extension FUnManager {
         state.screen = .displaySleeping
         lastLockTime = now
         checkAndPauseMedia()
-        isSelfLocking = true
-        selfLockingStartedAt = now
+        beginSelfLockWindow()
         let sys = SystemInteractionService.shared
         sys.lockOrSaveScreen(useScreensaver: prefs.bool(forKey: "screensaver"),
                              sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
@@ -288,26 +272,9 @@ extension FUnManager {
             isAnomalous: snap.lastSignalAnomalous,
             result: "success"
         )
-        // 审计修复 #2b：锁屏调用 2s 后回读会话状态，验证锁屏确实生效
-        // （SACLockScreenImmediate/屏保启动可能静默失败，失败时通知 com.apple.screenIsLocked
-        // 也不会来，isSelfLocking 残留 + 本地状态卡在锁定态）。未锁定则本地告警、
-        // screen 回滚 unlocked 并复位 isSelfLocking。
-        // 本回读在 @MainActor 执行，必须用 Task.sleep 而非 Thread.sleep。
-        // 判定与 isScreenLocked 同源：CGSession 已锁 或 ScreenSaver.Engine 在运行（屏保路径）
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled, let self, self.isSelfLocking else { return }
-            let dict = CGSessionCopyCurrentDictionary() as? [String: Any]
-            let sessionLocked = dict?["CGSSessionScreenIsLocked"] as? Int == 1
-            let screensaverRunning = !NSRunningApplication.runningApplications(
-                withBundleIdentifier: "com.apple.ScreenSaver.Engine").isEmpty
-            if !sessionLocked && !screensaverRunning {
-                AppLog.error(.lock, "lockVerifyFailed", [("action", "rollbackToUnlocked")])
-                self.state.screen = .unlocked
-                self.isSelfLocking = false
-                selfLockingStartedAt = nil
-            }
-        }
+        // 锁屏回读验证（2s）：SACLockScreenImmediate/屏保启动可能静默失败，
+        // 失败时系统锁屏通知也不会来。代次守卫防止旧验证误伤新一次锁屏。
+        scheduleLockVerification()
     }
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {

@@ -383,13 +383,10 @@ class AuditBatch4FixTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         manager = FUnManager(fun: FUn())
-        // 隔离文件作用域的全局时间戳，避免用例间残留
-        selfLockingStartedAt = nil
     }
 
     override func tearDown() async throws {
         manager.orchestrator.cancelPendingTasks()
-        selfLockingStartedAt = nil
         try await super.tearDown()
     }
 
@@ -412,25 +409,25 @@ class AuditBatch4FixTests: XCTestCase {
                        "FUnlock 自锁触发的屏保不应进入 manualLock")
     }
 
-    // MARK: 修复 #2a：isSelfLocking 残留超过 10s 视为过期
+    // MARK: Task 7：自锁窗口超过 10s 自然过期
 
     func testStaleSelfLockingFlagTreatedAsManualLock() {
-        // com.apple.screenIsLocked 通知丢失 → 标志残留；10s 后用户手动锁屏
+        // com.apple.screenIsLocked 通知丢失 → 窗口残留；10s 后用户手动锁屏
         manager.isSelfLocking = true
-        selfLockingStartedAt = Date().addingTimeInterval(-11)
+        manager.beginSelfLockWindow(duration: -11)
         manager.onSystemScreenLocked()
         XCTAssertTrue(manager.state.intent.isManualLockActive,
-                      "置位超 10s 的残留标志应视为过期，按手动锁屏处理")
-        XCTAssertFalse(manager.isSelfLocking, "消费后标志应复位")
+                      "置位超 10s 的残留窗口应视为过期，按手动锁屏处理")
+        XCTAssertFalse(manager.isWithinSelfLockWindow, "过期窗口不应再被识别为自锁")
     }
 
     func testFreshSelfLockingFlagStillConsumedAsAutoLock() {
         manager.isSelfLocking = true
-        selfLockingStartedAt = Date()
         manager.onSystemScreenLocked()
         XCTAssertEqual(manager.state.intent, .autoLock,
                        "10s 内的正常自锁路径不受过期判定影响")
-        XCTAssertFalse(manager.isSelfLocking)
+        XCTAssertTrue(manager.isWithinSelfLockWindow,
+                      "窗口保留给随后到达的屏保通知（不再单次通知即清空）")
     }
 
     // MARK: 修复 #4/#10：程序自唤醒不触发用户干预
@@ -460,6 +457,12 @@ class AuditBatch4FixTests: XCTestCase {
         // P0-3：手动唤醒必须先干预（取消陈旧任务）再调度新解锁任务——
         // 反序时 onUserIntervention.cancelPendingTasks 会无条件取消刚调度的任务，
         // 手动唤醒的自动解锁 100% 失效
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+        }
         manager.fun.presence = true
         manager.state.screen = .displaySleeping
         manager.orchestrator.displayWakeRequested = false  // 用户手动唤醒，无自唤醒标记

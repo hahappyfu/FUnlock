@@ -37,7 +37,17 @@ final class FUnManager {
     @ObservationIgnored let stateMachine: FUnlockStateMachine
     @ObservationIgnored let decisionLogger: DecisionLogger
     var inputMonitor: InputActivityMonitor?
-    var isSelfLocking = false  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
+    var isSelfLocking = false {  // 区分 FUnlock 自动锁屏 vs 用户手动锁屏
+        didSet {
+            // 兼容旧调用点/测试直接写 isSelfLocking：置位即开启 10s 自锁窗口
+            selfLockWindowDeadline = isSelfLocking ? now.addingTimeInterval(10) : nil
+        }
+    }
+    /// 自锁时间窗口：屏保/系统锁通知任意顺序到达都能在窗口内识别为 FUnlock 自锁。
+    /// 仅 onUnlock / lockNow 主动清除；窗口到期自然失效。
+    @ObservationIgnored var selfLockWindowDeadline: Date?
+    /// 锁屏回读验证代次：新一次锁屏使旧验证失效。
+    @ObservationIgnored var lockVerificationGeneration: UInt64 = 0
     @ObservationIgnored private let updateChecker = UpdateChecker(defaults: ConfigStore.shared.defaults)
     @ObservationIgnored private let downloader = UpdateDownloader()
     private(set) var updateState: UpdateDownloader.State = .idle
@@ -74,6 +84,40 @@ final class FUnManager {
     /// 标记手动锁定意图（lockNow / 屏保启动 / 系统锁屏三处的单一入口）
     func markManualLock() {
         state.intent = .manualLock(deadline: Date().addingTimeInterval(FUnManager.manualLockIntentDuration))
+    }
+
+    /// 当前是否处于自锁窗口内。
+    var isWithinSelfLockWindow: Bool {
+        guard let deadline = selfLockWindowDeadline else { return false }
+        return now <= deadline
+    }
+
+    /// 开启自锁窗口（自动锁屏路径）。duration 可注入负值用于测试过期窗口。
+    func beginSelfLockWindow(duration: TimeInterval = 10) {
+        isSelfLocking = true  // didSet 先置默认 10s 窗口
+        selfLockWindowDeadline = now.addingTimeInterval(duration)
+    }
+
+    /// 清除自锁窗口（用户解锁 / 手动锁屏）。
+    func clearSelfLockWindow() {
+        selfLockWindowDeadline = nil
+        isSelfLocking = false  // didSet 再次置 nil
+    }
+
+    /// 2s 锁屏回读验证：系统未锁且无屏保时回滚本地锁定态。
+    /// 用代次守卫，避免旧验证在新一次锁屏后误回滚。
+    func scheduleLockVerification(delayNanoseconds: UInt64 = 2_000_000_000) {
+        lockVerificationGeneration &+= 1
+        let generation = lockVerificationGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled, let self, self.lockVerificationGeneration == generation else { return }
+            guard !SystemInteractionService.shared.isSystemSessionLocked() else { return }
+            guard self.state.screen != .unlocked else { return }
+            AppLog.error(.lock, "lockVerifyFailed", [("action", "rollbackToUnlocked")])
+            self.state.screen = .unlocked
+            self.clearSelfLockWindow()
+        }
     }
 
     func recordLock(_ reason: DecisionReason, detail: String = "") {
@@ -191,7 +235,8 @@ final class FUnManager {
 
     func lockNow() {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
-        // 手动锁定：永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
+        // 手动锁定：清空自锁窗口，永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
+        clearSelfLockWindow()
         markManualLock()
         state.screen = .locked(reason: .manual)
         lastLockTime = now
@@ -199,6 +244,7 @@ final class FUnManager {
         SystemInteractionService.shared.lockOrSaveScreen(
             useScreensaver: prefs.bool(forKey: "screensaver"),
             sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
+        scheduleLockVerification()
     }
 
     // MARK: - 设备发现
@@ -295,6 +341,7 @@ final class FUnManager {
             funlock_releaseWakeAssertion()
         }
         orchestrator.cancelPendingTasks()
+        lockVerificationGeneration &+= 1
         intrudeCheckTask?.cancel()
     }
 

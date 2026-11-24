@@ -33,9 +33,14 @@ class OrchestratorGatesTests: XCTestCase {
         // 本套用例大量走 onDeviceLeft 的真实锁屏路径，必须拦截真实锁屏动作，
         // 否则每跑一次测试就真的锁住用户电脑（2026-11-02 实测全量测试触发 36 次）
         SystemInteractionService.lockActionOverride = {}
+        // 门控矩阵默认模拟「会话已锁」；需要已解锁场景的用例自行覆盖 provider
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        SystemInteractionService.screensaverRunningProvider = { false }
     }
 
     override func tearDown() async throws {
+        SystemInteractionService.sessionDictProvider = nil
+        SystemInteractionService.screensaverRunningProvider = nil
         SystemInteractionService.lockActionOverride = nil
         manager?.orchestrator.cancelPendingTasks()
         manager = nil
@@ -331,6 +336,9 @@ class OrchestratorGatesTests: XCTestCase {
     /// 屏幕已解锁:所有决策记录之后的静默早退 — 无解锁决策、无任务调度
     func testScreenAlreadyUnlockedEarlyExitSilently() throws {
         try skipIfHostSessionLocked()
+        // 覆盖 setUp 的默认锁态：本用例专门验证「系统会话已解锁」静默早退
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
         manager.lockBufferDuration = 0
         manager.fun.presence = true
         manager.fun.effectiveRSSI = -50  // 全部门控均通过,唯一出口是 screenLocked 检查
@@ -349,6 +357,9 @@ class OrchestratorGatesTests: XCTestCase {
     /// 在冷却期内被冷却门控拦截;冷却过期后屏幕已解锁,静默早退不调度注入
     func testUnlockNotificationArrivingBeforeDeviceApproach() throws {
         try skipIfHostSessionLocked()
+        // 覆盖 setUp 的默认锁态：解锁通知先到，后续应为已解锁会话
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
         snapshotKeys(["enabled"])
         ConfigStore.shared.defaults.set(true, forKey: "enabled")
         manager.lockBufferDuration = 0
@@ -676,5 +687,34 @@ class OrchestratorGatesTests: XCTestCase {
         manager.orchestrator.attemptAutoUnlock()
         XCTAssertEqual(manager.orchestrator.unlockTaskGeneration, firstGen)
         XCTAssertTrue(manager.orchestrator.hasPendingUnlockTask)
+    }
+
+    // MARK: - Task 7: 自锁窗口（双通知顺序）
+
+    func testSelfLockHandlesScreenLockedBeforeScreensaverStartWithoutFalseManualLock() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        defer { SystemInteractionService.sessionDictProvider = nil }
+
+        manager.beginSelfLockWindow()
+        manager.onSystemScreenLocked()
+        XCTAssertEqual(manager.state.intent, .autoLock)
+
+        // 屏保通知 2s 后到达（仍在 10s 窗口内）不得把自锁误标为手动锁
+        currentTime = currentTime.addingTimeInterval(2)
+        manager.onScreensaverStart()
+        XCTAssertEqual(manager.state.intent, .autoLock)
+    }
+
+    func testUnlockClearsSelfLockWindowSoSubsequentManualLockIsManual() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        defer { SystemInteractionService.sessionDictProvider = nil }
+
+        manager.beginSelfLockWindow()
+        manager.onUnlock()
+
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "自锁窗口被 onUnlock 清除后，后续锁屏必须按手动锁处理")
     }
 }
