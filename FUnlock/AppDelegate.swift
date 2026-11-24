@@ -8,8 +8,7 @@ import UserNotifications
 import SwiftUI
 import Combine
 import CoreBluetooth
-import IOKit.hid
-import os.lock
+import CoreGraphics
 
 // MARK: - 输入活动监听
 
@@ -18,91 +17,32 @@ extension Notification.Name {
     static let globalHotKeyPressed = Notification.Name("globalHotKeyPressed")
 }
 
+/// 输入活动监测：直接查询系统「距上次任何输入事件的秒数」。
+/// 旧实现依赖 IOHIDManager，需要独立的「输入监控」TCC 授权；未授权时打开失败被静默忽略，
+/// 导致 lockOnIdle 防误锁保护长期失效。CGEventSource 查询不需要该授权，也没有 HID 生命周期管理。
 class InputActivityMonitor {
-    private var hidManager: IOHIDManager?
-    /// start() 时实际调度的 RunLoop，stop() 据此精确反注册
-    private var scheduledRunLoop: CFRunLoop?
-    private var _lastInputTime: Date = Date.distantPast
-    private var lock = os_unfair_lock()
-    var activityWindow: TimeInterval = 15
+    private let idleTimeProvider: () -> TimeInterval
+    var activityWindow: TimeInterval
 
-    var lastInputTime: Date {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
-        return _lastInputTime
+    init(activityWindow: TimeInterval = 15,
+         idleTimeProvider: @escaping () -> TimeInterval = {
+             CGEventSource.secondsSinceLastEventType(.combinedSessionState,
+                                                     eventType: CGEventType(rawValue: UInt32.max)!)
+         }) {
+        self.activityWindow = activityWindow
+        self.idleTimeProvider = idleTimeProvider
     }
 
+    /// 活跃判定：窗口 > 0、idle 有效（有限且非负）且小于窗口。
+    /// 任何查询异常都保守返回 false，绝不因监测失效而永久阻止锁屏。
     var isActive: Bool {
-        Date().timeIntervalSince(lastInputTime) < activityWindow
+        let idle = idleTimeProvider()
+        return activityWindow > 0 && idle.isFinite && idle >= 0 && idle < activityWindow
     }
 
-    func start() {
-        hidManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(0))
-        guard let hidManager = hidManager else { return }
-        let keyboard: [String: Any] = [
-            kIOHIDDeviceUsagePageKey: 0x01,
-            kIOHIDDeviceUsageKey: 0x06
-        ]
-        let trackpad: [String: Any] = [
-            kIOHIDDeviceUsagePageKey: 0x0D,
-            kIOHIDDeviceUsageKey: 0x04
-        ]
-        // 鼠标（Generic Desktop / Mouse）：不匹配则纯鼠标操作永不刷新输入时间戳，
-        // lockOnIdle 开启时会被误判为长时间无输入而锁屏
-        let mouse: [String: Any] = [
-            kIOHIDDeviceUsagePageKey: 0x01,
-            kIOHIDDeviceUsageKey: 0x02
-        ]
-        IOHIDManagerSetDeviceMatchingMultiple(hidManager, [keyboard, trackpad, mouse] as CFArray)
-        let ctx = Unmanaged.passUnretained(self).toOpaque()
-        IOHIDManagerRegisterInputValueCallback(hidManager, inputCallback, ctx)
-        // CFRunLoopGetCurrent() 桥接为 IUO，显式标注类型收敛为非可选，避免下游 API 传参告警
-        let runLoop: CFRunLoop = CFRunLoopGetCurrent()
-        scheduledRunLoop = runLoop
-        IOHIDManagerScheduleWithRunLoop(hidManager, runLoop, CFRunLoopMode.defaultMode.rawValue)
-        IOHIDManagerOpen(hidManager, IOOptionBits(0))
-    }
-
-    func stop() {
-        if let mgr = hidManager {
-            if let runLoop = scheduledRunLoop {
-                IOHIDManagerUnscheduleFromRunLoop(mgr, runLoop, CFRunLoopMode.defaultMode.rawValue)
-            }
-            scheduledRunLoop = nil
-            IOHIDManagerClose(mgr, IOOptionBits(0))
-            hidManager = nil
-        }
-    }
-
-    fileprivate func didReceiveInput() {
-        os_unfair_lock_lock(&lock)
-        _lastInputTime = Date()
-        os_unfair_lock_unlock(&lock)
-    }
-}
-
-private func inputCallback(_ ctx: UnsafeMutableRawPointer?,
-                            _ result: IOReturn,
-                            _ sender: UnsafeMutableRawPointer?,
-                            _ value: IOHIDValue) {
-    guard let ctx = ctx else { return }
-    let monitor = Unmanaged<InputActivityMonitor>.fromOpaque(ctx).takeUnretainedValue()
-
-    // 通过 element 的 usage page / usage 收紧过滤：
-    // 只有按下事件（value 从 0 变为非 0）才计为有效输入，忽略释放、移动、滚动、媒体键等。
-    let element = IOHIDValueGetElement(value)
-    let page = IOHIDElementGetUsagePage(element)
-    let usage = IOHIDElementGetUsage(element)
-    let intValue = IOHIDValueGetIntegerValue(value)
-    guard intValue != 0 else { return } // 释放等 value==0 的事件忽略
-
-    let isKeyPress = (page == 0x01 && usage == 0x06)   // 键盘按键
-    let isMousePress = (page == 0x01 && usage == 0x02) // 鼠标按键
-    let isTrackpadClick = (page == 0x0D && usage == 0x09) // 触控板点击按钮
-
-    if isKeyPress || isMousePress || isTrackpadClick {
-        monitor.didReceiveInput()
-    }
+    /// 保留原公开接口：本实现无需要安装/卸载的系统资源，调用为幂等空操作。
+    func start() {}
+    func stop() {}
 }
 
 // MARK: - Carbon 全局快捷键回调
@@ -514,8 +454,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         fun.delegate = self
         manager.inputMonitor = inputMonitor
         fun.inputMonitor = inputMonitor
-        // InputActivityMonitor 延迟到首次需要时再启动（macOS Sequoia TCC 兼容）
-        // 原代码在此处直接 start() 会导致 TCC 崩溃
+        // InputActivityMonitor 在 setupPermissionsAndPrivileges() 中无条件启动（无 TCC 依赖）
     }
 
     /// 恢复已保存的绑定设备
@@ -664,13 +603,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
+        // 输入活动监测与解锁开关/AX 权限解耦：只要 App 运行就生效，
+        // 保证「仅自动锁屏」用户也享有 lockOnIdle 防误锁保护。
+        inputMonitor.start()
+
         // Accessibility — 解锁功能需要，每次启动都检查
         if fun.unlockRSSI != FUn.UNLOCK_DISABLED && !prefs.bool(forKey: "wakeWithoutUnlocking") {
             requestAccessibilityIfNeeded()
-            // InputActivityMonitor 延迟到权限确认后启动（macOS Sequoia TCC 兼容）
-            if isAccessibilityGranted {
-                inputMonitor.start()
-            }
         }
         // UpdateChecker 已注入到 FUnManager，由 manager.onUnlock() 触发
 

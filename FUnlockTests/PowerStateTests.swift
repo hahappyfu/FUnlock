@@ -384,3 +384,34 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         // 无崩溃即通过
     }
 }
+
+// MARK: - InputActivityMonitor
+
+final class InputActivityMonitorTests: XCTestCase {
+
+    func testInputActivityMonitorActiveWithinWindow() {
+        let monitor = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { 4.2 })
+        XCTAssertTrue(monitor.isActive)
+    }
+
+    func testInputActivityMonitorInactiveAtOrBeyondWindow() {
+        let atBoundary = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { 15.0 })
+        XCTAssertFalse(atBoundary.isActive)
+        let past = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { 22.0 })
+        XCTAssertFalse(past.isActive)
+    }
+
+    func testInputActivityMonitorRejectsNegativeIdleAndZeroWindow() {
+        let negative = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { -1.0 })
+        XCTAssertFalse(negative.isActive)
+        let zeroWin = InputActivityMonitor(activityWindow: 0, idleTimeProvider: { 0.5 })
+        XCTAssertFalse(zeroWin.isActive)
+    }
+
+    func testInputActivityMonitorRejectsNonFiniteIdle() {
+        let infinite = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { .infinity })
+        XCTAssertFalse(infinite.isActive)
+        let nan = InputActivityMonitor(activityWindow: 15, idleTimeProvider: { .nan })
+        XCTAssertFalse(nan.isActive)
+    }
+}
