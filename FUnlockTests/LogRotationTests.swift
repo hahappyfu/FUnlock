@@ -152,6 +152,7 @@ final class TimingLogRotationTests: XCTestCase {
         let big = String(repeating: "y", count: 1500)
         timingLog("big-timing-\(big)")
         timingLog("after-rotation-timing")   // 写入前检测到超限 → 先轮转再写入新文件
+        flushTimingLogForTesting()
 
         let log = tempDir.appendingPathComponent("timing.log")
         let backup = tempDir.appendingPathComponent("timing.log.old")
@@ -162,6 +163,22 @@ final class TimingLogRotationTests: XCTestCase {
         XCTAssertTrue(backupContent.contains("big-timing-"))
         XCTAssertTrue(currentContent.contains("after-rotation-timing"), "轮转后缓存句柄应恢复可写")
         XCTAssertFalse(currentContent.contains("big-timing-"))
+    }
+
+    /// Task 18：限流按事件名而非完整消息，动态 RSSI 不得绕过 1 秒窗口
+    func testTimingLogThrottlesByEventNameIgnoringDynamicRSSI() throws {
+        XCTAssertEqual(timingLogEventKey("event=attemptAutoUnlock rssi=-60.1"), "attemptAutoUnlock")
+        XCTAssertEqual(timingLogEventKey("event=unlockSkip reason=x"), "unlockSkip")
+        XCTAssertEqual(timingLogEventKey("plain-message rest"), "plain-message")
+
+        timingLog("event=attemptAutoUnlock rssi=-60.1")
+        timingLog("event=attemptAutoUnlock rssi=-61.2")
+        flushTimingLogForTesting()
+
+        let log = tempDir.appendingPathComponent("timing.log")
+        let content = try String(contentsOf: log, encoding: .utf8)
+        let count = content.components(separatedBy: "event=attemptAutoUnlock").count - 1
+        XCTAssertEqual(count, 1, "同一事件名 1 秒内最多写 1 条，动态 RSSI 不参与限流 key")
     }
 }
 

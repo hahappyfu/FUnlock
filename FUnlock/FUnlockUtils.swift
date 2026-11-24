@@ -55,10 +55,12 @@ enum LogRotator {
     }
 }
 
-// MARK: - 时序埋点（限流 + 句柄缓存）
+// MARK: - 时序埋点（按事件限流 + 异步落盘）
 
 private let timingLock = NSLock()
-// 句柄与限流状态由 timingLock 保护；测试目录/上限仅测试写入一次
+/// 时序日志专用串行队列：文件创建/滚动/写入全部在此执行，不阻塞主线程。
+private let timingLogQueue = DispatchQueue(label: "com.funlock.timingLog", qos: .utility)
+/// 句柄仅在 timingLogQueue 上访问；限流状态由 timingLock 保护
 nonisolated(unsafe) private var timingFileHandle: FileHandle?
 nonisolated(unsafe) private var lastTimingWriteByType: [String: Date] = [:]
 /// 测试覆盖：非 nil 时写该目录，避免污染真实日志
@@ -84,24 +86,49 @@ private let timingDateFormatter: DateFormatter = {
     return f
 }()
 
-/// 时序埋点：按完整消息限流，同文案 1 秒最多写 1 条；
-/// 文件句柄缓存复用，避免高频开/关文件拖慢主线程。
-/// 写入 ~/Library/Logs/FUnlock/timing.log
+/// 限流 key：优先提取 `event=<name>`，否则取首个空白前 token。
+/// 用事件名而非完整消息，避免动态 RSSI 等字段让限流失效。
+func timingLogEventKey(_ msg: String) -> String {
+    if let range = msg.range(of: "event=") {
+        let token = msg[range.upperBound...].prefix { !$0.isWhitespace }
+        if !token.isEmpty { return String(token) }
+    }
+    return String(msg.prefix { !$0.isWhitespace })
+}
+
+/// 时序埋点：按事件名限流（同事件 1 秒最多 1 条），文件 I/O 异步到专用串行队列。
 func timingLog(_ msg: String) {
-    timingLock.lock()
-    defer { timingLock.unlock() }
     let now = Date()
-    if let last = lastTimingWriteByType[msg], now.timeIntervalSince(last) < 1.0 {
+    let key = timingLogEventKey(msg)
+    timingLock.lock()
+    if let last = lastTimingWriteByType[key], now.timeIntervalSince(last) < 1.0 {
+        timingLock.unlock()
         return
     }
-    lastTimingWriteByType[msg] = now
-    let ts = timingDateFormatter.string(from: now)
-    let line = "[\(ts)] \(msg)\n"
+    lastTimingWriteByType[key] = now
+    // 有界字典：超过 256 条时清理 60s 前的旧事件，防止长期运行无限增长
+    if lastTimingWriteByType.count > 256 {
+        let cutoff = now.addingTimeInterval(-60)
+        lastTimingWriteByType = lastTimingWriteByType.filter { $0.value >= cutoff }
+    }
+    // DateFormatter 非线程安全：在锁内完成格式化
+    let line = "[\(timingDateFormatter.string(from: now))] \(msg)\n"
+    timingLock.unlock()
+
     let url = timingLogFileURL
-    try? FileManager.default.createDirectory(at: timingLogDirectory, withIntermediateDirectories: true)
+    let directory = timingLogDirectory
+    let maxBytes = timingLogMaxBytes
+    timingLogQueue.async {
+        writeTimingLine(line, url: url, directory: directory, maxBytes: maxBytes)
+    }
+}
+
+/// 仅在 timingLogQueue 上调用（句柄独占）。
+private func writeTimingLine(_ line: String, url: URL, directory: URL, maxBytes: UInt64) {
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
     // 滚动：超限则归档为 .old 并新建空文件；缓存句柄随之失效
-    if LogRotator.rotateIfNeeded(url: url, maxBytes: timingLogMaxBytes) {
+    if LogRotator.rotateIfNeeded(url: url, maxBytes: maxBytes) {
         timingFileHandle?.closeFile()
         timingFileHandle = nil
     }
@@ -109,23 +136,31 @@ func timingLog(_ msg: String) {
     if timingFileHandle == nil || !FileManager.default.fileExists(atPath: url.path) {
         timingFileHandle = try? FileHandle(forWritingTo: url)
     }
-    if let fh = timingFileHandle {
+    if let data = line.data(using: .utf8), let fh = timingFileHandle {
         fh.seekToEndOfFile()
-        fh.write(line.data(using: .utf8)!)
+        fh.write(data)
     } else {
         try? line.write(to: url, atomically: true, encoding: .utf8)
         timingFileHandle = try? FileHandle(forWritingTo: url)
     }
 }
 
-/// 测试支持：重定向时序日志目录 / 调整滚动阈值（nil = 恢复真实路径），并清空句柄缓存
+/// 测试支持：同步等待时序日志队列排空，便于断言落盘结果。
+func flushTimingLogForTesting() {
+    timingLogQueue.sync {}
+}
+
+/// 测试支持：重定向时序日志目录 / 调整滚动阈值（nil = 恢复真实路径），并清空句柄缓存与限流状态
 func configureTimingLogForTesting(directory: URL?, maxBytes: UInt64 = LogRotator.defaultMaxBytes) {
-    timingLock.lock()
-    defer { timingLock.unlock() }
-    timingFileHandle?.closeFile()
-    timingFileHandle = nil
-    timingLogTestDirectory = directory
-    timingLogMaxBytes = maxBytes
+    timingLogQueue.sync {
+        timingFileHandle?.closeFile()
+        timingFileHandle = nil
+        timingLock.lock()
+        timingLogTestDirectory = directory
+        timingLogMaxBytes = maxBytes
+        lastTimingWriteByType.removeAll()
+        timingLock.unlock()
+    }
 }
 
 /// 按设备名推断设备图标（Apple Watch / AirPods / iPad / Mac / iPhone 等）
