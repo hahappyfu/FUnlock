@@ -89,7 +89,7 @@ class UpdateChecker {
 
     private func notify() {
         let content = UNMutableNotificationContent()
-        content.title = "Funlock"
+        content.title = "FUnlock"
         content.subtitle = t("notification_update_available")
         let req = UNNotificationRequest(identifier: "funlock-update", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)

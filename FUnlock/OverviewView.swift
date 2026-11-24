@@ -72,6 +72,9 @@ struct OverviewView: View {
             VStack(spacing: FUnlockTheme.Space.sm) {
                 gauge
                 HStack(spacing: 6) {
+                    Text(t("distance_scenario_label"))
+                        .font(.caption2)
+                        .foregroundStyle(FUnlockTheme.Text.tertiary.color)
                     Circle()
                         .fill(scenarioColor)
                         .frame(width: 7, height: 7)

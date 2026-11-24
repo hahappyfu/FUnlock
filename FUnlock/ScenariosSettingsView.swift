@@ -197,7 +197,7 @@ struct ScenariosSettingsView: View {
                                              : FUnlockTheme.Text.secondary.color)
                     }
                     Spacer(minLength: FUnlockTheme.Space.xs)
-                    InstrumentButton(title: t("automation_setup"), systemImage: "folder",
+                    InstrumentButton(title: t("automation_open_folder"), systemImage: "folder",
                                      kind: .secondary, action: openEventDirectory)
                 }
                 Text(t("automation_hint"))

@@ -34,20 +34,22 @@ struct BarkSettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
-            Toggle(isOn: $barkNotify) {
-                HStack(spacing: FUnlockTheme.Space.xs) {
-                    IconTile(systemImage: "bell.badge.fill", tone: .neutral)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("bark_settings_title"))
-                            .font(.body)
-                            .foregroundStyle(FUnlockTheme.Text.primary.color)
-                        Text(t("bark_settings_desc"))
-                            .font(.caption)
-                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
-                    }
+            HStack(spacing: FUnlockTheme.Space.sm) {
+                IconTile(systemImage: "bell.badge.fill", tone: .neutral)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("bark_settings_title"))
+                        .font(.body)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Text(t("bark_settings_desc"))
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                 }
+                Spacer(minLength: FUnlockTheme.Space.xs)
+                Toggle("", isOn: $barkNotify)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text(t("bark_settings_title")))
             }
-            .toggleStyle(.switch)
 
             if barkNotify {
                 keyRow

@@ -68,7 +68,8 @@ struct MainWindowView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        VStack(spacing: 0) {
+            NavigationSplitView {
             SidebarView(selectedTab: $selectedTab, manager: manager) {
                 showAbout = true
             }
@@ -85,6 +86,8 @@ struct MainWindowView: View {
                     .padding(.bottom, FUnlockTheme.Space.lg)
             }
         }
+            bottomBar
+        }
         .frame(minWidth: 560, minHeight: 460)
         .background {
             // 精密仪器风：实体画布底，无材质、无极光、无渐变
@@ -99,9 +102,6 @@ struct MainWindowView: View {
                 }
                 .help(t("sidebar_toggle"))
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomBar
         }
         .overlay(alignment: .top) {
             if let msg = toastMessage {
@@ -155,7 +155,12 @@ struct MainWindowView: View {
             CalibrationWizardView(manager: manager, isPresented: $showCalibration)
         }
         .sheet(isPresented: $showOnboarding) {
-            OnboardingView(step: $onboardingStep, isPresented: $showOnboarding)
+            OnboardingView(step: $onboardingStep, isPresented: $showOnboarding) {
+                // 关闭引导后立即打开校准向导
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showCalibration = true
+                }
+            }
         }
         .sheet(isPresented: $showAbout) {
             AboutView()

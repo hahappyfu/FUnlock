@@ -1,5 +1,5 @@
 // CalibrationWizardView.swift
-// 空间校准向导 — 替代干瘪的阈值滑块
+// 空间校准向导：SheetScaffold + FUnlockCard 换装，5 步流程与阈值计算保持不变
 
 import SwiftUI
 
@@ -19,24 +19,20 @@ struct CalibrationWizardView: View {
     @State private var errorMessage = ""          // 采样失败提示（如"未检测到信号"）
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 顶部标题
-            headerBar
-
-            Form {
+        SheetScaffold(title: t("calibration_header"), onClose: cancelAndClose) {
+            VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
                 switch step {
-                case 0: welcomeSection
-                case 1: unlockCountdownSection
-                case 2: unlockSamplingSection
-                case 3: lockCountdownSection
-                case 4: lockSamplingSection
-                case 5: resultSection
+                case 0: welcomeCard
+                case 1: unlockCountdownCard
+                case 2: unlockSamplingCard
+                case 3: lockCountdownCard
+                case 4: lockSamplingCard
+                case 5: resultCard
                 default: EmptyView()
                 }
             }
-            .formStyle(.grouped)
         }
-        .frame(width: 380, height: 420)
+        .frame(width: 420, height: 500)
         .onDisappear {
             samplingTask?.cancel()
             countdownTask?.cancel()
@@ -47,213 +43,207 @@ struct CalibrationWizardView: View {
         }
     }
 
-    // MARK: - Header
-
-    @ViewBuilder
-    private var headerBar: some View {
-        HStack {
-            Text(t("calibration_header"))
-                .font(.headline)
-            Spacer()
-            Button(action: { cancelAndClose() }) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(16)
-    }
-
     // MARK: - Step 0: 欢迎
 
-    @ViewBuilder private var welcomeSection: some View {
-        Section {
-            VStack(spacing: 16) {
+    private var welcomeCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
                 Image(systemName: "location.viewfinder")
                     .font(.system(size: 40))
-                    .foregroundColor(.accentColor)
-                    .padding(.top, 8)
+                    .foregroundStyle(FUnlockTheme.Accent.base.color)
                 Text(t("calibration_welcome_title"))
-                    .font(.title3).fontWeight(.semibold)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
                 Text(t("calibration_welcome_desc"))
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     .multilineTextAlignment(.center)
                 if !errorMessage.isEmpty {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
-                        .foregroundColor(.orange)
+                        .foregroundStyle(FUnlockTheme.State.amberText.color)
                         .multilineTextAlignment(.center)
+                }
+                HStack {
+                    Spacer()
+                    InstrumentButton(title: t("calibration_start"), kind: .primary) {
+                        startUnlockCalibration()
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-
-            Button(t("calibration_start")) { startUnlockCalibration() }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
         }
     }
 
     // MARK: - Step 1: 解锁倒计时
 
-    @ViewBuilder private var unlockCountdownSection: some View {
-        Section(t("calibration_unlock_step_title")) {
-            VStack(spacing: 16) {
+    private var unlockCountdownCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
+                Text(t("calibration_unlock_step_title"))
+                    .font(.headline)
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
                 Text(t("calibration_unlock_step_desc"))
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     .multilineTextAlignment(.center)
 
                 CalibrationRing(progress: Double(countdown) / 5.0,
-                                color: .accentColor, size: 100) {
+                                color: FUnlockTheme.Accent.base.color, size: 100) {
                     Text("\(countdown)")
-                        .font(.system(size: 36, weight: .bold, design: .monospaced))
+                        .font(.title.monospacedDigit().weight(.bold))
                 }
 
                 Text(t("calibration_countdown_sampling"))
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
         }
     }
 
     // MARK: - Step 2: 解锁采样
 
-    @ViewBuilder private var unlockSamplingSection: some View {
-        Section {
-            VStack(spacing: 16) {
+    private var unlockSamplingCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
                 Text(t("calibration_sampling_unlock"))
                     .font(.headline)
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
                 Text(t("calibration_stay_still"))
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
 
-                CalibrationRing(progress: samplingProgress, color: .green, size: 100) {
-                    VStack(spacing: 2) {
-                        Text(currentRSSI.map { "\($0)" } ?? "—")
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                        Text("dBm")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                CalibrationRing(progress: samplingProgress,
+                                color: FUnlockTheme.State.safeFill.color, size: 100) {
+                    rssiReadout
                 }
 
                 Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
         }
     }
 
     // MARK: - Step 3: 锁定倒计时
 
-    @ViewBuilder private var lockCountdownSection: some View {
-        Section(t("calibration_lock_step_title")) {
-            VStack(spacing: 16) {
+    private var lockCountdownCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
+                Text(t("calibration_lock_step_title"))
+                    .font(.headline)
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
                 Text(t("calibration_lock_step_desc"))
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     .multilineTextAlignment(.center)
 
                 CalibrationRing(progress: Double(countdown) / 15.0,
-                                color: .orange, size: 110) {
+                                color: FUnlockTheme.State.amberFill.color, size: 110) {
                     VStack(spacing: 2) {
                         Text("\(countdown)")
-                            .font(.system(size: 40, weight: .bold, design: .monospaced))
+                            .font(.title.monospacedDigit().weight(.bold))
                         Text(t("calibration_seconds_unit"))
                             .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     }
                 }
 
                 if countdown > 0 {
                     Text(t("calibration_hurry_to_target"))
                         .font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundStyle(FUnlockTheme.State.amberText.color)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
         }
     }
 
     // MARK: - Step 4: 锁定采样
 
-    @ViewBuilder private var lockSamplingSection: some View {
-        Section {
-            VStack(spacing: 16) {
+    private var lockSamplingCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
                 Text(t("calibration_sampling_lock"))
                     .font(.headline)
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
                 Text(t("calibration_hold_target"))
                     .font(.callout)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
 
-                CalibrationRing(progress: samplingProgress, color: .red, size: 100) {
-                    VStack(spacing: 2) {
-                        Text(currentRSSI.map { "\($0)" } ?? "—")
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                        Text("dBm")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                CalibrationRing(progress: samplingProgress,
+                                color: FUnlockTheme.State.dangerFill.color, size: 100) {
+                    rssiReadout
                 }
 
                 Text(t("calibration_samples_collected") + "\(samples.count) " + t("calibration_samples_unit"))
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+        }
+    }
+
+    private var rssiReadout: some View {
+        VStack(spacing: 2) {
+            Text(currentRSSI.map { "\($0)" } ?? "—")
+                .font(.title.monospacedDigit().weight(.bold))
+            Text("dBm")
+                .font(.caption2)
+                .foregroundStyle(FUnlockTheme.Text.secondary.color)
         }
     }
 
     // MARK: - Step 5: 结果
 
-    @ViewBuilder private var resultSection: some View {
-        Section {
-            VStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 36))
-                    .foregroundColor(.green)
-                Text(t("calibration_complete"))
-                    .font(.headline)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+    private var resultCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
+                VStack(spacing: FUnlockTheme.Space.xs) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title)
+                        .foregroundStyle(FUnlockTheme.State.safeFill.color)
+                    Text(t("calibration_complete"))
+                        .font(.headline)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                }
+                .frame(maxWidth: .infinity)
 
-            resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"), value: "\(avgUnlock) dBm", color: .green)
-            resultRow(icon: "lock.fill", label: t("calibration_avg_lock"), value: "\(avgLock) dBm", color: .orange)
-            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).unlock) dBm", color: .blue)
-            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).lock) dBm", color: .purple)
+                resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"),
+                          value: "\(avgUnlock) dBm", tone: .safe)
+                resultRow(icon: "lock.fill", label: t("calibration_avg_lock"),
+                          value: "\(avgLock) dBm", tone: .amber)
+                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"),
+                          value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).unlock) dBm",
+                          tone: .neutral)
+                resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"),
+                          value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).lock) dBm",
+                          tone: .neutral)
 
-            HStack(spacing: 12) {
-                Button(t("cancel")) { cancelAndClose() }
-                    .buttonStyle(.bordered)
-                Button(t("calibration_apply_recommended")) { applyValues() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
+                HStack(spacing: FUnlockTheme.Space.xs) {
+                    Spacer()
+                    InstrumentButton(title: t("cancel"), kind: .ghost, action: cancelAndClose)
+                    InstrumentButton(title: t("calibration_apply_recommended"), kind: .primary,
+                                     action: applyValues)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
         }
     }
 
-    private func resultRow(icon: String, label: String, value: String, color: Color) -> some View {
+    private func resultRow(icon: String, label: String, value: String, tone: StatusTone) -> some View {
         HStack {
             Image(systemName: icon)
-                .foregroundColor(color)
+                .foregroundStyle(tone.fillColor)
                 .frame(width: 20)
             Text(label)
                 .font(.callout)
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
             Spacer()
             Text(value)
-                .font(.system(.callout, design: .monospaced))
-                .fontWeight(.medium)
+                .font(.callout.monospacedDigit().weight(.medium))
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
         }
     }
 
@@ -308,7 +298,6 @@ struct CalibrationWizardView: View {
             guard !Task.isCancelled else { return }
             startSampling(duration: 10, completion: {
                 guard let avg = self.averageSamples() else {
-                    // 未采到任何样本（设备不在信号范围），中断校准并提示用户重试
                     self.abortCalibration()
                     return
                 }
@@ -331,7 +320,6 @@ struct CalibrationWizardView: View {
             guard !Task.isCancelled else { return }
             startSampling(duration: 10, completion: {
                 guard let avg = self.averageSamples() else {
-                    // 未采到任何样本（设备不在信号范围），中断校准并提示用户重试
                     self.abortCalibration()
                     return
                 }
@@ -391,6 +379,7 @@ struct CalibrationWizardView: View {
         isPresented = false
     }
 
+    /// Esc / 关闭：结束校准并关闭（避免采样期离场判定立即锁屏）
     private func cancelAndClose() {
         endCalibration()
         isPresented = false
@@ -408,7 +397,7 @@ private struct CalibrationRing<Content: View>: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 8)
+                .stroke(FUnlockTheme.Surface.well.color, lineWidth: 8)
                 .frame(width: size, height: size)
             Circle()
                 .trim(from: 0, to: progress)

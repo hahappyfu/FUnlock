@@ -453,7 +453,7 @@ struct RangeRailView: View {
                 .font(.caption)
                 .foregroundStyle(FUnlockTheme.Text.tertiary.color)
             Spacer(minLength: 0)
-            InstrumentButton(title: t("cancel"), kind: .ghost, isEnabled: !isApplied,
+            InstrumentButton(title: t("rail_revert"), kind: .ghost, isEnabled: !isApplied,
                              action: revert)
             InstrumentButton(title: isApplied ? t("applied") : t("apply_thresholds"),
                              systemImage: isApplied ? "checkmark" : nil,

@@ -34,20 +34,22 @@ struct IMSettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
-            Toggle(isOn: $iMessageNotify) {
-                HStack(spacing: FUnlockTheme.Space.xs) {
-                    IconTile(systemImage: "message.fill", tone: .neutral)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("im_settings_title"))
-                            .font(.body)
-                            .foregroundStyle(FUnlockTheme.Text.primary.color)
-                        Text(t("im_settings_desc"))
-                            .font(.caption)
-                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
-                    }
+            HStack(spacing: FUnlockTheme.Space.sm) {
+                IconTile(systemImage: "message.fill", tone: .neutral)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("im_settings_title"))
+                        .font(.body)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Text(t("im_settings_desc"))
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                 }
+                Spacer(minLength: FUnlockTheme.Space.xs)
+                Toggle("", isOn: $iMessageNotify)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text(t("im_settings_title")))
             }
-            .toggleStyle(.switch)
 
             if iMessageNotify {
                 recipientRow

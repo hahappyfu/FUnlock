@@ -1,76 +1,66 @@
 // OnboardingView.swift
-// 首次使用引导页
+// 首次使用引导：3 步，可回退，Esc / 关闭即跳过，末步可直达校准向导
 
 import SwiftUI
-import Combine
 
 struct OnboardingView: View {
     @Binding var step: Int
     @Binding var isPresented: Bool
+    /// 末步「打开校准向导」回调（由 MainWindowView 在关闭引导后执行）
+    var onOpenCalibration: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 20) {
-            // 步骤指示器
-            HStack(spacing: 6) {
-                ForEach(0..<3) { i in
-                    Circle()
-                        .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
-                        .frame(width: 6, height: 6)
+        SheetScaffold(title: "FUnlock", onClose: finishOnboarding) {
+            VStack(spacing: FUnlockTheme.Space.md) {
+                HStack(spacing: 6) {
+                    ForEach(0..<3) { i in
+                        Circle()
+                            .fill(i <= step ? FUnlockTheme.Accent.base.color
+                                            : FUnlockTheme.Surface.borderStrong.color.opacity(0.4))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+
+                VStack(spacing: FUnlockTheme.Space.xs) {
+                    Image(systemName: stepIcon)
+                        .font(.system(size: 40))
+                        .foregroundStyle(FUnlockTheme.Accent.base.color)
+                    Text(stepTitle)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Text(stepDescription)
+                        .font(.callout)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, FUnlockTheme.Space.md)
+
+                SheetFooter {
+                    if step > 0 {
+                        InstrumentButton(title: t("onboarding_back"), kind: .ghost) {
+                            withAnimation(FUnlockTheme.Motion.standard) { step -= 1 }
+                        }
+                    }
+                    if step < 2 {
+                        InstrumentButton(title: t("onboarding_skip"), kind: .ghost,
+                                         action: finishOnboarding)
+                        InstrumentButton(title: t("onboarding_next"), kind: .primary) {
+                            withAnimation(FUnlockTheme.Motion.standard) { step += 1 }
+                        }
+                    } else {
+                        InstrumentButton(title: t("onboarding_open_calibration"), kind: .secondary) {
+                            isPresented = false
+                            onOpenCalibration?()
+                        }
+                        InstrumentButton(title: t("onboarding_start"), kind: .primary,
+                                         action: finishOnboarding)
+                    }
                 }
             }
-            .padding(.top, 16)
-
-            // 内容
-            VStack(spacing: 12) {
-                Image(systemName: stepIcon)
-                    .font(.system(size: 40))
-                    .foregroundColor(.accentColor)
-                    .padding(.top, 8)
-
-                Text(stepTitle)
-                    .font(.title3.bold())
-
-                Text(stepDescription)
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-            }
-
-            Spacer()
-
-            // 按钮
-            VStack(spacing: 8) {
-                if step < 2 {
-                    Button(action: { withAnimation { step += 1 } }) {
-                        Text(t("onboarding_next"))
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button(action: finishOnboarding) {
-                        Text(t("onboarding_skip"))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Button(action: {
-                        ConfigStore.shared.defaults.set(true, forKey: "hasCompletedOnboarding")
-                        isPresented = false
-                    }) {
-                        Text(t("onboarding_start"))
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
         }
-        .frame(width: 300, height: 320)
+        .frame(width: 380, height: 420)
     }
 
     private func finishOnboarding() {

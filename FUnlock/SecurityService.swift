@@ -164,7 +164,7 @@ final class SecurityService: Sendable {
         alert.alertStyle = .warning
         alert.addButton(withTitle: t("re_enter_password"))
         alert.addButton(withTitle: t("later"))
-        alert.window.title = "Funlock"
+        alert.window.title = "FUnlock"
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -179,7 +179,7 @@ final class SecurityService: Sendable {
         msg.addButton(withTitle: t("cancel"))
         msg.messageText = t("enter_password")
         msg.informativeText = t("password_info")
-        msg.window.title = "Funlock"
+        msg.window.title = "FUnlock"
         let txt = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 20))
         msg.accessoryView = txt
         txt.becomeFirstResponder()
@@ -203,7 +203,7 @@ enum UIHelper {
         let alert = NSAlert()
         alert.messageText = msg
         alert.informativeText = info ?? ""
-        alert.window.title = "Funlock"
+        alert.window.title = "FUnlock"
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }

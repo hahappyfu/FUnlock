@@ -64,36 +64,62 @@ struct PermissionCheckView: View {
     var allGranted: Bool { accessibilityGranted && bluetoothGranted }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text(t("permission_check_title")).font(.title2.bold())
-            Text(t("permission_check_desc")).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: FUnlockTheme.Space.md) {
+            Text(t("permission_check_title"))
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
 
-            VStack(spacing: 12) {
+            InlineNotice(tone: allGranted ? .info : .warning,
+                         title: t("permission_check_desc"))
+
+            VStack(spacing: FUnlockTheme.Space.xs) {
                 row(t("permission_ax_name"), t("permission_ax_desc"), accessibilityGranted) { requestAX() }
                 row(t("permission_bt_name"), t("permission_bt_desc"), bluetoothGranted) { requestBT() }
-            }.padding(.horizontal, 24)
+            }
 
-            HStack(spacing: 12) {
-                Button(t("permission_skip_all")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(allGranted ? t("permission_done") : t("permission_refresh")) {
+            HStack(spacing: FUnlockTheme.Space.xs) {
+                Spacer(minLength: 0)
+                InstrumentButton(title: t("permission_skip_all"), kind: .ghost) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                InstrumentButton(title: allGranted ? t("permission_done") : t("permission_refresh"),
+                                 kind: .primary) {
                     refresh()
                     if allGranted { dismiss() }
-                }.keyboardShortcut(.defaultAction)
+                }
+                .keyboardShortcut(.defaultAction)
             }
-        }.padding(24).frame(width: 420).onAppear { refresh() }
+        }
+        .padding(FUnlockTheme.Space.xl)
+        .frame(width: 460)
+        .background(FUnlockTheme.Surface.canvas.color)
+        .onAppear { refresh() }
+        // 用户从系统设置授权后切回应用时自动刷新
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refresh()
+        }
     }
 
     private func row(_ name: String, _ desc: String, _ granted: Bool, _ action: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundColor(granted ? .green : .orange).font(.title3)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.body.bold())
-                Text(desc).font(.caption).foregroundColor(.secondary)
+        FUnlockCard(padding: FUnlockTheme.Space.sm) {
+            HStack(spacing: FUnlockTheme.Space.xs) {
+                Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(granted ? FUnlockTheme.State.safeFill.color
+                                             : FUnlockTheme.State.amberFill.color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Text(desc)
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                }
+                Spacer(minLength: FUnlockTheme.Space.xs)
+                if !granted {
+                    InstrumentButton(title: t("permission_grant"), kind: .secondary, action: action)
+                }
             }
-            Spacer()
-            if !granted { Button(t("permission_grant")) { action() }.buttonStyle(.bordered) }
-        }.padding(10).background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+        }
     }
 
     private func refresh() {
@@ -226,15 +252,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             NSRect(origin: .zero, size: img?.size ?? .zero).fill(using: .sourceAtop)
             img?.unlockFocus()
             button.image = img
-            button.toolTip = "Funlock — Unlocked"
+            button.toolTip = "FUnlock — Unlocked"
         case .connected:
             // 已连接但锁屏：默认模板图标
             button.image = NSImage(named: "StatusBarConnected")
-            button.toolTip = "Funlock — Connected"
+            button.toolTip = "FUnlock — Connected"
         case .disconnected:
             // 未连接
             button.image = NSImage(named: "StatusBarDisconnected")
-            button.toolTip = "Funlock — Disconnected"
+            button.toolTip = "FUnlock — Disconnected"
         }
     }
 
@@ -309,8 +335,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor @objc func showStats() {
-        toggleSettingsWindow(nil)
-        // 通知 MenuDashboardView 打开统计页
+        // 确保主窗口存在并置前，再通过 .menuShowStats 切到诊断 Tab
+        if settingsWindow == nil { setupSettingsWindow() }
+        settingsWindow.center()
+        settingsWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(name: .menuShowStats, object: nil)
     }
 
@@ -332,7 +361,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func showSimpleAlert(title: String) {
         let alert = NSAlert()
-        alert.messageText = "Funlock"
+        alert.messageText = "FUnlock"
         alert.informativeText = title
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
@@ -483,7 +512,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.target = self
             button.action = #selector(toggleMenuBarPopover(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.toolTip = "Funlock"
+            button.toolTip = "FUnlock"
         }
 
         let hosting = NSHostingController(rootView: MenuBarPopoverView(manager: manager, fun: fun) { [weak self] action in
@@ -639,12 +668,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let dashboard = MainWindowView(manager: manager, fun: fun)
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
-        settingsWindow.title = "Funlock"
+        settingsWindow.title = "FUnlock"
         settingsWindow.styleMask = [.titled, .closable, .resizable]
         // 精密仪器风：原生不透明窗口，内容区由 FUnlockTheme.Surface.canvas 铺底
         settingsWindow.isOpaque = true
         settingsWindow.backgroundColor = .windowBackgroundColor
         settingsWindow.contentMinSize = NSSize(width: 560, height: 460)
+        settingsWindow.setContentSize(NSSize(width: 660, height: 580))
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()
     }

@@ -253,6 +253,8 @@ struct ControlRow: View {
     let title: String
     var subtitle: String? = nil
     var shortcut: String? = nil
+    /// 真实键盘快捷键（key + modifiers）；nil 表示不注册
+    var keyShortcut: (key: KeyEquivalent, modifiers: EventModifiers)? = nil
     var trailing: AnyView? = nil
     var isEnabled: Bool = true
     let action: () -> Void
@@ -296,10 +298,24 @@ struct ControlRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .modifier(ControlRowKeyShortcut(shortcut: keyShortcut))
         .onHover { hovering = $0 && isEnabled }
         .animation(reduceMotion ? nil : FUnlockTheme.Motion.fast, value: hovering)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
+    }
+}
+
+/// 有键位时才挂 keyboardShortcut（无键位保持原响应链）
+private struct ControlRowKeyShortcut: ViewModifier {
+    let shortcut: (key: KeyEquivalent, modifiers: EventModifiers)?
+
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(shortcut.key, modifiers: shortcut.modifiers)
+        } else {
+            content
+        }
     }
 }
 
@@ -315,24 +331,26 @@ struct PrecisionToggleRow: View {
     var onChange: ((Bool) -> Void)? = nil
 
     var body: some View {
-        Toggle(isOn: $isOn) {
-            HStack(spacing: FUnlockTheme.Space.xs) {
-                IconTile(systemImage: icon, tone: tone)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .foregroundStyle(FUnlockTheme.Text.primary.color)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+        HStack(spacing: FUnlockTheme.Space.sm) {
+            IconTile(systemImage: icon, tone: tone)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            Spacer(minLength: FUnlockTheme.Space.xs)
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text(title))
+                .onChange(of: isOn) { _, value in onChange?(value) }
         }
-        .toggleStyle(.switch)
-        .onChange(of: isOn) { _, value in onChange?(value) }
     }
 }
 

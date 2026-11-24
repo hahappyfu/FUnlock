@@ -28,8 +28,8 @@ final class UATVisualTests: XCTestCase {
 
         for (tab, filename) in tabs {
             let mainView = MainWindowView(manager: manager, fun: fun, initialTab: tab)
-                .frame(width: 620, height: 520)
-            saveView(view: mainView, size: NSSize(width: 620, height: 520), to: "\(outputDir)/\(filename).png")
+                .frame(width: 660, height: 580)
+            saveView(view: mainView, size: NSSize(width: 660, height: 580), to: "\(outputDir)/\(filename).png")
         }
     }
 

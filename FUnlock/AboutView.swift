@@ -4,39 +4,42 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section {
-                VStack(spacing: 12) {
-                    Image(nsImage: NSApp.applicationIconImage ?? NSImage())
-                        .frame(width: 64, height: 64)
-
-                    Text("Funlock")
-                        .font(.title2.bold())
-
-                    Text("\(t("about_version")) \(versionString)")
-                        .font(.callout)
-                        .foregroundColor(.secondary)
+        SheetScaffold(title: t("about_funlock")) { dismiss() } content: {
+            VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
+                FUnlockCard {
+                    VStack(spacing: FUnlockTheme.Space.xs) {
+                        Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                            .frame(width: 64, height: 64)
+                        Text("FUnlock")
+                            .font(.title2.weight(.semibold))
+                        Text("\(t("about_version")) \(versionString)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, FUnlockTheme.Space.xs)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-            }
 
-            Section {
-                Button(t("about_visit_homepage")) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock")!)
+                FUnlockCard {
+                    VStack(alignment: .leading, spacing: FUnlockTheme.Space.xs) {
+                        InstrumentButton(title: t("about_visit_homepage"), systemImage: "globe",
+                                         kind: .secondary) {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock")!)
+                        }
+                        Hairline()
+                        InstrumentButton(title: t("about_check_releases"), systemImage: "arrow.down.circle",
+                                         kind: .secondary) {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
+                        }
+                    }
                 }
-                Button(t("about_check_releases")) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/hahappyfu/FUnlock/releases")!)
-                }
-            }
 
-            Section {
-                Button(t("done")) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                SheetFooter {
+                    InstrumentButton(title: t("done"), kind: .primary) { dismiss() }
+                }
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 300)
+        .frame(width: 340, height: 400)
     }
 
     private var versionString: String {
