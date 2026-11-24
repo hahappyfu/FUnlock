@@ -112,9 +112,14 @@ extension UnlockOrchestrator {
             startWakeRetry()
             // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
             if snap.effectiveRSSI >= Double(m.fun.unlockRSSI) {
+                guard !hasPendingUnlockTask else {
+                    AppLog.info(.unlock, "unlockTaskAlreadyPending", [("branch", "parallelWake")])
+                    return
+                }
                 // 并行：等 0.8s 后尝试解锁，不等唤醒完成
-                unlockTask?.cancel()
+                let generation = beginUnlockTaskGeneration()
                 unlockTask = Task { @MainActor [weak self] in
+                    defer { if let self = self { self.finishUnlockTask(generation: generation) } }
                     try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
@@ -138,10 +143,15 @@ extension UnlockOrchestrator {
         // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
         guard screenLocked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenAlreadyUnlocked")]); return }
 
-        // 屏幕已锁定等 0.3s
+        // 屏幕已锁定等 0.3s；已有在途任务则直接复用，不在高频回调下取消重建
+        guard !hasPendingUnlockTask else {
+            AppLog.info(.unlock, "unlockTaskAlreadyPending", [("branch", "delayed")])
+            return
+        }
         let delay: UInt64 = 300_000_000
-        unlockTask?.cancel()
+        let generation = beginUnlockTaskGeneration()
         unlockTask = Task { @MainActor [weak self] in
+            defer { if let self = self { self.finishUnlockTask(generation: generation) } }
             AppLog.info(.unlock, "delayedUnlockTaskStart", [("delayMs", "\(delay / 1_000_000)"), ("isScreenLocked", "\(SystemInteractionService.shared.isScreenLocked(screenState: self?.manager.state.screen ?? .unlocked))")])
             timingLog("event=delayedUnlockTaskStart sleep=0.3s")
             try? await Task.sleep(nanoseconds: UInt64(delay))

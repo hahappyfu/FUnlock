@@ -27,6 +27,14 @@ final class UnlockOrchestrator {
 
     var wakeTask: Task<Void, Never>?
     var unlockTask: Task<Void, Never>?
+    /// 延迟/验证解锁任务代次：每次新建/替换递增，任务退出时按代次清理，避免旧任务清掉新任务。
+    private(set) var unlockTaskGeneration: UInt64 = 0
+
+    /// 是否有尚未完成的解锁任务（已取消的不算）。
+    /// 高频 BLE 回调据此复用现有任务，而不是取消重建造成活锁。
+    var hasPendingUnlockTask: Bool {
+        unlockTask != nil && !(unlockTask?.isCancelled ?? true)
+    }
     /// FUn 是否正在执行自动解锁（用于区分手动解锁入侵）
     private(set) var isAutoUnlocking = false
     /// P1-2: 最近一次自动解锁验证通过的时间。CGSession 快速轮询确认解锁后 unlockTask
@@ -76,8 +84,20 @@ final class UnlockOrchestrator {
     func cancelPendingTasks() {
         wakeTask?.cancel()
         wakeTask = nil
+        unlockTaskGeneration &+= 1
         unlockTask?.cancel()
         unlockTask = nil
+    }
+
+    /// 开始一代新的解锁任务：返回代次；任务体结束时用 finishUnlockTask(generation:) 清理。
+    func beginUnlockTaskGeneration() -> UInt64 {
+        unlockTaskGeneration &+= 1
+        return unlockTaskGeneration
+    }
+
+    /// 仅当代次仍为当前代次时清空任务引用（防止旧任务误清新任务）。
+    func finishUnlockTask(generation: UInt64) {
+        if unlockTaskGeneration == generation { unlockTask = nil }
     }
 
     /// 取消唤醒重试任务（显示器已唤醒）
@@ -90,6 +110,13 @@ final class UnlockOrchestrator {
     func resetAfterUserUnlock() {
         consecutiveUnlockAttempts = 0
         unlockAttemptTimestamps.removeAll()
+        // 用户已解锁：丢弃尚未开始的延迟任务；正在进行的验证保留，
+        // 等它自行完成，避免把状态机留在 .unlocking。
+        if !isAutoUnlocking {
+            unlockTaskGeneration &+= 1
+            unlockTask?.cancel()
+            unlockTask = nil
+        }
     }
 
     // MARK: - 密码获取与注入
@@ -195,13 +222,17 @@ final class UnlockOrchestrator {
         // 双保险验证：通知 + CGSession 竞速（withTaskGroup）
         // iMessage / unlock_success / 遥测 / 自定义脚本 必须等验证通过后再执行，避免密码还在输入框就误报解锁
         // 验证任务挂入 unlockTask，cancelPendingTasks 可取消在途验证
+        let verificationGeneration = beginUnlockTaskGeneration()
         unlockTask = Task { @MainActor [weak self] in
             let sys = SystemInteractionService.shared
             let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
             guard let self else { return }
             timingLog("event=verifyUnlockDone unlock=\(verification.unlock)")
-            // 验证完成（无论成败）后恢复自动解锁标记，defer 覆盖所有出口
-            defer { self.isAutoUnlocking = false }
+            // 验证完成（无论成败）后恢复自动解锁标记并清理任务代次，defer 覆盖所有出口
+            defer {
+                self.finishUnlockTask(generation: verificationGeneration)
+                self.isAutoUnlocking = false
+            }
             if verification.unlock {
                 // 通知或 CGSession 确认解锁成功
                 AppLog.info(.unlock, "dualVerifyConfirmed")

@@ -654,4 +654,27 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertTrue(assertedAway, "漂移终段 effectiveRSSI 应跌破锁定阈值(eff < -70)")
         XCTAssertLessThan(eff, -70.0, "漂移终态应处于离开区(eff=\(eff))")
     }
+
+    // MARK: - Task 4: 高频 BLE 回调复用在途 unlockTask
+
+    func testRepeatedAttemptAutoUnlockDoesNotCancelInFlightDelayedTask() {
+        snapshotKeys(["pauseOnWiFi", "wakeWithoutUnlocking", "enabled"])
+        ConfigStore.shared.defaults.set(false, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set(false, forKey: "wakeWithoutUnlocking")
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+
+        lockAsAutoLock()
+        manager.fun.lock.withLock {
+            manager.fun.presence = true
+            manager.fun.effectiveRSSI = -50
+        }
+        manager.orchestrator.attemptAutoUnlock()
+        let firstGen = manager.orchestrator.unlockTaskGeneration
+        XCTAssertTrue(manager.orchestrator.hasPendingUnlockTask)
+
+        // 100ms 后到达的第二个 BLE 包必须复用现有任务，而不是取消重建
+        manager.orchestrator.attemptAutoUnlock()
+        XCTAssertEqual(manager.orchestrator.unlockTaskGeneration, firstGen)
+        XCTAssertTrue(manager.orchestrator.hasPendingUnlockTask)
+    }
 }
