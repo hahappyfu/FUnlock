@@ -17,28 +17,36 @@ enum UpdateInstaller {
         }
     }
 
-    /// 构造安装脚本：先复制到同卷 staging，成功后才移除旧版并原子 mv 替换（供单元测试断言结构）
+    /// POSIX 单引号转义：整个字符串包在 '...' 中，内部 ' 变为 '\''（跨引号拼接）。
+    /// 转义后的内容不会被 shell 二次展开，杜绝 $(…)、反引号与空格注入。
+    static func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// 构造安装脚本：先复制到同卷 staging，cp 退出码检查成功后才移除旧版并原子 mv 替换
+    ///（供单元测试断言结构；路径以单引号安全转义嵌入）
     static func makeInstallScript(appPath: URL) -> String {
         let updateDir = appPath.deletingLastPathComponent()
         return """
         #!/bin/bash
         sleep 2
         APP="/Applications/FUnlock.app"
-        UPDATE="\(appPath.path)"
+        UPDATE=\(shellQuote(appPath.path))
         STAGING="/Applications/FUnlock.app.staging"
 
         if [ -d "$UPDATE" ]; then
             rm -rf "$STAGING"
-            cp -R "$UPDATE" "$STAGING"      # 先复制到临时位置（与目标同卷，mv 为原子操作）
-            if [ -d "$STAGING" ]; then
+            # 先复制到临时位置（与目标同卷，mv 为原子操作）；cp 失败立即退出保留旧版
+            if cp -R "$UPDATE" "$STAGING"; then
                 rm -rf "$APP"               # 复制成功后才动旧版
                 mv "$STAGING" "$APP"
                 open "$APP"
             else
                 rm -rf "$STAGING"           # 复制失败，清理 staging，旧版保留不动
+                exit 1
             fi
         fi
-        rm -rf "\(updateDir.path)"
+        rm -rf \(shellQuote(updateDir.path))
         """
     }
 
@@ -101,6 +109,10 @@ enum UpdateInstaller {
             .last?
             .trimmingCharacters(in: .whitespaces),
             !teamId.isEmpty else {
+            return nil
+        }
+        // ad-hoc 签名输出 "not set"：两个 ad-hoc 应用会双空比较误报匹配，绕过 TeamId 校验
+        if teamId.caseInsensitiveCompare("not set") == .orderedSame {
             return nil
         }
         return teamId

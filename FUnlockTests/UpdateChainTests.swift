@@ -172,14 +172,78 @@ final class UpdateChainTests: XCTestCase {
         XCTAssertTrue(script.hasPrefix("#!/bin/bash"))
         XCTAssertTrue(script.contains("APP=\"/Applications/FUnlock.app\""))
         XCTAssertTrue(script.contains("STAGING=\"/Applications/FUnlock.app.staging\""))
-        XCTAssertTrue(script.contains("UPDATE=\"\(appPath.path)\""))
-        // 原子替换顺序:先复制到 staging,复制成功后才允许删除旧版
+        // 路径以单引号安全转义嵌入（防特殊字符截断/注入）
+        XCTAssertTrue(script.contains("UPDATE=\(UpdateInstaller.shellQuote(appPath.path))"))
+        XCTAssertTrue(script.contains("rm -rf \(UpdateInstaller.shellQuote(appPath.deletingLastPathComponent().path))"))
+        // 原子替换顺序:cp 退出码检查成功后才删除旧版，失败保留旧版
+        XCTAssertTrue(script.contains("if cp -R \"$UPDATE\" \"$STAGING\"; then"))
         let cpRange = try XCTUnwrap(script.range(of: "cp -R \"$UPDATE\" \"$STAGING\""))
         let rmAppRange = try XCTUnwrap(script.range(of: "rm -rf \"$APP\""))
         XCTAssertLessThan(cpRange.lowerBound, rmAppRange.lowerBound, "必须先复制到 staging 再删除旧版")
         XCTAssertTrue(script.contains("mv \"$STAGING\" \"$APP\""))
         XCTAssertTrue(script.contains("open \"$APP\""))
-        XCTAssertTrue(script.contains("rm -rf \"\(appPath.deletingLastPathComponent().path)\""))
+    }
+
+    // MARK: - Task 16：TeamId 拒绝 ad-hoc "not set" 与 shell 转义
+
+    func testParseTeamIdRejectsAdHocNotSet() {
+        XCTAssertNil(UpdateInstaller.parseTeamId(fromOutput: "TeamIdentifier=not set\n"))
+        XCTAssertNil(UpdateInstaller.parseTeamId(fromOutput: "TeamIdentifier=NOT SET\n"))
+        XCTAssertEqual(UpdateInstaller.parseTeamId(fromOutput: "TeamIdentifier=ABC123XYZ9\n"), "ABC123XYZ9")
+    }
+
+    func testInstallScriptEscapesMetacharactersAndChecksCpExitStatus() {
+        let weirdURL = URL(fileURLWithPath: "/tmp/it's $(rm -rf /)/FUnlock.app")
+        let script = UpdateInstaller.makeInstallScript(appPath: weirdURL)
+        XCTAssertTrue(script.contains("if cp -R \"$UPDATE\" \"$STAGING\"; then"))
+        XCTAssertTrue(script.contains(UpdateInstaller.shellQuote("/tmp/it's $(rm -rf /)/FUnlock.app")))
+        // 原始未转义路径不得直接出现在 UPDATE= 赋值中（防 shell 展开注入）
+        XCTAssertFalse(script.contains("UPDATE=\"/tmp/it's $(rm -rf /)/FUnlock.app\""))
+    }
+
+    func testShellQuoteEscapesSingleQuotes() {
+        XCTAssertEqual(UpdateInstaller.shellQuote("plain"), "'plain'")
+        XCTAssertEqual(UpdateInstaller.shellQuote("it's"), "'it'\\''s'")
+        XCTAssertEqual(UpdateInstaller.shellQuote("$(cmd)"), "'$(cmd)'")
+    }
+
+    /// 下载完成后必须在 delegate 回调返回前同步移动文件：URLSession 会在回调返回后
+    /// 立即删除临时文件，异步 move 会读到已删除的路径。
+    func testDownloaderMovesLocationSynchronouslyBeforeCallbackReturns() throws {
+        class SyncMoveProbe: NSObject, URLSessionDownloadDelegate {
+            var movedBeforeReturn = false
+            var zipExistsAfterReturn = false
+            func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                            didFinishDownloadingTo location: URL) {
+                // 立即探测 zip 是否已在 tempDir（同步移动的证据）
+                let fm = FileManager.default
+                let candidates = (try? fm.contentsOfDirectory(atPath: NSTemporaryDirectory())) ?? []
+                movedBeforeReturn = candidates.contains { $0.hasPrefix("FUnlock-update-") }
+            }
+        }
+        // 造一个假下载文件模拟 URLSession 的临时 location
+        let srcDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UpdateChainTests-move-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: srcDir) }
+        let src = srcDir.appendingPathComponent("download.tmp")
+        try Data("zip".utf8).write(to: src)
+
+        let downloader = UpdateDownloader()
+        _ = SyncMoveProbe()
+        // 反射不可行——改为直接调用 didFinishDownloadingTo 并在返回后检查 zip 移动结果
+        downloader.urlSession(.shared, downloadTask: makeFakeDownloadTask(),
+                              didFinishDownloadingTo: src)
+        let fm = FileManager.default
+        let candidates = (try? fm.contentsOfDirectory(atPath: NSTemporaryDirectory())) ?? []
+        let updateDirs = candidates.filter { $0.hasPrefix("FUnlock-update-") }
+        // 移动成功（同步）：下载源文件应已不在原地
+        let moved = !fm.fileExists(atPath: src.path)
+        XCTAssertTrue(moved, "didFinishDownloadingTo 返回前必须同步移动下载文件")
+        // 清理 downloader 创建的临时目录
+        for dir in updateDirs {
+            try? fm.removeItem(at: fm.temporaryDirectory.appendingPathComponent(dir))
+        }
     }
 
     // MARK: - UpdateChecker.compareVersions(semver 新版本判定)

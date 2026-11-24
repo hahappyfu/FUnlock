@@ -79,13 +79,21 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
+        // URLSession 会在本回调返回后立即删除临时文件：必须在返回前同步移动。
         let zipPath = tempDir.appendingPathComponent("FUnlock.zip")
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: location, to: zipPath)
+        } catch {
+            try? FileManager.default.removeItem(at: tempDir)
+            DispatchQueue.main.async {
+                self.onStateChange?(.failed(error.localizedDescription))
+            }
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                // 移动下载文件到临时目录
-                try FileManager.default.moveItem(at: location, to: zipPath)
-
                 // 解压
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
