@@ -172,6 +172,11 @@ final class SecurityService: Sendable {
     // MARK: - Password Dialog
 
     /// 弹出密码输入模态窗（主线程 UI）
+    /// 空密码会覆盖已有 Keychain 密码：输入校验单一来源（供单元测试）
+    static func shouldAcceptPassword(_ text: String) -> Bool {
+        !text.isEmpty
+    }
+
     @MainActor
     func askPassword() {
         let msg = NSAlert()
@@ -186,6 +191,8 @@ final class SecurityService: Sendable {
         NSApp.activate(ignoringOtherApps: true)
         let response = msg.runModal()
         if response == .alertFirstButtonReturn {
+            // 空密码会覆盖 Keychain 中已有的正确密码：直接忽略
+            guard Self.shouldAcceptPassword(txt.stringValue) else { return }
             let err = storePassword(txt.stringValue)
             if let err = err {
                 UIHelper.errorModal(t("failed_store_password"), info: err)

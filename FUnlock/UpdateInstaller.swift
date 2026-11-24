@@ -36,8 +36,8 @@ enum UpdateInstaller {
 
         if [ -d "$UPDATE" ]; then
             rm -rf "$STAGING"
-            # 先复制到临时位置（与目标同卷，mv 为原子操作）；cp 失败立即退出保留旧版
-            if cp -R "$UPDATE" "$STAGING"; then
+            # 先复制到临时位置（与目标同卷，mv 为原子操作）；ditto 保留签名扩展属性；失败立即退出保留旧版
+            if ditto "$UPDATE" "$STAGING"; then
                 rm -rf "$APP"               # 复制成功后才动旧版
                 mv "$STAGING" "$APP"
                 open "$APP"

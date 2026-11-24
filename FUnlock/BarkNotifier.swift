@@ -75,6 +75,12 @@ final class BarkNotifier: @unchecked Sendable {
         return s
     }
 
+    /// 服务器地址校验：留空走官方默认；填写则必须 https://（忽略大小写）
+    static func isValidServer(_ raw: String) -> Bool {
+        let s = normalizeServer(raw)
+        return s.isEmpty || s.lowercased().hasPrefix("https://")
+    }
+
     static func normalizeKey(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
     }

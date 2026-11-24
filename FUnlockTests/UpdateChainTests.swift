@@ -175,9 +175,10 @@ final class UpdateChainTests: XCTestCase {
         // 路径以单引号安全转义嵌入（防特殊字符截断/注入）
         XCTAssertTrue(script.contains("UPDATE=\(UpdateInstaller.shellQuote(appPath.path))"))
         XCTAssertTrue(script.contains("rm -rf \(UpdateInstaller.shellQuote(appPath.deletingLastPathComponent().path))"))
-        // 原子替换顺序:cp 退出码检查成功后才删除旧版，失败保留旧版
-        XCTAssertTrue(script.contains("if cp -R \"$UPDATE\" \"$STAGING\"; then"))
-        let cpRange = try XCTUnwrap(script.range(of: "cp -R \"$UPDATE\" \"$STAGING\""))
+        // 原子替换顺序:ditto 退出码检查成功后才删除旧版，失败保留旧版（ditto 保留签名扩展属性）
+        XCTAssertTrue(script.contains("if ditto \"$UPDATE\" \"$STAGING\"; then"))
+        XCTAssertFalse(script.contains("cp -R"), "禁止再使用 cp -R（会丢签名扩展属性）")
+        let cpRange = try XCTUnwrap(script.range(of: "ditto \"$UPDATE\" \"$STAGING\""))
         let rmAppRange = try XCTUnwrap(script.range(of: "rm -rf \"$APP\""))
         XCTAssertLessThan(cpRange.lowerBound, rmAppRange.lowerBound, "必须先复制到 staging 再删除旧版")
         XCTAssertTrue(script.contains("mv \"$STAGING\" \"$APP\""))
@@ -195,7 +196,7 @@ final class UpdateChainTests: XCTestCase {
     func testInstallScriptEscapesMetacharactersAndChecksCpExitStatus() {
         let weirdURL = URL(fileURLWithPath: "/tmp/it's $(rm -rf /)/FUnlock.app")
         let script = UpdateInstaller.makeInstallScript(appPath: weirdURL)
-        XCTAssertTrue(script.contains("if cp -R \"$UPDATE\" \"$STAGING\"; then"))
+        XCTAssertTrue(script.contains("if ditto \"$UPDATE\" \"$STAGING\"; then"))
         XCTAssertTrue(script.contains(UpdateInstaller.shellQuote("/tmp/it's $(rm -rf /)/FUnlock.app")))
         // 原始未转义路径不得直接出现在 UPDATE= 赋值中（防 shell 展开注入）
         XCTAssertFalse(script.contains("UPDATE=\"/tmp/it's $(rm -rf /)/FUnlock.app\""))
@@ -275,6 +276,56 @@ final class UpdateChainTests: XCTestCase {
         checker.onNewVersion = { _ in exp.fulfill() }
         checker.check()
         wait(for: [exp], timeout: 0.5)
+    }
+
+    // MARK: - UpdateChecker 三态结果与并发等待
+
+    @MainActor
+    func testForceCheckResultDistinguishesFailureUpToDateAndAvailable() async {
+        let suiteName = "UpdateChainTests.result.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let checker = UpdateChecker(defaults: defaults)
+
+        checker.fetchLatestTagOverride = { nil }
+        var result = await withCheckedContinuation { (cont: CheckedContinuation<UpdateChecker.CheckResult, Never>) in
+            checker.forceCheckResult { cont.resume(returning: $0) }
+        }
+        XCTAssertEqual(result, .failed, "网络/解析失败不得误报为已是最新")
+
+        checker.fetchLatestTagOverride = { "v0.0.1" }
+        result = await withCheckedContinuation { (cont: CheckedContinuation<UpdateChecker.CheckResult, Never>) in
+            checker.forceCheckResult { cont.resume(returning: $0) }
+        }
+        XCTAssertEqual(result, .upToDate)
+
+        checker.fetchLatestTagOverride = { "v99.0.0" }
+        result = await withCheckedContinuation { (cont: CheckedContinuation<UpdateChecker.CheckResult, Never>) in
+            checker.forceCheckResult { cont.resume(returning: $0) }
+        }
+        XCTAssertEqual(result, .available("99.0.0"))
+    }
+
+    @MainActor
+    func testConcurrentForceChecksBothReceiveResult() async {
+        let suiteName = "UpdateChainTests.concurrent.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let checker = UpdateChecker(defaults: defaults)
+        checker.fetchLatestTagOverride = {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            return "v0.0.1"
+        }
+
+        var results: [UpdateChecker.CheckResult] = []
+        let e1 = expectation(description: "first")
+        let e2 = expectation(description: "second")
+        checker.forceCheckResult { r in results.append(r); e1.fulfill() }
+        checker.forceCheckResult { r in results.append(r); e2.fulfill() }
+
+        await fulfillment(of: [e1, e2], timeout: 2)
+        XCTAssertEqual(results.count, 2, "并发检查不得丢弃第二个回调")
+        XCTAssertEqual(results, [.upToDate, .upToDate])
     }
 }
 

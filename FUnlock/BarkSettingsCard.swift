@@ -27,9 +27,9 @@ struct BarkSettingsCard: View {
     private var keyValid: Bool {
         !normalizedKey.isEmpty
     }
-    /// 即时校验：服务器留空走默认官方地址；填写则必须 https://（明文 http 会泄漏 Key）
+    /// 即时校验：服务器留空走默认官方地址；填写则必须 https://（大小写不敏感，防明文泄漏 Key）
     private var serverValid: Bool {
-        normalizedServer.isEmpty || normalizedServer.hasPrefix("https://")
+        BarkNotifier.isValidServer(server)
     }
 
     var body: some View {

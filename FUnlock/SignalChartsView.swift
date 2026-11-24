@@ -19,6 +19,17 @@ fileprivate func downsampleForChart(_ samples: [SignalSample], maxPoints: Int = 
     return (0..<maxPoints).map { samples[min(samples.count - 1, Int(Double($0) * step))] }
 }
 
+/// X 轴刻度间隔：按数据窗口跨度自适应，避免标签拥挤重叠（两张图共用，供单测）
+func chartXStride(for samples: [SignalSample]) -> (unit: Calendar.Component, count: Int) {
+    guard let first = samples.first?.timestamp, let last = samples.last?.timestamp else { return (.minute, 5) }
+    let span = last.timeIntervalSince(first)
+    switch span {
+    case ..<300:   return (.second, 30)
+    case ..<1800:  return (.minute, 5)
+    default:       return (.minute, 15)
+    }
+}
+
 // MARK: - 信号曲线图
 
 @available(macOS 13.0, *)
@@ -27,15 +38,9 @@ struct SignalChartView: View {
     let unlockThreshold: Double
     let lockThreshold: Double
 
-    /// X 轴刻度间隔：按数据窗口跨度自适应，避免标签拥挤重叠
+    /// X 轴刻度间隔：按数据窗口跨度自适应
     private var xStride: (unit: Calendar.Component, count: Int) {
-        guard let first = samples.first?.timestamp, let last = samples.last?.timestamp else { return (.minute, 5) }
-        let span = last.timeIntervalSince(first)
-        switch span {
-        case ..<300:   return (.second, 30)
-        case ..<1800:  return (.minute, 5)
-        default:       return (.minute, 15)
-        }
+        chartXStride(for: samples)
     }
 
     var body: some View {
@@ -140,6 +145,10 @@ struct SignalChartView: View {
 struct SlopeChartView: View {
     let samples: [SignalSample]
 
+    private var xStride: (unit: Calendar.Component, count: Int) {
+        chartXStride(for: samples)
+    }
+
     var body: some View {
         Chart {
             RuleMark(y: .value("零线", 0))
@@ -177,7 +186,7 @@ struct SlopeChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .minute, count: 1)) { _ in
+            AxisMarks(values: .stride(by: xStride.unit, count: xStride.count)) { _ in
                 AxisGridLine()
                 AxisValueLabel(format: .dateTime.hour().minute())
             }

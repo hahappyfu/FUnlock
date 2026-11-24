@@ -263,8 +263,9 @@ struct ScenariosSettingsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.begin { response in
-            guard response == .OK, let url = panel.url,
-                  let content = try? String(contentsOf: url, encoding: .utf8),
+            // 用户取消：静默返回，不弹红色错误
+            guard response == .OK, let url = panel.url else { return }
+            guard let content = try? String(contentsOf: url, encoding: .utf8),
                   let stats = profileManager.importFrom(json: content) else {
                 onToast?(t("profile_import_failed"), "xmark.circle", .red)
                 return

@@ -75,6 +75,13 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    /// 下载结束（成功/失败）后释放 URLSession，避免 session 与 delegate 循环持有
+    private func finishSession() {
+        session?.finishTasksAndInvalidate()
+        session = nil
+        downloadTask = nil
+    }
+
     // MARK: - URLSessionDownloadDelegate
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
@@ -85,12 +92,15 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: location, to: zipPath)
         } catch {
+            finishSession()
             try? FileManager.default.removeItem(at: tempDir)
             DispatchQueue.main.async {
                 self.onStateChange?(.failed(error.localizedDescription))
             }
             return
         }
+        // 文件已落盘，后续不再需要网络会话
+        finishSession()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
@@ -145,6 +155,7 @@ final class UpdateDownloader: NSObject, URLSessionDownloadDelegate, @unchecked S
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        finishSession()
         guard let error = error else { return }
         DispatchQueue.main.async { [weak self] in
             self?.onStateChange?(.failed(error.localizedDescription))

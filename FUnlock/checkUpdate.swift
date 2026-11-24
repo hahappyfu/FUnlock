@@ -26,43 +26,79 @@ class UpdateChecker {
         doCheck()
     }
 
+    /// 手动检查结果：区分「有新版本 / 已是最新 / 检查失败」，供 UI 展示真实状态
+    enum CheckResult: Equatable {
+        case available(String)
+        case upToDate
+        case failed
+    }
+
+    /// 测试注入：返回远端 tag（nil 表示网络/解析失败）；为 nil 时走真实网络
+    var fetchLatestTagOverride: (() async -> String?)?
+
+    /// 并发检查期间到达的额外回调：全部挂起，完成后统一派发，不再静默丢弃
+    private var pendingResults: [@MainActor (CheckResult) -> Void] = []
+
     /// 忽略 24h 间隔，立即检测（用于手动触发）。
     /// completion 在主线程回调（闭包标注 @MainActor：调用方无需自行 hop 主线程）。
     func forceCheck(completion: (@MainActor (String?) -> Void)? = nil) {
-        guard !checking else { return }
-        doCheck(completion: completion)
+        forceCheckResult { result in
+            switch result {
+            case .available(let version): completion?(version)
+            case .upToDate, .failed: completion?(nil)
+            }
+        }
     }
 
-    private func doCheck(completion: (@MainActor (String?) -> Void)? = nil) {
+    /// 返回三态结果；检查进行中时挂入等待队列，避免并发调用被静默丢弃
+    func forceCheckResult(completion: @escaping @MainActor (CheckResult) -> Void) {
+        guard !checking else {
+            pendingResults.append(completion)
+            return
+        }
+        doCheck(result: completion)
+    }
+
+    private func doCheck(result completion: (@MainActor (CheckResult) -> Void)? = nil) {
         checking = true
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/hahappyfu/FUnlock/releases/latest")!)
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         Task { @MainActor in
-            defer { self.checking = false }
-            let data: Data?
-            do {
-                let (d, _) = try await URLSession.shared.data(for: request)
-                data = d
-            } catch {
-                data = nil
-            }
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String else {
-                completion?(nil)
-                return
-            }
-            self.lastCheckAt = Date().timeIntervalSince1970
-            self.defaults.set(self.lastCheckAt, forKey: self.key)
-            let version = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-            if self.isNewVersion(version) {
-                self.notify()
-                self.notified = true
-                self.onNewVersion?(version)
-                completion?(version)
+            let tag: String?
+            if let override = self.fetchLatestTagOverride {
+                tag = await override()
             } else {
-                completion?(nil)
+                var request = URLRequest(url: URL(string: "https://api.github.com/repos/hahappyfu/FUnlock/releases/latest")!)
+                request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                do {
+                    let (data, _) = try await URLSession.shared.data(for: request)
+                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    tag = json?["tag_name"] as? String
+                } catch {
+                    tag = nil
+                }
             }
+
+            let result: CheckResult
+            if let tag {
+                self.lastCheckAt = Date().timeIntervalSince1970
+                self.defaults.set(self.lastCheckAt, forKey: self.key)
+                let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+                if self.isNewVersion(version) {
+                    self.notify()
+                    self.notified = true
+                    self.onNewVersion?(version)
+                    result = .available(version)
+                } else {
+                    result = .upToDate
+                }
+            } else {
+                result = .failed
+            }
+
+            self.checking = false
+            completion?(result)
+            let pending = self.pendingResults
+            self.pendingResults.removeAll()
+            for waiter in pending { waiter(result) }
         }
     }
 

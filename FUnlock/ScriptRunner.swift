@@ -33,19 +33,13 @@ final class ScriptRunner: @unchecked Sendable {
         return dir.appendingPathComponent("FUnlock", isDirectory: true).appendingPathComponent("events.log")
     }
 
-    private static let eventFormatter: DateFormatter = {
+    /// 局部构造 DateFormatter：DateFormatter 非线程安全，避免共享静态实例跨线程使用
+    private func makeFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        f.dateFormat = format
         return f
-    }()
-
-    private static let scriptArgFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return f
-    }()
+    }
 
     /// 便利初始化器，用于测试或自定义去重窗口
     init(dedupWindow: TimeInterval, nowProvider: @escaping () -> Date, testLogDirectory: URL? = ScriptRunner.shared.testLogDirectory) {
@@ -75,7 +69,8 @@ final class ScriptRunner: @unchecked Sendable {
     /// 构建日志行，格式：timestamp | event | RSSI: value [| key=value ...]
     func buildEventLine(_ event: String, rssi: Int?, extraFields: [String: String]) -> String {
         let rssiStr = rssi.map { String($0) } ?? "N/A"
-        var line = "\(Self.eventFormatter.string(from: now)) | \(event) | RSSI: \(rssiStr)"
+        let ts = makeFormatter("yyyy-MM-dd HH:mm:ss.SSS").string(from: now)
+        var line = "\(ts) | \(event) | RSSI: \(rssiStr)"
         let sorted = extraFields.sorted { $0.key < $1.key }
         for (key, value) in sorted {
             line += " | \(key)=\(value)"
@@ -118,14 +113,18 @@ final class ScriptRunner: @unchecked Sendable {
 
     /// Run the user's ~/Library/Application Scripts/FUnlock/event script with context args
     func runScript(_ arg: String, rssi: Int? = nil, deviceName: String? = nil, uuid: UUID? = nil) {
+        // 测试进程禁止执行真实用户脚本：单测绝不产生副作用
+        guard NSClassFromString("XCTestCase") == nil else { return }
         guard let directory = try? FileManager.default.url(for: .applicationScriptsDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
         let file = directory.appendingPathComponent("event")
+        // 缺失/不可执行时直接返回，避免 Process 启动失败与日志噪声
+        guard FileManager.default.isExecutableFile(atPath: file.path) else { return }
         let process = Process()
         process.executableURL = file
         var args = [arg]
         if let r = rssi { args.append(String(r)) }
         if let name = deviceName { args.append(name) }
-        args.append(Self.scriptArgFormatter.string(from: Date()))
+        args.append(makeFormatter("yyyy-MM-dd'T'HH:mm:ss").string(from: Date()))
         process.arguments = args
         try? process.run()
     }

@@ -4,7 +4,6 @@ import XCTest
 @testable import FUnlock
 
 final class BarkNotifierTests: XCTestCase {
-
     private var testConfigStore: ConfigStore!
     private var capturedRequests: [URLRequest] = []
     private var fakeNow = Date(timeIntervalSince1970: 1_000_000)
@@ -221,5 +220,23 @@ final class BarkNotifierTests: XCTestCase {
         }
         wait(for: [successExp], timeout: 2.0)
         XCTAssertTrue(succeeded)
+    }
+}
+
+// MARK: - 服务器地址校验（P2-14：HTTPS 大小写不敏感）
+
+final class BarkServerValidationTests: XCTestCase {
+
+    func testValidServerAcceptsEmptyAndHTTPSAnyCase() {
+        XCTAssertTrue(BarkNotifier.isValidServer(""), "留空走官方默认")
+        XCTAssertTrue(BarkNotifier.isValidServer("https://api.day.app"))
+        XCTAssertTrue(BarkNotifier.isValidServer("HTTPS://api.day.app"), "scheme 大小写不敏感")
+        XCTAssertTrue(BarkNotifier.isValidServer("https://api.day.app/"))
+    }
+
+    func testInvalidServerRejectsPlainHTTP() {
+        XCTAssertFalse(BarkNotifier.isValidServer("http://api.day.app"))
+        XCTAssertFalse(BarkNotifier.isValidServer("HTTP://api.day.app"))
+        XCTAssertFalse(BarkNotifier.isValidServer("api.day.app"))
     }
 }

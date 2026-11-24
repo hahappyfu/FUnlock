@@ -104,3 +104,24 @@ final class IMMessageComposerTests: XCTestCase {
         XCTAssertEqual(IMMessageComposer.normalizeRecipient("   "), "")
     }
 }
+
+// MARK: - 授权徽标展示态（P2-14：idle 不误显示已授权）
+
+final class IMSettingsAuthorizationDisplayTests: XCTestCase {
+
+    func testIdleHidesBadge() {
+        XCTAssertEqual(IMSettingsCard.authorizationDisplay(for: .idle), .hidden)
+    }
+
+    func testSuccessShowsAuthorized() {
+        XCTAssertEqual(IMSettingsCard.authorizationDisplay(for: .success), .authorized)
+    }
+
+    func testAuthorizationFailureShowsUnauthorized() {
+        XCTAssertEqual(IMSettingsCard.authorizationDisplay(for: .failure("Messages 未授权")), .unauthorized)
+    }
+
+    func testOtherFailureHidesBadge() {
+        XCTAssertEqual(IMSettingsCard.authorizationDisplay(for: .failure("网络错误")), .hidden)
+    }
+}

@@ -9,10 +9,26 @@ struct IMSettingsCard: View {
     @State private var isTesting = false
     @State private var testState: TestState = .idle
 
-    private enum TestState {
+    enum TestState {
         case idle
         case success
         case failure(String)
+    }
+
+    /// 授权徽标展示态：仅「测试成功」才显示绿色已授权；
+    /// 授权失败显示未授权 + 去授权；其余状态不展示（不再默认谎报已授权）
+    enum AuthorizationDisplay: Equatable {
+        case authorized
+        case unauthorized
+        case hidden
+    }
+
+    static func authorizationDisplay(for state: TestState) -> AuthorizationDisplay {
+        switch state {
+        case .success: return .authorized
+        case .failure(let msg) where msg.contains("授权"): return .unauthorized
+        default: return .hidden
+        }
     }
 
     /// 收件人规范化结果（用于校验与发送）
@@ -86,14 +102,15 @@ struct IMSettingsCard: View {
 
     private var authorizationRow: some View {
         HStack(spacing: FUnlockTheme.Space.xs) {
-            if case .failure(let msg) = testState, msg.contains("授权") {
+            switch Self.authorizationDisplay(for: testState) {
+            case .unauthorized:
                 Text(t("im_unauthorized"))
                     .font(.caption)
                     .foregroundStyle(FUnlockTheme.State.dangerText.color)
                 Spacer(minLength: 0)
                 InstrumentButton(title: t("im_go_authorize"), kind: .secondary,
                                  action: openAutomationSettings)
-            } else {
+            case .authorized:
                 Text(t("im_authorized"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(FUnlockTheme.State.safeText.color)
@@ -103,6 +120,8 @@ struct IMSettingsCard: View {
                     .overlay(Capsule().strokeBorder(FUnlockTheme.State.safeFill.color.opacity(0.28),
                                                     lineWidth: 1))
                 Spacer(minLength: 0)
+            case .hidden:
+                EmptyView()
             }
         }
     }

@@ -164,8 +164,9 @@ final class iMessageNotifier: @unchecked Sendable {
         task.standardError = pipe
         do {
             try task.run()
-            task.waitUntilExit()
+            // 先读尽管道再等待退出：输出超过管道缓冲区时 waitUntilExit 会死锁
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
             let output = String(data: data, encoding: .utf8) ?? ""
             if task.terminationStatus == 0 { return nil }
             return Self.parseScriptError(output: output)
