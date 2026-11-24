@@ -156,8 +156,10 @@ final class ConfigStoreTests: XCTestCase {
         "device": "AA:BB:CC:DD:EE:FF", "deviceName": "iPhone 15",
         "pauseOnWiFiSSID": "Home-5G", "iMessageNotifyRecipient": "user@icloud.com",
         "activeProfileID": "work-profile",
-        "barkNotifyKey": "testBarkKey123", "barkNotifyServer": "https://api.day.app",
+        "barkNotifyServer": "https://api.day.app",
     ]
+    /// 敏感键（Task 14 起不再参与导出/导入往返；单独用 testExportRedacts… 覆盖）
+    private static let sensitiveKeysList = ["barkNotifyKey"]
     private static let dataKey = "profiles"
     private static let doubleKey = "lastUpdateCheck"
 
@@ -169,6 +171,8 @@ final class ConfigStoreTests: XCTestCase {
         all.formUnion(Self.stringKeys.keys)
         all.insert(Self.dataKey)
         all.insert(Self.doubleKey)
+        // 敏感键仍登记在 exportableKeys（白名单判定用），但导出/导入路径跳过
+        all.formUnion(Self.sensitiveKeysList)
         XCTAssertEqual(all, Set(ConfigStore.exportableKeys),
                        "全量往返 key 清单必须与 exportableKeys 一一对应")
     }
@@ -218,8 +222,10 @@ final class ConfigStoreTests: XCTestCase {
 
         let stats = store.importAllSettings(json: json)
         XCTAssertNotNil(stats, "合法导出文件应可导入")
-        XCTAssertEqual(stats?.applied, ConfigStore.exportableKeys.count,
-                       "应还原全部 \(ConfigStore.exportableKeys.count) 个业务 key")
+        // 敏感键不参与导出/导入：applied = 总数 - 敏感键数
+        let nonSensitiveCount = ConfigStore.exportableKeys.count - ConfigStore.sensitiveKeys.count
+        XCTAssertEqual(stats?.applied, nonSensitiveCount,
+                       "应还原全部 \(nonSensitiveCount) 个非敏感业务 key")
 
         // 逐 key 相等(布尔用 true/false 混合值防跨 key 串值)
         for (i, key) in Self.boolKeys.enumerated() {
@@ -316,5 +322,27 @@ final class ConfigStoreTests: XCTestCase {
                           "锁定阈值必须被强制钳制在解锁阈值以下")
         // 说明:钳制只作用于 Int 型 RSSI 阈值;Data 值(profiles)无范围语义,
         // 不参与钳制,其导入防御缺陷见 testImportMalformedBase64DegradesToStringSilently
+    }
+
+    // MARK: - Task 14：敏感键脱敏导出与 HTTPS 导入校验
+
+    /// 导出排除 barkNotifyKey（值与 _exportedKeys 均不含）；导入不覆盖本机 Key、拒绝 http 服务器
+    func testExportRedactsBarkKeyAndImportRejectsHTTPServerWhilePreservingLocalKey() {
+        store.set("my-secret-key", forKey: "barkNotifyKey")
+        store.set("https://api.day.app", forKey: "barkNotifyServer")
+        guard let json = store.exportAllSettings() else {
+            return XCTFail("导出应成功")
+        }
+        XCTAssertFalse(json.contains("my-secret-key"), "导出不得包含 Bark Key 明文")
+        XCTAssertFalse(json.contains("barkNotifyKey"), "导出清单也不得含敏感键名")
+
+        let malicious = """
+        {"enabled":"true","barkNotifyKey":"attacker","barkNotifyServer":"http://evil.com","_exportedKeys":"enabled,barkNotifyKey,barkNotifyServer"}
+        """
+        _ = store.importAllSettings(json: malicious)
+        XCTAssertEqual(store.string(forKey: "barkNotifyKey"), "my-secret-key",
+                       "导入不得覆盖本机已有 Bark Key")
+        XCTAssertNotEqual(store.string(forKey: "barkNotifyServer"), "http://evil.com",
+                          "明文 http 服务器必须被拒绝写入")
     }
 }

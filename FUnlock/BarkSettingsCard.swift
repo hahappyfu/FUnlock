@@ -5,7 +5,7 @@ import SwiftUI
 
 struct BarkSettingsCard: View {
     @AppStorage("barkNotify", store: ConfigStore.shared.defaults) private var barkNotify = false
-    @AppStorage("barkNotifyKey", store: ConfigStore.shared.defaults) private var key = BarkNotifier.Defaults.key
+    @AppStorage("barkNotifyKey", store: ConfigStore.shared.defaults) private var key = ""
     @AppStorage("barkNotifyServer", store: ConfigStore.shared.defaults) private var server = BarkNotifier.Defaults.server
     @State private var isTesting = false
     @State private var testState: TestState = .idle
@@ -23,7 +23,7 @@ struct BarkSettingsCard: View {
         BarkNotifier.normalizeServer(server)
     }
 
-    /// 即时校验：Key 非空即可（send 路径另有 Defaults 回退）
+    /// 即时校验：Key 必填（默认 Key 已移除，为空即无法发送）
     private var keyValid: Bool {
         !normalizedKey.isEmpty
     }

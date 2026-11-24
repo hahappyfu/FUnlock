@@ -25,7 +25,8 @@ final class BarkNotifier: @unchecked Sendable {
     }
 
     enum Defaults {
-        static let key = "swMSCpBr9baWGYCiu6ijoK"
+        /// 默认 Key 已移除（审计 #11：硬编码推送密钥泄漏）；Key 为必填项
+        static let key = ""
         static let server = "https://api.day.app"
     }
 
@@ -57,10 +58,9 @@ final class BarkNotifier: @unchecked Sendable {
         configStore.bool(forKey: Keys.enabled)
     }
 
-    /// 用户配置 key，缺失/为空回退默认 key（预填历史 key 的兜底）。
+    /// 用户配置 key（必填：为空时拒绝发送，不再回退硬编码默认密钥）。
     private var barkKey: String {
-        let raw = Self.normalizeKey(configStore.string(forKey: Keys.key) ?? "")
-        return raw.isEmpty ? Defaults.key : raw
+        Self.normalizeKey(configStore.string(forKey: Keys.key) ?? "")
     }
 
     /// 用户配置 server，缺失/为空回退默认 server。
@@ -82,6 +82,8 @@ final class BarkNotifier: @unchecked Sendable {
     static func buildURL(server: String, key: String) -> URL? {
         let base = normalizeServer(server)
         guard !base.isEmpty, !key.isEmpty else { return nil }
+        // 明文 http 会泄漏推送 Key：只接受 https（忽略大小写）
+        guard base.lowercased().hasPrefix("https://") else { return nil }
         let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
         return URL(string: base + "/" + encoded)
     }
@@ -90,6 +92,7 @@ final class BarkNotifier: @unchecked Sendable {
     /// 防抖按事件类型（lock/unlock/test）各 30 秒，失败同样占用窗口。
     func send(_ event: IMEvent) {
         guard enabled else { return }
+        guard !barkKey.isEmpty else { return }
 
         let typeKey: String
         switch event {
@@ -133,9 +136,15 @@ final class BarkNotifier: @unchecked Sendable {
             }
             return
         }
+        guard !barkKey.isEmpty else {
+            Task { @MainActor in
+                completion(.failure(BarkNotifier.SendError(message: "Bark Key 未填写，请先填写设备 Key")))
+            }
+            return
+        }
         guard let url = Self.buildURL(server: barkServer, key: barkKey) else {
             Task { @MainActor in
-                completion(.failure(BarkNotifier.SendError(message: "服务器地址无效，请检查 Bark 服务器地址")))
+                completion(.failure(BarkNotifier.SendError(message: "服务器地址无效，请检查 Bark 服务器地址（须为 https://）")))
             }
             return
         }

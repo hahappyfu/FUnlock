@@ -93,6 +93,9 @@ final class ConfigStore: @unchecked Sendable {
         "permissionOnboarded",
     ]
 
+    /// 敏感键：导出时跳过（值与清单均不含），导入时不删除、不覆盖本机已有值。
+    static let sensitiveKeys: Set<String> = ["barkNotifyKey"]
+
     private static let exportedKeysKey = "_exportedKeys"
     private static let dataPrefix = "_b64:"
 
@@ -101,6 +104,8 @@ final class ConfigStore: @unchecked Sendable {
     func exportAllSettings() -> String? {
         var dict: [String: String] = [:]
         for key in ConfigStore.exportableKeys {
+            // 敏感键不导出（密钥明文离开本机的风险）
+            guard !ConfigStore.sensitiveKeys.contains(key) else { continue }
             guard let value = defaults.object(forKey: key) else { continue }
             if let data = value as? Data {
                 dict[key] = ConfigStore.dataPrefix + data.base64EncodedString()
@@ -108,7 +113,8 @@ final class ConfigStore: @unchecked Sendable {
                 dict[key] = "\(value)"
             }
         }
-        dict[ConfigStore.exportedKeysKey] = ConfigStore.exportableKeys.joined(separator: ",")
+        let exportList = ConfigStore.exportableKeys.filter { !ConfigStore.sensitiveKeys.contains($0) }
+        dict[ConfigStore.exportedKeysKey] = exportList.joined(separator: ",")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(dict) else { return nil }
@@ -137,6 +143,8 @@ final class ConfigStore: @unchecked Sendable {
             .split(separator: ",").map(String.init)) ?? []
         var removed = 0
         for key in keysToRemove where key != ConfigStore.exportedKeysKey && knownKeys.contains(key) {
+            // 敏感键不删除：本机已有密钥不被导入文件清掉
+            guard !ConfigStore.sensitiveKeys.contains(key) else { continue }
             if defaults.object(forKey: key) != nil {
                 defaults.removeObject(forKey: key)
                 removed += 1
@@ -146,6 +154,16 @@ final class ConfigStore: @unchecked Sendable {
         var applied = 0
         for (key, raw) in dict where key != ConfigStore.exportedKeysKey {
             guard knownKeys.contains(key) else { continue }
+            // 敏感键不写入：导入文件不得覆盖/植入推送密钥
+            guard !ConfigStore.sensitiveKeys.contains(key) else { continue }
+            // Bark 服务器明文 http 会泄漏推送 Key：非空时必须是 https
+            if key == "barkNotifyServer" {
+                let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !normalized.isEmpty && !normalized.lowercased().hasPrefix("https://") {
+                    AppLog.error(.app, "importRejectedNonHTTPS", [("key", key), ("value", normalized)])
+                    continue
+                }
+            }
             let value = ConfigStore.decodeSettingValue(raw)
             defaults.set(value, forKey: key)
             applied += 1

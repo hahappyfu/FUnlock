@@ -30,6 +30,10 @@ final class BarkNotifierTests: XCTestCase {
 
     private func enableBark() {
         testConfigStore.set(true, forKey: "barkNotify")
+        // Task 14：默认 Key 已移除，需要真实发送的用例统一显式注入测试 Key
+        if testConfigStore.string(forKey: "barkNotifyKey") == nil {
+            testConfigStore.set("my-key", forKey: "barkNotifyKey")
+        }
     }
 
     private func installSender(status: Int = 200) {
@@ -75,17 +79,43 @@ final class BarkNotifierTests: XCTestCase {
     }
 
     func testEmptyKeyFallsBackToDefault() {
+        // Task 14：默认 Key 已移除，空 key 必须拒绝发送（不再回退硬编码密钥）
         enableBark()
+        testConfigStore.set("", forKey: "barkNotifyKey")
         installSender()
         BarkNotifier.shared.send(.test)
         drainQueue()
-        XCTAssertEqual(capturedRequests.count, 1)
-        XCTAssertEqual(capturedRequests[0].url?.absoluteString,
-                       BarkNotifier.Defaults.server + "/" + BarkNotifier.Defaults.key)
+        XCTAssertEqual(BarkNotifier.Defaults.key, "")
+        XCTAssertTrue(capturedRequests.isEmpty, "空 Key 不得发送任何请求")
+    }
+
+    @MainActor
+    func testEmptyKeyFailsTestNotificationWithClearError() {
+        enableBark()
+        testConfigStore.set("", forKey: "barkNotifyKey")
+        installSender()
+        let exp = expectation(description: "empty key failure")
+        var message: String?
+        BarkNotifier.shared.sendTestNotification(title: "T", message: "M") { result in
+            if case .failure(let error) = result { message = error.message }
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 2.0)
+        XCTAssertTrue(message?.contains("Key") ?? false,
+                      "空 Key 测试发送必须返回含 Key 提示的错误，实际: \(message ?? "nil")")
+    }
+
+    func testBuildURLRejectsNonHTTPSServer() {
+        XCTAssertNil(BarkNotifier.buildURL(server: "http://api.day.app", key: "secret"))
+        XCTAssertNil(BarkNotifier.buildURL(server: "HTTP://api.day.app", key: "secret"))
+        XCTAssertNil(BarkNotifier.buildURL(server: "ftp://api.day.app", key: "secret"))
+        XCTAssertNotNil(BarkNotifier.buildURL(server: "https://api.day.app", key: "secret"))
     }
 
     func testServerFallbackAndServerNormalization() {
         enableBark()
+        // Task 14：Key 为必填，不再回退默认 Key
+        testConfigStore.set("my-key", forKey: "barkNotifyKey")
         installSender()
         BarkNotifier.shared.send(.test)
         drainQueue()
@@ -98,7 +128,7 @@ final class BarkNotifierTests: XCTestCase {
         BarkNotifier.shared.send(.test)
         drainQueue()
         XCTAssertEqual(capturedRequests[0].url?.absoluteString,
-                       "https://x.dev/\(BarkNotifier.Defaults.key)")
+                       "https://x.dev/my-key")
     }
 
     func testDebouncePerEventType() {
