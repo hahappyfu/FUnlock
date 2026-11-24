@@ -106,7 +106,7 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 
 ## 🛡️ 安全设计
 
-- **Keychain 加密**：密码使用 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` 存储，设备锁定时不可读
+- **Keychain 加密**：密码使用 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` 存储——锁屏自动解锁必须在会话锁定状态下读取密码，因此要求设备首次解锁后即可读；`ThisDeviceOnly` 限制密钥不随 iCloud 钥匙串同步到其他设备
 - **竞态保护**：手动解锁后短时间内禁止自动解锁，防止密码注入到已解锁屏幕
 - **系统锁屏监听**：监听 `com.apple.screenIsLocked` 通知，通过系统菜单锁屏后禁止自动解锁
 - **SQL 参数化查询**：蓝牙设备数据库查询使用参数绑定，防止注入
@@ -121,7 +121,7 @@ xcodebuild build -project FUnlock.xcodeproj -scheme FUnlock -configuration Relea
 锁定/解锁时自动执行脚本，并写入事件日志：
 
 - 事件日志：`~/Library/Application Support/FUnlock/events.log`
-- 用户脚本：`~/Library/Application Scripts/FUnlock/event`
+- 用户脚本：`~/Library/Application Scripts/com.fuhahah.FUnlock/event`（目录随 Bundle ID；开发构建为 `com.fuhahah.FUnlock-dev`）
 
 脚本参数：`event rssi deviceName timestamp`
 
