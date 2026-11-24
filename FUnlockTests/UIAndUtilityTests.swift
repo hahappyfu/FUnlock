@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import FUnlock
 
 // MARK: - FUnManager 状态机集成测试
@@ -508,5 +509,40 @@ final class FUnUnlockDisabledPresenceTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { settle.fulfill() }
         wait(for: [settle], timeout: 2.0)
         XCTAssertEqual(spy.approachedCount, 0, "解锁禁用时不应派发 onDeviceApproached（假解锁）")
+    }
+}
+
+// MARK: - Task 15：SQLite 只读打开 + SQLITE_TRANSIENT 绑定
+
+final class LEDeviceSQLiteTests: XCTestCase {
+
+    /// 动态构造 UUID 字符串查询：只读打开 + TRANSIENT 绑定 + MAC 解析全链路
+    func testLEDeviceSQLiteQueryReadsTempDBReadOnlyAndBindsTransientSafely() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ledevice-sqlite-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dbPath = dir.appendingPathComponent("paired.db").path
+
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dbPath, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        var errMsg: UnsafeMutablePointer<CChar>?
+        sqlite3_exec(db, "CREATE TABLE PairedDevices (Uuid TEXT, Name TEXT, Address TEXT, ResolvedAddress TEXT)", nil, nil, &errMsg)
+        sqlite3_exec(db, "INSERT INTO PairedDevices VALUES ('9110EB8B-C17C-44A5-9B18-D092B0CD9E00', '傅苹果的Watch', 'Public AA:BB:CC:DD:EE:FF', 'Random 11:22:33:44:55:66')", nil, nil, &errMsg)
+        sqlite3_exec(db, "INSERT INTO PairedDevices VALUES ('00000000-0000-0000-0000-000000000000', 'Other', 'Public ZZ:ZZ:ZZ:ZZ:ZZ:ZZ', NULL)", nil, nil, &errMsg)
+        if let errMsg { sqlite3_free(errMsg) }
+        sqlite3_close(db)
+
+        // 动态拼接 UUID（确保绑定走 TRANSIENT 而非常量字符串静态生命周期）
+        let uuid = String("9110EB8B-C17C-44A5-9B18-D0" + "92B0CD9E00")
+        let info = openReadOnlyAndQueryPairedDevice(dbPath: dbPath, uuid: uuid)
+        XCTAssertEqual(info?.name, "傅苹果的Watch")
+        XCTAssertEqual(info?.macAddr, "11:22:33:44:55:66", "MAC 应优先取 ResolvedAddress 的第二段")
+
+        // 查无此行
+        XCTAssertNil(openReadOnlyAndQueryPairedDevice(dbPath: dbPath, uuid: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"))
+        // 文件不存在
+        XCTAssertNil(openReadOnlyAndQueryPairedDevice(dbPath: dir.appendingPathComponent("missing.db").path, uuid: uuid))
     }
 }
