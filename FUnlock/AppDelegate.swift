@@ -60,8 +60,14 @@ struct PermissionCheckView: View {
     @State private var accessibilityGranted = false
     @State private var bluetoothGranted = false
     @Environment(\.dismiss) private var dismiss
+    /// 独立 NSWindow 中 `dismiss` 无效：由宿主注入真正的关闭动作
+    var onClose: (() -> Void)? = nil
 
     var allGranted: Bool { accessibilityGranted && bluetoothGranted }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: FUnlockTheme.Space.md) {
@@ -79,12 +85,12 @@ struct PermissionCheckView: View {
 
             HStack(spacing: FUnlockTheme.Space.xs) {
                 Spacer(minLength: 0)
-                InstrumentButton(title: t("permission_skip_all"), kind: .ghost) { dismiss() }
+                InstrumentButton(title: t("permission_skip_all"), kind: .ghost) { close() }
                     .keyboardShortcut(.cancelAction)
                 InstrumentButton(title: allGranted ? t("permission_done") : t("permission_refresh"),
                                  kind: .primary) {
                     refresh()
-                    if allGranted { dismiss() }
+                    if allGranted { close() }
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -159,7 +165,7 @@ func openBluetoothSettings() {
     openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate, NSWindowDelegate {
 
     override init() {
         super.init()
@@ -311,12 +317,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Popover
 
+    /// 设置窗口关闭/隐藏后广播：UI 侧据此停止设备发现列表与轮询计时器
+    static let stopDeviceDiscoveryNotification = Notification.Name("com.funlock.stopDeviceDiscovery")
+
+    /// 窗口打开时是否需要自动开始扫描：已绑定设备时不再自动扫（避免无谓功耗）
+    static func shouldStartDiscoveryOnOpen(monitoredUUID: UUID?) -> Bool {
+        monitoredUUID == nil
+    }
+
+    /// 停扫并向 UI 广播（关闭窗口 / 隐藏窗口共用）
+    @MainActor private func stopDiscoveryAndBroadcast() {
+        fun.stopScanning()
+        NotificationCenter.default.post(name: Self.stopDeviceDiscoveryNotification, object: nil)
+    }
+
     @MainActor @objc func toggleSettingsWindow(_ sender: AnyObject?) {
         // 防御：窗口延迟初始化可能尚未完成（macOS Sequoia TCC 兼容）
         if settingsWindow == nil { setupSettingsWindow() }
         if settingsWindow.isVisible {
             settingsWindow.orderOut(nil)
-            fun.stopScanning()
+            stopDiscoveryAndBroadcast()
         } else {
             // 先前置窗口再激活：确保窗口先可见，再请求焦点
             settingsWindow.center()
@@ -326,8 +346,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             DispatchQueue.main.async {
                 self.settingsWindow.makeKey()
             }
-            fun.startScanning()
+            if Self.shouldStartDiscoveryOnOpen(monitoredUUID: fun.monitoredUUID) {
+                fun.startScanning()
+            }
         }
+    }
+
+    /// 关闭设置窗口（× / ⌘W）：停扫并通知 UI 复位发现状态
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === settingsWindow else { return }
+        stopDiscoveryAndBroadcast()
     }
 
     @MainActor @objc func lockNow() {
@@ -550,6 +578,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor private func handleMenuBarAction(_ action: MenuBarAction) {
+        // 点击 Popover 任一动作后先收起弹窗（checkUpdate 需要留在界面展示进度，不在此列）
+        switch action {
+        case .openSettings, .changePassword, .lockNow, .showStats:
+            closeMenuBarPopover()
+        case .checkUpdate, .quit:
+            break
+        }
         switch action {
         case .openSettings: toggleSettingsWindow(nil)
         case .changePassword: changePassword()
@@ -676,6 +711,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsWindow.contentMinSize = NSSize(width: 560, height: 460)
         settingsWindow.setContentSize(NSSize(width: 660, height: 580))
         settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.delegate = self
         settingsWindow.center()
     }
 
@@ -695,7 +731,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
             prefs.set(true, forKey: "permissionOnboarded")
             AppLog.info(.app, "permissionGuideShown", [("reason", "firstRun")])
-            let view = PermissionCheckView()
+            let view = PermissionCheckView(onClose: { [weak self] in
+                self?.permissionWindow?.close()
+                self?.permissionWindow = nil
+            })
             let hosting = NSHostingController(rootView: view)
             let win = NSWindow(contentViewController: hosting)
             win.title = t("permission_check_window_title")

@@ -53,7 +53,8 @@ struct OnboardingView: View {
                         }
                     } else {
                         InstrumentButton(title: t("onboarding_open_calibration"), kind: .secondary) {
-                            isPresented = false
+                            // 先落「已完成」，避免下次启动重复弹引导
+                            finishOnboarding()
                             onOpenCalibration?()
                         }
                         InstrumentButton(title: t("onboarding_start"), kind: .primary,
@@ -66,8 +67,13 @@ struct OnboardingView: View {
     }
 
     private func finishOnboarding() {
-        ConfigStore.shared.defaults.set(true, forKey: "hasCompletedOnboarding")
+        Self.markCompleted()
         isPresented = false
+    }
+
+    /// 标记引导完成（测试可注入隔离 suite）
+    static func markCompleted(in defaults: UserDefaults = ConfigStore.shared.defaults) {
+        defaults.set(true, forKey: "hasCompletedOnboarding")
     }
 
     private var stepIcon: String {

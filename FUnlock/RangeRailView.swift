@@ -99,6 +99,10 @@ struct RangeRailView: View {
             actionBar
         }
         .onAppear(perform: syncFromStores)
+        .onChange(of: manager.thresholdVersion) { _, _ in
+            // 外部（配置档切换 / 校准向导 / 导入）改阈值后同步草稿；拖动中不打断
+            if !isDragging { syncFromStores() }
+        }
     }
 
     // MARK: - 轨道
@@ -357,12 +361,12 @@ struct RangeRailView: View {
             }
             stepperCell(title: t("wake_advance"), value: draftWake,
                         range: SignalHysteresisEngine.offsetRange, unit: "dB",
-                        detail: unlockEnabled ? "→ \(draftUnlock - draftWake) dBm" : nil) { next in
+                        detail: unlockEnabled ? "→ \(max(draftUnlock - draftWake, -100)) dBm" : nil) { next in
                 draftWake = next
             }
             stepperCell(title: t("pre_unlock_trigger"), value: draftPre,
                         range: SignalHysteresisEngine.offsetRange, unit: "dB",
-                        detail: unlockEnabled ? "→ \(draftUnlock - draftPre) dBm" : nil) { next in
+                        detail: unlockEnabled ? "→ \(max(draftUnlock - draftPre, -100)) dBm" : nil) { next in
                 draftPre = next
             }
         }

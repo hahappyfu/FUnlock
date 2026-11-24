@@ -558,3 +558,157 @@ final class LEDeviceSQLiteTests: XCTestCase {
         XCTAssertNil(openReadOnlyAndQueryPairedDevice(dbPath: dir.appendingPathComponent("missing.db").path, uuid: uuid))
     }
 }
+
+// MARK: - BLE RSSI 清洗与发现过滤（P0-1 / P0-2）
+
+final class BLEScannerSignalSanitizeTests: XCTestCase {
+
+    func testSanitizeRSSIRejectsSentinelsAndInvalidValues() {
+        XCTAssertNil(BLEScanner.sanitizeRSSI(127), "CoreBluetooth 不可用哨兵必须丢弃")
+        XCTAssertNil(BLEScanner.sanitizeRSSI(5), "正值非法")
+        XCTAssertNil(BLEScanner.sanitizeRSSI(0), "0 dBm 不可能，必须丢弃")
+        XCTAssertNil(BLEScanner.sanitizeRSSI(-128), "低于 -127 非法")
+    }
+
+    func testSanitizeRSSIAcceptsValidValues() {
+        XCTAssertEqual(BLEScanner.sanitizeRSSI(-55), -55)
+        XCTAssertEqual(BLEScanner.sanitizeRSSI(-127), -127, "-127 是合法下限")
+        XCTAssertEqual(BLEScanner.sanitizeRSSI(-1), -1)
+    }
+
+    func testShouldDropDiscoveryHonorsScanMode() {
+        let bound = UUID()
+        XCTAssertTrue(BLEScanner.shouldDropDiscovery(monitoredUUID: bound, isInList: false, scanMode: false),
+                      "非扫描模式：已绑定时应过滤其他设备")
+        XCTAssertFalse(BLEScanner.shouldDropDiscovery(monitoredUUID: bound, isInList: false, scanMode: true),
+                       "扫描模式（更换设备）必须放行其他设备")
+        XCTAssertFalse(BLEScanner.shouldDropDiscovery(monitoredUUID: nil, isInList: false, scanMode: false),
+                       "未绑定设备时不得过滤")
+        XCTAssertFalse(BLEScanner.shouldDropDiscovery(monitoredUUID: bound, isInList: true, scanMode: false),
+                       "目标设备永远放行")
+    }
+}
+
+// MARK: - P1：阈值版本 / 窗口生命周期 / 引导 / 场景哨兵 / 图表刻度 / 脚本隔离 / 密码校验
+
+@MainActor
+final class FUnManagerThresholdVersionTests: XCTestCase {
+
+    func testSetUnlockRSSIAlwaysIncrementsThresholdVersion() {
+        let manager = FUnManager(fun: FUn())
+        let v0 = manager.thresholdVersion
+        manager.setUnlockRSSI(-55)
+        let v1 = manager.thresholdVersion
+        XCTAssertGreaterThan(v1, v0, "设置解锁阈值必须递增版本")
+
+        manager.setUnlockRSSI(-65)  // 锁定阈值 -80 仍合法，不触发 setLockRSSI
+        XCTAssertGreaterThan(manager.thresholdVersion, v1, "未触发联动时也必须递增版本")
+    }
+}
+
+@MainActor
+final class SettingsWindowLifecycleTests: XCTestCase {
+
+    func testStopDiscoveryNotificationName() {
+        XCTAssertEqual(AppDelegate.stopDeviceDiscoveryNotification.rawValue,
+                       "com.funlock.stopDeviceDiscovery")
+    }
+
+    func testAutoStartDiscoveryOnlyWhenUnbound() {
+        XCTAssertTrue(AppDelegate.shouldStartDiscoveryOnOpen(monitoredUUID: nil))
+        XCTAssertFalse(AppDelegate.shouldStartDiscoveryOnOpen(monitoredUUID: UUID()))
+    }
+}
+
+@MainActor
+final class OnboardingCompletionTests: XCTestCase {
+
+    func testMarkCompletedWritesFlag() {
+        let suite = "OnboardingCompletionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertFalse(defaults.bool(forKey: "hasCompletedOnboarding"))
+        OnboardingView.markCompleted(in: defaults)
+        XCTAssertTrue(defaults.bool(forKey: "hasCompletedOnboarding"))
+    }
+}
+
+@MainActor
+final class OverviewScenarioSentinelTests: XCTestCase {
+
+    func testNoSignal() {
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: -55, rssi: nil), .noSignal)
+    }
+
+    func testNormalThresholds() {
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: -55, rssi: -50), .inRange)
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: -55, rssi: -60), .approaching)
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: -55, rssi: -74), .weakening)
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: -55, rssi: -90), .far)
+    }
+
+    func testUnlockDisabledNeverReportsInRange() {
+        let level = OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: FUn.UNLOCK_DISABLED, rssi: -60)
+        XCTAssertEqual(level, .approaching, "解锁禁用时不得显示「在范围内 — 已解锁」")
+        XCTAssertNotEqual(OverviewView.scenarioLevel(lockRSSI: -65, unlockRSSI: FUn.UNLOCK_DISABLED, rssi: -30),
+                          .inRange)
+    }
+
+    func testLockDisabledFallsBackToUnlockThreshold() {
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: FUn.LOCK_DISABLED, unlockRSSI: -55, rssi: -60), .weakening)
+        XCTAssertEqual(OverviewView.scenarioLevel(lockRSSI: FUn.LOCK_DISABLED, unlockRSSI: -55, rssi: -90), .far)
+    }
+}
+
+final class ChartXStrideTests: XCTestCase {
+
+    private func sample(_ offset: TimeInterval) -> SignalSample {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        return SignalSample(timestamp: t0.addingTimeInterval(offset),
+                            rawRSSI: -60, kalmanEstimate: -60, effectiveRSSI: -60,
+                            slope: 0, isAnomalous: false, event: nil)
+    }
+
+    func testEmptyUsesFiveMinuteDefault() {
+        let stride = chartXStride(for: [])
+        XCTAssertEqual(stride.unit, .minute)
+        XCTAssertEqual(stride.count, 5)
+    }
+
+    func testShortWindowUsesSeconds() {
+        let stride = chartXStride(for: [sample(0), sample(100)])
+        XCTAssertEqual(stride.unit, .second)
+        XCTAssertEqual(stride.count, 30)
+    }
+
+    func testMediumWindowUsesFiveMinutes() {
+        let stride = chartXStride(for: [sample(0), sample(1000)])
+        XCTAssertEqual(stride.unit, .minute)
+        XCTAssertEqual(stride.count, 5)
+    }
+
+    func testLongWindowUsesFifteenMinutes() {
+        let stride = chartXStride(for: [sample(0), sample(3600)])
+        XCTAssertEqual(stride.unit, .minute)
+        XCTAssertEqual(stride.count, 15)
+    }
+}
+
+final class ScriptRunnerIsolationTests: XCTestCase {
+
+    func testRunScriptIsNoOpUnderXCTest() {
+        // 守卫条件本身：测试进程必须识别为 XCTestCase
+        XCTAssertNotNil(NSClassFromString("XCTestCase"))
+        // 调用不得启动真实脚本、不得崩溃
+        ScriptRunner.shared.runScript("away", rssi: -60, deviceName: "Test")
+    }
+}
+
+final class SecurityServicePasswordValidationTests: XCTestCase {
+
+    func testEmptyPasswordRejected() {
+        XCTAssertFalse(SecurityService.shouldAcceptPassword(""))
+        XCTAssertTrue(SecurityService.shouldAcceptPassword("x"))
+        XCTAssertTrue(SecurityService.shouldAcceptPassword("  "))
+    }
+}

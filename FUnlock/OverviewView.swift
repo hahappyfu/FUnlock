@@ -2,6 +2,7 @@
 // 总览仪表：信号仪表盘 + 设备绑定与切换 + 交互式距离标尺 + 校准入口
 
 import SwiftUI
+import Combine
 
 struct OverviewView: View {
     var manager: FUnManager
@@ -40,6 +41,13 @@ struct OverviewView: View {
             .padding(.bottom, FUnlockTheme.Space.lg)
         }
         .onDisappear { stopScan() }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.stopDeviceDiscoveryNotification)) { _ in
+            // 设置窗口关闭/隐藏：停掉 UI 轮询计时器并收起发现列表
+            stopScan()
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                isDeviceListExpanded = false
+            }
+        }
         .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
             Button(t("ok"), role: .destructive) {
                 manager.unbindDevice()
@@ -243,6 +251,56 @@ struct OverviewView: View {
 
     // MARK: - 计算属性
 
+    /// 距离场景（兼容 UNLOCK_DISABLED / LOCK_DISABLED 哨兵，供单测）
+    enum ScenarioLevel: Equatable {
+        case noSignal, veryClose, inRange, approaching, weakening, far
+
+        var textKey: String {
+            switch self {
+            case .noSignal: "scenario_no_signal"
+            case .veryClose: "scenario_very_close"
+            case .inRange: "scenario_in_range"
+            case .approaching: "scenario_approaching"
+            case .weakening: "scenario_weakening"
+            case .far: "scenario_far"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .veryClose, .inRange: FUnlockTheme.State.safeFill.color
+            case .approaching, .weakening: FUnlockTheme.State.amberFill.color
+            case .far: FUnlockTheme.State.dangerFill.color
+            case .noSignal: FUnlockTheme.Text.secondary.color
+            }
+        }
+    }
+
+    static func scenarioLevel(lockRSSI: Int, unlockRSSI: Int, rssi: Int?) -> ScenarioLevel {
+        guard let rssi else { return .noSignal }
+        if rssi >= -45 { return .veryClose }
+        let unlockDisabled = unlockRSSI == FUn.UNLOCK_DISABLED
+        if !unlockDisabled && rssi >= unlockRSSI { return .inRange }
+        // 锁定阈值解析：禁用哨兵时回退到解锁阈值（引擎 resolvedLockThreshold 同语义）
+        let effectiveLock: Int
+        if lockRSSI == FUn.LOCK_DISABLED {
+            effectiveLock = unlockDisabled ? SignalHysteresisEngine.rssiRange.lowerBound : unlockRSSI
+        } else {
+            effectiveLock = lockRSSI
+        }
+        if rssi >= effectiveLock { return .approaching }
+        if rssi >= effectiveLock - 10 { return .weakening }
+        return .far
+    }
+
+    private var scenarioLevel: ScenarioLevel {
+        Self.scenarioLevel(lockRSSI: manager.lockRSSI, unlockRSSI: manager.unlockRSSI, rssi: manager.rssi)
+    }
+
+    private var scenarioText: String { t(scenarioLevel.textKey) }
+
+    private var scenarioColor: Color { scenarioLevel.color }
+
     private var signalStrength: CGFloat {
         guard let rssi = manager.rssi else { return 0 }
         return min(max(CGFloat(rssi + 100) / 70.0, 0), 1)
@@ -251,22 +309,6 @@ struct OverviewView: View {
     private var signalColor: Color {
         if signalStrength > 0.7 { return FUnlockTheme.State.safeFill.color }
         if signalStrength > 0.4 { return FUnlockTheme.State.amberFill.color }
-        return FUnlockTheme.State.dangerFill.color
-    }
-
-    private var scenarioText: String {
-        guard let rssi = manager.rssi else { return t("scenario_no_signal") }
-        if rssi >= -45 { return t("scenario_very_close") }
-        if rssi >= manager.unlockRSSI { return t("scenario_in_range") }
-        if rssi >= manager.lockRSSI { return t("scenario_approaching") }
-        if rssi >= manager.lockRSSI - 10 { return t("scenario_weakening") }
-        return t("scenario_far")
-    }
-
-    private var scenarioColor: Color {
-        guard let rssi = manager.rssi else { return FUnlockTheme.Text.secondary.color }
-        if rssi >= manager.unlockRSSI { return FUnlockTheme.State.safeFill.color }
-        if rssi >= manager.lockRSSI { return FUnlockTheme.State.amberFill.color }
         return FUnlockTheme.State.dangerFill.color
     }
 }
