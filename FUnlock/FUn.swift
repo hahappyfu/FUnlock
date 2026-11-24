@@ -160,6 +160,10 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         scanner.stopScanning()
     }
 
+    func stopAllScanning() {
+        scanner.stopAllScanning()
+    }
+
     func setPassiveMode(_ mode: Bool) {
         scanner.setPassiveMode(mode)
     }

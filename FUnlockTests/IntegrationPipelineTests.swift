@@ -391,3 +391,55 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         XCTAssertTrue(manager.stateMachine.canAttemptUnlock)
     }
 }
+
+// MARK: - 扫描分离：UI 设备发现 vs 后台监控
+
+@MainActor
+final class ScanSeparationTests: XCTestCase {
+
+    func testStopDiscoveryScanPreservesPassiveModeMonitoring() {
+        let fun = FUn()
+        let id = UUID()
+        fun.lock.withLock {
+            fun.scanner.monitoredUUID = id
+            fun.scanner.passiveMode = true
+            fun.scanner.scanMode = true
+        }
+        XCTAssertFalse(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+        fun.stopScanning()
+        XCTAssertFalse(fun.lock.withLock { fun.scanner.scanMode })
+    }
+
+    func testStopDiscoveryScanPreservesActiveReconnectMonitoring() {
+        let fun = FUn()
+        fun.lock.withLock {
+            fun.scanner.monitoredUUID = UUID()
+            fun.scanner.passiveMode = false
+            fun.scanner.handler.activeModeTimer = nil
+        }
+        XCTAssertFalse(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+    }
+
+    func testStopDiscoveryScanStopsCentralWhenUnboundOrActiveConnected() {
+        let fun = FUn()
+        XCTAssertTrue(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+        fun.lock.withLock {
+            fun.scanner.monitoredUUID = UUID()
+            fun.scanner.passiveMode = false
+            fun.scanner.handler.activeModeTimer = Timer(timeInterval: 10, repeats: false) { _ in }
+        }
+        XCTAssertTrue(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+    }
+
+    func testUnbindDeviceClearsMonitoredUUIDBeforeStoppingScan() {
+        let fun = FUn()
+        let manager = FUnManager(fun: fun)
+        fun.lock.withLock {
+            fun.scanner.monitoredUUID = UUID()
+            fun.scanner.passiveMode = true
+        }
+        manager.unbindDevice()
+        XCTAssertNil(fun.monitoredUUID)
+        XCTAssertTrue(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+    }
+}

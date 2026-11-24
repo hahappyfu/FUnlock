@@ -123,12 +123,36 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         scanForPeripherals()
     }
 
-    func stopScanning() {
+    /// UI（设备发现列表）停止扫描时，是否应同时停止底层 CBCentralManager。
+    /// 已绑定设备且仍在后台监控时必须保留扫描：被动模式靠广播采样，
+    /// 主动模式在尚未进入轮询（连接/重连期）时也需要广播流兜底；
+    /// 只有未绑定、或主动模式已在轮询（连接健康，靠 readRSSI）时才真正停扫。
+    func shouldStopCentralScanOnStopDiscovery() -> Bool {
+        lock.withLock {
+            if monitoredUUID == nil { return true }
+            if !passiveMode && handler.activeModeTimer != nil { return true }
+            return false
+        }
+    }
+
+    /// 无条件停止扫描（解绑路径专用，确保清除监控后不再保留后台扫描）。
+    func stopAllScanning() {
         lock.withLock {
             scanMode = false
             currentScanAllowDuplicates = false
         }
         centralMgr.stopScan()
+    }
+
+    func stopScanning() {
+        lock.withLock { scanMode = false }
+        if shouldStopCentralScanOnStopDiscovery() {
+            lock.withLock { currentScanAllowDuplicates = false }
+            centralMgr.stopScan()
+        } else {
+            // 仍有绑定设备在后台监控：按监控模式参数重建扫描，而不是杀掉扫描
+            scanForPeripherals()
+        }
     }
 
     func setPassiveMode(_ mode: Bool) {

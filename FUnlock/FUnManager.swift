@@ -236,12 +236,13 @@ final class FUnManager {
         if let p = peripheralToCancel {
             fun.centralMgr.cancelPeripheralConnection(p)
         }
-        fun.stopScanning()
+        // 先清监控 UUID，再无条件停扫：被动模式下 stopScanning() 会因
+        // shouldStopCentralScanOnStopDiscovery()==false 而保留扫描，解绑必须绕开该保护。
+        fun.unbindAllState()
+        fun.stopAllScanning()
         // 清除所有 timer
         fun.invalidateAllTimers()
         fun.invalidateAllDeviceTimers()
-        // 重置状态
-        fun.unbindAllState()
 
         // 清除 Manager 层状态
         monitoredDeviceName = nil
