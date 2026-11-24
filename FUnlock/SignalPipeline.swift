@@ -46,7 +46,6 @@ struct SignalPipeline {
     private let kalmanQMax: Double = 0.5
     private let kalmanDeadZone: Double = 2.0
     private let betaSlope: Double = 0.1
-    private let gammaAnomaly: Double = 1.5
 
     // 衰减参数
     private let decayRate: Double = 0.5
@@ -87,8 +86,14 @@ struct SignalPipeline {
             : rssiTimestamps.last
         if let lastSampleTime = lastSampleTime,
            now.timeIntervalSince(lastSampleTime) > interruptionResetThreshold {
+            // 中断恢复：估计与斜率都对齐当前样本，并清空陈旧窗口，
+            // 避免 30s 前的离场斜率/陈旧估计污染恢复首包
+            kalmanEstimate = Double(rssi)
             kalmanP = 1.0
             kalmanSampleCount = 0
+            smoothedSlope = 0.0
+            latestRSSIs = [Double(rssi)]
+            rssiTimestamps = [now]
         }
 
         // S0: 源标记
@@ -140,16 +145,20 @@ struct SignalPipeline {
     }
 
     private func applyIQR(window rawWindow: [Double], rssi: Double) -> Bool {
-        // 按最近固定 N=8 个样本计算（suffix），不受调用方时间窗裁剪影响——
-        // 0.5s 采样档的 1.5s 时间窗内最多 4 个样本，≥5 门限原本永不满足
-        let window = Array(rawWindow.suffix(iqrSampleCount))
-        guard window.count >= 5 else { return false }
-        let sorted = window.sorted()
+        // 历史窗口排除当前点，避免当前样本污染自身的异常判定；
+        // 固定取最近 N 个历史样本，不受调用方时间窗裁剪影响
+        let history = rawWindow.count > 1
+            ? Array(rawWindow.dropLast().suffix(iqrSampleCount))
+            : []
+        guard history.count >= 5 else { return false }
+        let sorted = history.sorted()
         let n = sorted.count
         let q1 = sorted[n / 4]
         let q3 = sorted[3 * n / 4]
         let iqr = q3 - q1
-        return abs(rssi - (q1 + q3) / 2.0) > iqrMultiplier * iqr
+        // 连续相同读数时 IQR=0：给 2dBm 物理底噪门槛，避免正常量化跳变被误标异常
+        let effectiveIQR = max(iqr, 2.0)
+        return abs(rssi - (q1 + q3) / 2.0) > iqrMultiplier * effectiveIQR
     }
 
     private func computeSlopeEWLR(rssis: [Double], timestamps: [Date], now: Date) -> Double {
@@ -197,8 +206,8 @@ struct SignalPipeline {
             } else {
                 slopeTerm = 0.0
             }
-            let anomTerm = isAnomalous ? gammaAnomaly : 0
-            q = kalmanQ * dtScale * (baseTerm + slopeTerm + anomTerm)
+            // 异常样本只降低增益（下方 kalmanGain *= 0.5），不再同时放大过程噪声
+            q = kalmanQ * dtScale * (baseTerm + slopeTerm)
             q = min(q, kalmanQMax)
         }
         let predictedP = kalmanP + q

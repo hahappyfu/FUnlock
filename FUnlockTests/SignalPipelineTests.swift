@@ -489,3 +489,46 @@ final class LockTimerGuardTests: XCTestCase {
         XCTAssertTrue(fun.scanner.computeAllowDuplicatesLocked())
     }
 }
+
+// MARK: - Task 12：中断恢复与 IQR 底噪
+
+final class SignalPipelineInterruptionTests: XCTestCase {
+
+    func testInterruptionOver30sResetsKalmanEstimateAndStaleNegativeSlope() {
+        var p = SignalPipeline()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        // 模拟快速走远：留下低估计与负斜率
+        for i in 0..<6 {
+            let t = t0.addingTimeInterval(Double(i) * 0.5)
+            let r = -55 - i * 6
+            p.latestRSSIs.append(Double(r))
+            p.rssiTimestamps.append(t)
+            _ = p.process(rssi: r, source: .connected, now: t)
+        }
+        XCTAssertLessThan(p.smoothedSlope, -2.0)
+
+        // 45s 后设备以强信号返回：必须重置估计与斜率，不得被陈旧窗口拖住
+        let tReturn = t0.addingTimeInterval(50)
+        p.latestRSSIs.append(-50)
+        p.rssiTimestamps.append(tReturn)
+        let d = p.process(rssi: -50, source: .connected, now: tReturn)
+        XCTAssertEqual(d.kalmanEstimate, -50.0, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(d.slope, -0.5)
+    }
+
+    func testZeroIQRWindowDoesNotFlag1dBmJitterAsAnomalous() {
+        var p = SignalPipeline()
+        let t0 = Date(timeIntervalSince1970: 2000)
+        for i in 0..<8 {
+            let t = t0.addingTimeInterval(Double(i))
+            p.latestRSSIs.append(-65)
+            p.rssiTimestamps.append(t)
+            _ = p.process(rssi: -65, source: .connected, now: t)
+        }
+        let tNext = t0.addingTimeInterval(9)
+        p.latestRSSIs.append(-66)
+        p.rssiTimestamps.append(tNext)
+        let d = p.process(rssi: -66, source: .connected, now: tNext)
+        XCTAssertFalse(d.isAnomalous, "平坦窗口下 1dBm 量化跳变不得被误标为异常")
+    }
+}
