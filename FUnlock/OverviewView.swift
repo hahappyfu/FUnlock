@@ -1,5 +1,5 @@
 // OverviewView.swift
-// 总览页：信号盘 + 可视化阈值条 + 设备管理 + 快捷操作
+// 总览仪表：信号仪表盘 + 设备绑定与切换 + 交互式距离标尺 + 校准入口
 
 import SwiftUI
 
@@ -10,158 +10,198 @@ struct OverviewView: View {
 
     @AppStorage("enabled", store: ConfigStore.shared.defaults) private var enabled = true
 
-    // 阈值滑块状态（本地草稿，不即时写盘）
-    @State private var sliderLock: Double = 0
-    @State private var sliderUnlock: Double = 0
-    /// 用户是否主动拖动过锁定滑块（true 则解锁滑块联动不再覆盖锁定值，保留独立锁定滑杆的最终覆盖权）
-    @State private var lockSliderUserModified = false
-    @State private var isSliderDragging = false
-
-    // 偏移量草稿（唤醒提前量 / 预解锁触发量，dB）
-    @State private var wakeAdvance: Int = FUn.defaultWakeAdvance
-    @State private var preUnlockTrigger: Int = FUn.defaultPreUnlockTrigger
-
     // 扫描状态
     @State private var isScanning = false
     @State private var frozenDevices: [DeviceSnapshot] = []
     @State private var scanTimer: Timer?
-
     @State private var showUnbindConfirm = false
     @State private var isDeviceListExpanded = false
 
-    /// RSSI 可视化范围（dBm，转发自 SignalHysteresisEngine 单一来源）
-    enum RSSIRange {
-        static var min: Double { Double(SignalHysteresisEngine.rssiRange.lowerBound) }
-        static var max: Double { Double(SignalHysteresisEngine.rssiRange.upperBound) }
-    }
-
-    /// 禁用解锁时的 UI 回退阈值：以滑块最小值显示
-    private var effectiveUnlockRSSI: Int {
-        manager.unlockRSSI == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : manager.unlockRSSI
-    }
-
-    var isThresholdApplied: Bool {
-        Int(sliderLock) == manager.lockRSSI && Int(sliderUnlock) == effectiveUnlockRSSI
-            && wakeAdvance == thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
-            && preUnlockTrigger == thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
-    }
-
-    private func thresholdSettingValue(_ key: String, default dft: Int) -> Int {
-        ConfigStore.shared.object(forKey: key) as? Int ?? dft
-    }
-
-    private func xPos(_ v: Double, _ width: CGFloat) -> CGFloat {
-        let minV = RSSIRange.min, maxV = RSSIRange.max
-        return CGFloat((v - minV) / (maxV - minV)) * width
-    }
+    /// 主读数是唯一允许使用 @ScaledMetric 的例外（规格 §2.6）
+    @ScaledMetric(relativeTo: .largeTitle) private var readoutSize: CGFloat = 30
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
+                header
                 if manager.monitoredDeviceName == nil {
-                    noDeviceSection
+                    noDeviceCard
                 } else {
-                    deviceStatusSection
-                    thresholdSection
-                    quickActionsSection
+                    signalCard
+                    FUnlockCard {
+                        RangeRailView(manager: manager)
+                    }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
-        }
-        .onAppear {
-            sliderLock = Double(manager.lockRSSI)
-            sliderUnlock = Double(effectiveUnlockRSSI)
-            lockSliderUserModified = false
-            wakeAdvance = thresholdSettingValue("wakeAdvance", default: FUn.defaultWakeAdvance)
-            preUnlockTrigger = thresholdSettingValue("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger)
-        }
-        .onChange(of: manager.lockRSSI) { _, newValue in
-            if Int(sliderLock) != newValue && !isSliderDragging {
-                sliderLock = Double(newValue)
-            }
-        }
-        .onChange(of: manager.unlockRSSI) { _, newValue in
-            let expected = (newValue == FUn.UNLOCK_DISABLED ? Int(RSSIRange.min) : newValue)
-            if Int(sliderUnlock) != expected && !isSliderDragging {
-                sliderUnlock = Double(expected)
-            }
+            .padding(.horizontal, FUnlockTheme.Space.md)
+            .padding(.top, FUnlockTheme.Space.sm)
+            .padding(.bottom, FUnlockTheme.Space.lg)
         }
         .onDisappear { stopScan() }
+        .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
+            Button(t("ok"), role: .destructive) {
+                manager.unbindDevice()
+                isDeviceListExpanded = false
+                stopScan()
+            }
+            Button(t("cancel"), role: .cancel) {}
+        } message: {
+            Text(t("unbind_confirm_message"))
+        }
     }
 
-    // MARK: 设备状态卡
+    // MARK: - 标题行
 
-    private var deviceStatusSection: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 12) {
-                signalRing
+    private var header: some View {
+        HStack(spacing: FUnlockTheme.Space.xs) {
+            Text(t("overview"))
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
+            Spacer(minLength: FUnlockTheme.Space.xs)
+            InstrumentButton(title: t("calibration_wizard"), systemImage: "wand.and.stars",
+                             kind: .primary) {
+                showCalibration = true
+            }
+        }
+    }
+
+    // MARK: - 信号主卡
+
+    private var signalCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
+                gauge
                 HStack(spacing: 6) {
-                    Circle().fill(scenarioColor).frame(width: 7, height: 7)
-                    Text(scenarioText).font(.callout).foregroundColor(.secondary)
+                    Circle()
+                        .fill(scenarioColor)
+                        .frame(width: 7, height: 7)
+                    Text(scenarioText)
+                        .font(.callout)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                }
+                Hairline()
+                deviceRow
+                if isDeviceListExpanded {
+                    Hairline()
+                    scanSection
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+        }
+    }
 
-            LiquidDivider()
+    private var gauge: some View {
+        ZStack {
+            Circle()
+                .stroke(FUnlockTheme.Surface.well.color, lineWidth: 10)
+                .frame(width: 110, height: 110)
+            Circle()
+                .trim(from: 0, to: signalStrength)
+                .stroke(signalColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .frame(width: 110, height: 110)
+                .rotationEffect(.degrees(-90))
+                // 高频仪表盘数据：仅保留 0.1s 防闪烁过渡
+                .animation(.easeOut(duration: 0.1), value: signalStrength)
 
-            HStack {
-                Label(manager.monitoredDeviceName ?? "", systemImage: deviceIconName(for: manager.monitoredDeviceName ?? ""))
-                Spacer()
-                Button(t("change_device")) { toggleDeviceList() }
-                    .controlSize(.small)
-                Button(t("unbind")) { showUnbindConfirm = true }
-                    .controlSize(.small)
+            VStack(spacing: 2) {
+                Text(manager.rssi.map { "\($0)" } ?? "—")
+                    .font(.system(size: readoutSize, weight: .light, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(FUnlockTheme.Text.primary.color)
+                Text("dBm")
+                    .font(.caption)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
             }
-            .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
-                Button(t("ok"), role: .destructive) {
-                    manager.unbindDevice()
-                    isDeviceListExpanded = false
-                    stopScan()
+        }
+        .padding(.top, FUnlockTheme.Space.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("\(manager.rssi.map { "\($0)" } ?? "—") dBm, \(scenarioText)"))
+    }
+
+    private var deviceRow: some View {
+        HStack(spacing: FUnlockTheme.Space.xs) {
+            Label(manager.monitoredDeviceName ?? "", systemImage: deviceIconName(for: manager.monitoredDeviceName ?? ""))
+                .font(.body)
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
+                .lineLimit(1)
+            Spacer(minLength: FUnlockTheme.Space.xs)
+            InstrumentButton(title: t("change_device"), kind: .secondary, action: toggleDeviceList)
+            InstrumentButton(title: t("unbind"), kind: .destructive) {
+                showUnbindConfirm = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var scanSection: some View {
+        HStack(spacing: FUnlockTheme.Space.xs) {
+            Text(t("select_device"))
+                .font(.subheadline)
+                .foregroundStyle(FUnlockTheme.Text.secondary.color)
+            Spacer(minLength: 0)
+            if isScanning {
+                ProgressView().controlSize(.small)
+            } else {
+                InstrumentButton(title: t("start_search"), kind: .secondary, action: startScan)
+            }
+        }
+        if !frozenDevices.isEmpty {
+            VStack(spacing: 2) {
+                ForEach(frozenDevices, id: \.uuid) { device in
+                    DeviceRowView(device: device) {
+                        manager.selectDevice(device)
+                        stopScan()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isDeviceListExpanded = false
+                        }
+                    }
                 }
-                Button(t("cancel"), role: .cancel) {}
-            } message: {
-                Text(t("unbind_confirm_message"))
             }
+        }
+    }
 
-            if isDeviceListExpanded {
-                LiquidDivider()
+    // MARK: - 未绑定设备引导
 
-                HStack {
+    private var noDeviceCard: some View {
+        FUnlockCard {
+            VStack(spacing: FUnlockTheme.Space.sm) {
+                VStack(spacing: FUnlockTheme.Space.xs) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.title2)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     Text(t("select_device"))
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
+                        .font(.headline)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Text(t("scan_hint"))
+                        .font(.callout)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     if isScanning {
                         ProgressView().controlSize(.small)
                     } else {
-                        Button(t("start_search")) { startScan() }
-                            .controlSize(.small)
+                        InstrumentButton(title: t("start_search"), kind: .primary, action: startScan)
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, FUnlockTheme.Space.md)
 
                 if !frozenDevices.isEmpty {
-                    VStack(spacing: 6) {
+                    Hairline()
+                    VStack(spacing: 2) {
                         ForEach(frozenDevices, id: \.uuid) { device in
                             DeviceRowView(device: device) {
                                 manager.selectDevice(device)
                                 stopScan()
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    isDeviceListExpanded = false
-                                }
                             }
                         }
                     }
                 }
             }
         }
-        .liquidGlassCard(cornerRadius: 16, padding: 14)
     }
 
+    // MARK: - 扫描
+
     private func toggleDeviceList() {
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(.easeInOut(duration: 0.2)) {
             isDeviceListExpanded.toggle()
         }
         if isDeviceListExpanded {
@@ -170,245 +210,6 @@ struct OverviewView: View {
             stopScan()
         }
     }
-
-    // MARK: 环形信号盘
-
-    private var signalRing: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.gray.opacity(0.15), lineWidth: 10)
-                .frame(width: 110, height: 110)
-            Circle()
-                .trim(from: 0, to: signalStrength)
-                // 实时数据环：高饱和实心信号色（不做半透明/渐变衰减，确保档位一眼可读）
-                .stroke(signalColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                .frame(width: 110, height: 110)
-                .rotationEffect(.degrees(-90))
-                // 高频仪表盘数据：仅保留 0.1s 防闪烁过渡（原 0.5s easeInOut 让实时信号显得迟钝）
-                .animation(.easeOut(duration: 0.1), value: signalStrength)
-
-            VStack(spacing: 2) {
-                Text(manager.rssi.map { "\($0)" } ?? "—")
-                    .font(.system(size: 30, weight: .thin, design: .monospaced))
-                Text("dBm")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.top, 16)
-        .padding(.bottom, 2)
-        // 无障碍：信号盘对 VoiceOver 输出可读摘要（当前 RSSI + 在场/距离场景），不再读成一串碎片
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(manager.rssi.map { "\($0)" } ?? "—") dBm, \(scenarioText)"))
-    }
-
-    // MARK: 阈值分组
-
-    private var thresholdSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(t("distance_threshold"))
-                .font(.subheadline.weight(.semibold))
-
-            thresholdBar
-            hysteresisBand
-
-            LiquidDivider()
-
-            ThresholdSliderRow(icon: "lock.fill", color: .orange, title: t("lock"),
-                               value: $sliderLock, isDragging: $isSliderDragging,
-                               onEditingEnded: {
-                                   lockSliderUserModified = true
-                                   // 约束：锁定阈值必须小于解锁阈值（更远）
-                                   if sliderLock >= sliderUnlock {
-                                       let safe = max(sliderUnlock - Double(lockUnlockDelayGap), Double(SignalHysteresisEngine.rssiRange.lowerBound))
-                                       sliderLock = min(safe, sliderUnlock - 1)
-                                   }
-                               })
-
-            LiquidDivider()
-
-            ThresholdSliderRow(icon: "lock.open.fill", color: .green, title: t("unlock"),
-                               value: $sliderUnlock, isDragging: $isSliderDragging,
-                               onEditingEnded: {
-                                   // 迟滞联动：用户调解锁阈值时，若锁定未修改或已越界，自动拉开 lockUnlockDelayGap 并保证 lock < unlock
-                                   let linked = Int(sliderUnlock) - lockUnlockDelayGap
-                                   let clamped = SignalHysteresisEngine.clampRSSI(linked)
-                                   let safeLock = Double(min(clamped, Int(sliderUnlock) - 1))
-                                   if !lockSliderUserModified || sliderLock >= sliderUnlock {
-                                       sliderLock = safeLock
-                                   }
-                               })
-
-            LiquidDivider()
-
-            ThresholdOffsetRow(icon: "sun.max.fill", color: .blue,
-                               title: t("wake_advance"),
-                               preText: t("subtitle_pre"), postText: t("wake_subtitle_post"),
-                               derivedValue: Int(sliderUnlock) - wakeAdvance,
-                               value: $wakeAdvance)
-
-            LiquidDivider()
-
-            ThresholdOffsetRow(icon: "bolt.fill", color: .purple,
-                               title: t("pre_unlock_trigger"),
-                               preText: t("subtitle_pre"), postText: t("pre_subtitle_post"),
-                               derivedValue: Int(sliderUnlock) - preUnlockTrigger,
-                               value: $preUnlockTrigger)
-
-            LiquidDivider()
-
-            Button {
-                let unlockVal = Int(sliderUnlock)
-                // 提交前强制校验 lock < unlock
-                let safeLockVal = min(Int(sliderLock), unlockVal - 1)
-                sliderLock = Double(safeLockVal)
-                manager.setUnlockRSSI(unlockVal)
-                manager.setLockRSSI(safeLockVal)
-                manager.setWakeAdvance(wakeAdvance)
-                manager.setPreUnlockTrigger(preUnlockTrigger)
-            } label: {
-                Label(isThresholdApplied ? t("applied") : t("apply_thresholds"),
-                      systemImage: isThresholdApplied ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(isThresholdApplied)
-        }
-        .liquidGlassCard(cornerRadius: 16, padding: 14)
-    }
-
-    // MARK: 可视化阈值条
-
-    private var thresholdBar: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-
-            ZStack(alignment: .leading) {
-                // 底轨
-                Capsule().fill(Color.gray.opacity(0.2)).frame(height: 6)
-                // 锁定区（橙）到解锁区（绿）：标记两个阈值游标
-                if let rssi = manager.rssi {
-                    Circle()
-                        .fill(signalColor)
-                        .frame(width: 10, height: 10)
-                        .position(x: xPos(Double(rssi), width), y: 0)
-                        .shadow(radius: 1)
-                }
-                Circle().fill(Color.orange)
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
-                    .position(x: xPos(Double(manager.lockRSSI), width), y: 0)
-                Circle().fill(Color.green)
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
-                    .position(x: xPos(Double(effectiveUnlockRSSI), width), y: 0)
-            }
-            .frame(height: 14)
-            .frame(maxWidth: .infinity)
-        }
-        .frame(height: 18)
-        .padding(.vertical, 4)
-    }
-
-    // MARK: 迟滞安全区（防误锁缓冲带）
-
-    /// 解锁与锁定阈值之间的防误锁缓冲带：随滑块草稿值实时联动，
-    /// 两端刻度即两个阈值的位置，宽度即安全距离（dB）
-    private var hysteresisBand: some View {
-        let band = max(sliderUnlock - sliderLock, 0)
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(t("hysteresis_band"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(Int(band)) dB")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundColor(.accentColor)
-            }
-            GeometryReader { geo in
-                let width = geo.size.width
-                let lockX = xPos(min(sliderLock, sliderUnlock), width)
-                let unlockX = xPos(max(sliderLock, sliderUnlock), width)
-                ZStack(alignment: .leading) {
-                    // 底轨
-                    Capsule().fill(Color.gray.opacity(0.12)).frame(height: 8)
-                    // 缓冲带：锁定端（橙）渐变至解锁端（绿），与滑块图标色一致
-                    Capsule()
-                        .fill(LinearGradient(colors: [.orange.opacity(0.45), .green.opacity(0.45)],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(unlockX - lockX, 0), height: 8)
-                        .offset(x: lockX)
-                    // 两端阈值刻度
-                    bandTick.position(x: lockX, y: geo.size.height / 2)
-                    bandTick.position(x: unlockX, y: geo.size.height / 2)
-                }
-                .frame(height: 12)
-            }
-            .frame(height: 12)
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var bandTick: some View {
-        Capsule().fill(Color.secondary).frame(width: 1.5, height: 12)
-    }
-
-    // MARK: 快捷操作
-
-    private var quickActionsSection: some View {
-        // 只保留「自动校准向导」单主按钮（「立刻锁定」与底栏重复，已移除），填满宽度居中呈现
-        Button {
-            showCalibration = true
-        } label: {
-            Label(t("calibration_wizard"), systemImage: "wand.and.stars")
-                .font(.system(size: 13, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 3)
-        }
-        .controlSize(.large)
-        .buttonStyle(.borderedProminent)
-        .liquidGlassCard(cornerRadius: 16, padding: 14)
-    }
-
-    // MARK: 未绑定设备引导卡
-
-    private var noDeviceSection: some View {
-        VStack(spacing: 12) {
-            VStack(spacing: 10) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 30))
-                    .foregroundColor(.secondary)
-                Text(t("select_device"))
-                    .font(.headline)
-                Text(t("scan_hint"))
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                if isScanning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button(t("start_search")) { startScan() }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-
-            if !frozenDevices.isEmpty {
-                LiquidDivider()
-
-                VStack(spacing: 6) {
-                    ForEach(frozenDevices, id: \.uuid) { device in
-                        DeviceRowView(device: device) {
-                            manager.selectDevice(device)
-                            stopScan()
-                        }
-                    }
-                }
-            }
-        }
-        .liquidGlassCard(cornerRadius: 16, padding: 14)
-    }
-
-    // MARK: 扫描
 
     private func startScan() {
         stopScan()
@@ -421,7 +222,7 @@ struct OverviewView: View {
                 let sorted = manager.discoveredDevices
                     .filter { boundUUID == nil || $0.uuid != boundUUID }
                     .sorted { $0.rssi > $1.rssi }
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     frozenDevices = sorted
                 }
             }
@@ -435,7 +236,7 @@ struct OverviewView: View {
         manager.stopScanning()
     }
 
-    // MARK: 计算属性
+    // MARK: - 计算属性
 
     private var signalStrength: CGFloat {
         guard let rssi = manager.rssi else { return 0 }
@@ -443,9 +244,9 @@ struct OverviewView: View {
     }
 
     private var signalColor: Color {
-        if signalStrength > 0.7 { return .green }
-        if signalStrength > 0.4 { return .yellow }
-        return .red
+        if signalStrength > 0.7 { return FUnlockTheme.State.safeFill.color }
+        if signalStrength > 0.4 { return FUnlockTheme.State.amberFill.color }
+        return FUnlockTheme.State.dangerFill.color
     }
 
     private var scenarioText: String {
@@ -458,88 +259,10 @@ struct OverviewView: View {
     }
 
     private var scenarioColor: Color {
-        guard let rssi = manager.rssi else { return .gray }
-        if rssi >= manager.unlockRSSI { return .green }
-        if rssi >= manager.lockRSSI { return .orange }
-        return .red
-    }
-}
-
-// MARK: - 阈值滑块行
-
-private struct ThresholdSliderRow: View {
-    let icon: String
-    let color: Color
-    let title: String
-    @Binding var value: Double
-    @Binding var isDragging: Bool
-    /// 拖动结束时回调（editing 从 true → false 时触发），用于迟滞联动
-    var onEditingEnded: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon).foregroundColor(color).frame(width: 16)
-            Text(title).font(.system(size: 12)).frame(width: 34, alignment: .leading)
-            Slider(value: $value, in: OverviewView.RSSIRange.min...OverviewView.RSSIRange.max,
-                   onEditingChanged: { editing in
-                       isDragging = editing
-                       if !editing { onEditingEnded?() }
-                   })
-            // dBm 数值微胶囊槽：等宽数字 + 微透衬底，读数工整且醒目
-            Text("\(Int(value))")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .monospacedDigit()
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.primary.opacity(0.06)))
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.6))
-                .fixedSize()
-            Text("dBm").font(.caption2).foregroundColor(.secondary)
-        }
-    }
-}
-
-// MARK: - 偏移量输入行
-
-/// 可填数字的偏移量行：主标题 + 带动态数值的简练副标题（dB，0-20）
-private struct ThresholdOffsetRow: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let preText: String
-    let postText: String
-    let derivedValue: Int
-    @Binding var value: Int
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon).foregroundColor(color).frame(width: 16)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                (Text(preText)
-                    .foregroundColor(.secondary)
-                 + Text("\(derivedValue) dBm")
-                    .fontWeight(.semibold)
-                    .foregroundColor(.accentColor)
-                 + Text(postText)
-                    .foregroundColor(.secondary))
-                    .font(.caption2)
-                    .lineSpacing(2)
-            }
-            Spacer()
-            // 输入框 + 单位：右侧固定宽度整体右对齐
-            HStack(spacing: 4) {
-                TextField("dB", value: $value, format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 54)
-                Text("dB")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .monospacedDigit()
-            }
-            .frame(width: 88, alignment: .trailing)
-        }
+        guard let rssi = manager.rssi else { return FUnlockTheme.Text.secondary.color }
+        if rssi >= manager.unlockRSSI { return FUnlockTheme.State.safeFill.color }
+        if rssi >= manager.lockRSSI { return FUnlockTheme.State.amberFill.color }
+        return FUnlockTheme.State.dangerFill.color
     }
 }
 
@@ -549,53 +272,50 @@ private struct DeviceRowView: View {
     let device: DeviceSnapshot
     let onSelect: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onSelect) {
-            HStack {
+            HStack(spacing: FUnlockTheme.Space.xs) {
                 Image(systemName: "iphone")
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(device.name)
+                        .font(.body)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
                         .lineLimit(1)
                     if let mac = device.macAddr {
                         Text(mac.replacingOccurrences(of: "-", with: ":").uppercased())
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(FUnlockTheme.Text.tertiary.color)
                     }
                 }
-                Spacer()
+                Spacer(minLength: FUnlockTheme.Space.xs)
                 Text("\(device.rssi) dBm")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(rssiColor(device.rssi))
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .foregroundStyle(rssiColor(device.rssi))
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, FUnlockTheme.Space.xs)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: FUnlockTheme.Radius.md)
+                    .fill(isHovering ? FUnlockTheme.Surface.well.color : .clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 悬停晶体微光：轻亮底 + 0.6px 高反光细边
-        .background(
-            RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(isHovering ? (colorScheme == .dark ? 0.10 : 0.18) : 0))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(Color.white.opacity(isHovering ? 0.30 : 0.0), lineWidth: 0.6)
-        )
-        .animation(.funSpring, value: isHovering)
+        .animation(reduceMotion ? nil : FUnlockTheme.Motion.fast, value: isHovering)
         .onHover { isHovering = $0 }
     }
 
-    /// 信号质量色:与菜单栏信号档位同源(MenuBarPopoverView.signalLevel,-60/-75 单测锁定)
+    /// 与菜单栏信号档位同源（-60 / -75 单测锁定）
     private func rssiColor(_ rssi: Int) -> Color {
         switch MenuBarPopoverView.signalLevel(for: Double(rssi)) {
-        case .excellent: return .green
-        case .good: return .yellow
-        case .weak: return .red
+        case .excellent: FUnlockTheme.State.safeFill.color
+        case .good: FUnlockTheme.State.amberFill.color
+        case .weak: FUnlockTheme.State.dangerFill.color
         }
     }
 }

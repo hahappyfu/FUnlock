@@ -314,3 +314,10 @@
 "bark_test_title" = "Bark-testnotifikation";
 "bark_send_test" = "Send testnotifikation";
 "bark_test_success" = "Sendt – tjek din iPhone";
+
+// Precision Instrument tabs & shared labels (Phase 2)
+"behavior" = "Adfærd og notifikationer";
+"scenarios" = "Scenarier og konfiguration";
+"status_standby" = "Standby";
+"sheet_close" = "Luk";
+"stats_anomaly" = "Anomali";

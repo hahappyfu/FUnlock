@@ -1,5 +1,5 @@
 // DiagnosticsView.swift
-// 「诊断」Tab：解锁/锁屏决策时间线，基于 DecisionLogger 渲染原因与操作按钮
+// 信号与诊断：真数据 KPI + 信号/斜率曲线 + 决策时间线（40 行分块）
 
 import SwiftUI
 import AppKit
@@ -32,8 +32,10 @@ struct DiagnosticsView: View {
     var logger: DecisionLogger
     let onNavigate: (MenuTab) -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var filter: DecisionCategory?
+    @State private var chartMode: ChartMode = .signal
+
+    private var dataStore = SignalDataStore.shared
 
     init(manager: FUnManager, logger: DecisionLogger = DecisionLogger.shared,
          onNavigate: @escaping (MenuTab) -> Void) {
@@ -71,7 +73,9 @@ struct DiagnosticsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
+                kpiRow
+                chartsCard
                 header
                 filterChips
                 if filteredEvents.isEmpty {
@@ -81,12 +85,119 @@ struct DiagnosticsView: View {
                 }
                 clearFooter
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
+            .padding(.horizontal, FUnlockTheme.Space.md)
+            .padding(.top, FUnlockTheme.Space.sm)
+            .padding(.bottom, FUnlockTheme.Space.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear {
             if logger.events.isEmpty { logger.loadHistory() }
+        }
+    }
+
+    // MARK: - KPI
+
+    private var todayUnlocks: Int { StatsCalculator.todayUnlocks(logger.events) }
+    private var todayLocks: Int { StatsCalculator.todayLocks(logger.events) }
+    private var thisWeekUnlocks: Int { StatsCalculator.thisWeekUnlocks(logger.events) }
+
+    private var kpiRow: some View {
+        HStack(spacing: FUnlockTheme.Space.sm) {
+            kpiCard(t("stats_today_unlocks"), value: todayUnlocks,
+                    icon: "lock.open.fill", tone: .safe)
+            kpiCard(t("stats_today_locks"), value: todayLocks,
+                    icon: "lock.fill", tone: .amber)
+            kpiCard(t("stats_week_unlocks"), value: thisWeekUnlocks,
+                    icon: "calendar", tone: .neutral)
+        }
+    }
+
+    private func kpiCard(_ title: String, value: Int, icon: String, tone: StatusTone) -> some View {
+        FUnlockCard(padding: FUnlockTheme.Space.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(value)")
+                        .font(.title.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Image(systemName: icon)
+                        .font(.caption)
+                        .foregroundStyle(tone.fillColor)
+                }
+            }
+        }
+    }
+
+    // MARK: - 图表
+
+    private var chartsCard: some View {
+        FUnlockCard {
+            VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
+                HStack(spacing: FUnlockTheme.Space.xs) {
+                    Text(t("stats_signal_diagnostics"))
+                        .font(.headline)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    Spacer(minLength: FUnlockTheme.Space.xs)
+                    Picker("", selection: $chartMode) {
+                        ForEach(ChartMode.allCases, id: \.self) { mode in
+                            Text(t(mode.rawValue)).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 160)
+                }
+
+                if dataStore.samples.isEmpty {
+                    Text(t("stats_no_data"))
+                        .font(.callout)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, FUnlockTheme.Space.md)
+                } else {
+                    chartBody
+                    HStack {
+                        Spacer(minLength: 0)
+                        chartLegend
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var chartBody: some View {
+        switch chartMode {
+        case .signal:
+            SignalChartView(samples: dataStore.samples,
+                            unlockThreshold: dataStore.unlockThreshold,
+                            lockThreshold: dataStore.lockThreshold)
+        case .slope:
+            SlopeChartView(samples: dataStore.samples)
+        }
+    }
+
+    private var chartLegend: some View {
+        HStack(spacing: FUnlockTheme.Space.md) {
+            if chartMode == .signal {
+                legendDot(color: .gray, label: "Raw RSSI")
+                legendDot(color: .blue, label: "Kalman")
+                legendDot(color: .purple, label: "Effective")
+                legendDot(color: .red, label: t("stats_anomaly"))
+            } else {
+                legendDot(color: .orange, label: "Slope")
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(FUnlockTheme.Text.secondary.color)
+    }
+
+    private func legendDot(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label)
         }
     }
 
@@ -95,8 +206,8 @@ struct DiagnosticsView: View {
     private var header: some View {
         HStack {
             Text(t("diagnostics_subtitle"))
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
+                .font(.caption)
+                .foregroundStyle(FUnlockTheme.Text.secondary.color)
             Spacer()
         }
     }
@@ -116,43 +227,29 @@ struct DiagnosticsView: View {
         }
     }
 
-    /// 晶体发光胶囊筛选片：选中态微光衬底 + 0.8px 亮边，未选中态微透
     private func chipButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                .padding(.horizontal, 10)
+                .font(.caption.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? FUnlockTheme.Accent.base.color
+                                            : FUnlockTheme.Text.secondary.color)
+                .padding(.horizontal, FUnlockTheme.Space.sm)
                 .padding(.vertical, 3)
                 .background(
-                    Capsule()
-                        .fill(isSelected
-                             // 选中：琥珀-白光微光衬底，亮度按深浅色模式分档
-                             ? AnyShapeStyle(LinearGradient(
-                                 colors: colorScheme == .dark
-                                     ? [Color.white.opacity(0.16), Color(red: 0.75, green: 0.60, blue: 1.0).opacity(0.22)]
-                                     : [Color.white.opacity(0.42), Color(red: 0.75, green: 0.60, blue: 1.0).opacity(0.20)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                             // 未选中：微透，让底层极光透出
-                             : AnyShapeStyle(Color.white.opacity(colorScheme == .dark ? 0.05 : 0.14)))
+                    Capsule().fill(isSelected
+                                   ? FUnlockTheme.Accent.base.color.opacity(0.12)
+                                   : FUnlockTheme.Surface.well.color)
                 )
                 .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: isSelected
-                                    ? [Color.white.opacity(colorScheme == .dark ? 0.55 : 0.95),
-                                       Color.white.opacity(0.20)]
-                                    : [Color.white.opacity(colorScheme == .dark ? 0.20 : 0.45),
-                                       Color.white.opacity(0.06)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 0.8
-                        )
+                    Capsule().strokeBorder(
+                        isSelected ? FUnlockTheme.Accent.base.color.opacity(0.45)
+                                   : FUnlockTheme.Surface.border.color,
+                        lineWidth: 1)
                 )
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .animation(.funSpring, value: isSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - 时间轴
@@ -162,21 +259,18 @@ struct DiagnosticsView: View {
         static let columnWidth: CGFloat = 18
         static let dotSize: CGFloat = 9
         static let lineWidth: CGFloat = 2
-        /// 导光竖线独立于圆点描边：更细、更淡，贯穿整组形成连续时间线
         static let guideLineWidth: CGFloat = 1.5
         static let guideLineOpacity: Double = 0.2
     }
 
     private var timeline: some View {
-        LazyVStack(alignment: .leading, spacing: 10) {
+        LazyVStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
             ForEach(groupedEvents, id: \.title) { group in
                 Text(group.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     .padding(.top, 2)
-                // 分块渲染：同一天可能有数百条事件，整组作为单个渲染单元会让滚动每帧
-                // 重建整张巨型卡片（实测 467 行组导致帧率塌陷）。每块限 pageSize 行，
-                // 卡片仍是视觉上的连续时间轴，但滚动时只需重建一小块。
+                // 分块渲染：同一天可能有数百条事件，整组作为单个渲染单元会让滚动每帧重建
                 ForEach(makeChunks(from: group.events)) { chunk in
                     timelineGroup(events: chunk.events)
                 }
@@ -187,8 +281,6 @@ struct DiagnosticsView: View {
     /// 单张卡片的最大行数：控制滚动时单次重建的渲染单元规模
     static let timelinePageSize = 40
 
-    /// 分块包装：以块首事件 id 为稳定标识，新事件挤入头部时块内容整体后移但 id 不复用，
-    /// 避免 offset 作 id 时块错位导致的卡片状态闪烁
     private struct EventChunk: Identifiable {
         let id: UUID
         let events: [DecisionEvent]
@@ -200,32 +292,27 @@ struct DiagnosticsView: View {
         }
     }
 
-    /// 单组时间轴：整组坐在一张晶体卡片里，底层流光由卡片半透底衬透出
     private func timelineGroup(events: [DecisionEvent]) -> some View {
-        ZStack(alignment: .topLeading) {
-            // 导光竖线：中心 x = columnWidth / 2，与圆点对齐；上下略微出头，
-            // 让组内圆点串联成一条连续的时间线（Rectangle 无高度约束，自动撑满整张卡片）
-            Rectangle()
-                .fill(Color.secondary.opacity(AxisLayout.guideLineOpacity))
-                .frame(width: AxisLayout.guideLineWidth)
-                .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.guideLineWidth / 2)
-                .padding(.vertical, 2)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(events) { event in
-                    itemRow(for: event)
+        FUnlockCard(padding: FUnlockTheme.Space.xs) {
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(FUnlockTheme.Surface.border.color)
+                    .frame(width: AxisLayout.guideLineWidth)
+                    .padding(.leading, AxisLayout.columnWidth / 2 - AxisLayout.guideLineWidth / 2)
+                    .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(events) { event in
+                        itemRow(for: event)
+                    }
                 }
             }
         }
-        .liquidGlassCard(cornerRadius: 14, padding: 8)
         .id(events.first?.id)
     }
 
-    /// 时间轴节点行：圆点位于竖线上，右侧为事件内容
     private func itemRow(for event: DecisionEvent) -> some View {
         let iconInfo = event.icon
-        return HStack(alignment: .top, spacing: 8) {
-            // 节点圆点：轴列内水平居中；填充改用事件状态色的微透底，不再用不透明窗口色
-            // （不透明底会盖穿卡片下的极光流光），描边仍取状态色
+        return HStack(alignment: .top, spacing: FUnlockTheme.Space.xs) {
             Circle()
                 .fill(iconInfo.1.opacity(0.22))
                 .frame(width: AxisLayout.dotSize, height: AxisLayout.dotSize)
@@ -234,40 +321,45 @@ struct DiagnosticsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: iconInfo.0)
-                        .font(.system(size: 11))
-                        .foregroundColor(iconInfo.1)
+                        .font(.caption)
+                        .foregroundStyle(iconInfo.1)
                         .frame(width: 16)
                     Text(t(event.reason?.titleKey ?? event.outcome.rawValue))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
                         .lineLimit(1)
                     Spacer()
                     Text(Self.timeString(event.timestamp))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                 }
                 if !event.detail.isEmpty {
                     Text(event.detail)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                         .lineLimit(2)
                 }
                 if let screenKey = DecisionEvent.screenLabel(event.screen) {
                     Text(t(screenKey))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: FUnlockTheme.Space.xs) {
                     if let rssi = event.rssi, event.detail.isEmpty {
-                        Text("\(rssi) dBm").font(.system(size: 11)).foregroundColor(.secondary)
+                        Text("\(rssi) dBm")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     }
                     if let device = event.device {
-                        Text(device).font(.system(size: 11)).foregroundColor(.secondary)
+                        Text(device)
+                            .font(.caption)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     }
                     Spacer()
                     if let action = event.reason?.action {
-                        Button(t(action.labelKey)) { perform(action) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                        InstrumentButton(title: t(action.labelKey), kind: .secondary) {
+                            perform(action)
+                        }
                     }
                 }
             }
@@ -288,7 +380,8 @@ struct DiagnosticsView: View {
         case .reEnterPassword:
             SecurityService.shared.askPassword()
         case .goToTab(let tabKey):
-            if let tab = MenuTab(rawValue: tabKey) { onNavigate(tab) }
+            // 旧 key（basic/unlock/lock/network/config）经兼容路由映射到新分区
+            if let tab = MenuTab.resolve(tabKey) { onNavigate(tab) }
         case .resetStateMachine:
             manager.stateMachine.resetToActive()
         }
@@ -297,32 +390,27 @@ struct DiagnosticsView: View {
     // MARK: - 空状态 / 清空
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: FUnlockTheme.Space.xs) {
             Image(systemName: "waveform.path.ecg")
-                .font(.system(size: 26))
-                .foregroundColor(.secondary)
+                .font(.title2)
+                .foregroundStyle(FUnlockTheme.Text.secondary.color)
             Text(t("diagnostics_empty"))
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
+                .font(.body)
+                .foregroundStyle(FUnlockTheme.Text.secondary.color)
             Text(t("diagnostics_empty_hint"))
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.7))
+                .font(.caption)
+                .foregroundStyle(FUnlockTheme.Text.tertiary.color)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .padding(.vertical, FUnlockTheme.Space.xl)
     }
 
     private var clearFooter: some View {
         HStack {
-            Button(t("export_diagnostics")) { exportDiagnostics() }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            InstrumentButton(title: t("export_diagnostics"), kind: .secondary, action: exportDiagnostics)
             Spacer()
-            Button(t("diagnostics_clear")) { logger.clear() }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .foregroundColor(.secondary)
+            InstrumentButton(title: t("diagnostics_clear"), kind: .ghost) { logger.clear() }
         }
     }
 
@@ -360,7 +448,6 @@ struct DiagnosticsView: View {
 
         let tmpDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         // 移出主线程：文件拷贝 + 同步 zip 打包（Process.waitUntilExit 会阻塞到子进程结束）
-        // 放到后台 Task，避免大日志时 UI 假死；完成后切回 @MainActor 弹结果对话框。
         Task.detached(priority: .userInitiated) {
             do {
                 try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)

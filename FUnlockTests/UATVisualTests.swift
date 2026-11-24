@@ -18,15 +18,12 @@ final class UATVisualTests: XCTestCase {
             .frame(width: 282)
         saveView(view: popoverView, size: NSSize(width: 282, height: 380), to: "\(outputDir)/00_menubar_popover.png")
 
-        // 2. Capture all 7 tabs of MainWindowView
+        // 2. Capture all 4 tabs of MainWindowView
         let tabs: [(MenuTab, String)] = [
             (.overview, "01_overview"),
-            (.basic, "02_basic"),
-            (.unlock, "03_unlock"),
-            (.lock, "04_lock"),
-            (.network, "05_network"),
-            (.config, "06_config"),
-            (.diagnostics, "07_diagnostics")
+            (.behavior, "02_behavior"),
+            (.scenarios, "03_scenarios"),
+            (.diagnostics, "04_diagnostics")
         ]
 
         for (tab, filename) in tabs {
@@ -39,11 +36,8 @@ final class UATVisualTests: XCTestCase {
     private func saveView<V: View>(view: V, size: NSSize, to path: String) {
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+                              styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
-        window.titlebarAppearsTransparent = true
-        window.isOpaque = false
-        window.backgroundColor = .clear
         window.contentViewController = hosting
         window.makeKeyAndOrderFront(nil)
         hosting.view.frame = NSRect(origin: .zero, size: size)

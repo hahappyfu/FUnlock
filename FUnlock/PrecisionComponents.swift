@@ -303,6 +303,39 @@ struct ControlRow: View {
     }
 }
 
+// MARK: - 开关行
+
+/// 设置开关行：图标块 + 标题/说明 + 系统开关。保留原生 Toggle 语义供 VoiceOver 读取。
+struct PrecisionToggleRow: View {
+    let icon: String
+    var tone: StatusTone = .neutral
+    let title: String
+    var subtitle: String? = nil
+    @Binding var isOn: Bool
+    var onChange: ((Bool) -> Void)? = nil
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack(spacing: FUnlockTheme.Space.xs) {
+                IconTile(systemImage: icon, tone: tone)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.body)
+                        .foregroundStyle(FUnlockTheme.Text.primary.color)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .toggleStyle(.switch)
+        .onChange(of: isOn) { _, value in onChange?(value) }
+    }
+}
+
 // MARK: - 状态徽标
 
 /// 状态徽标：图标 + 文案 + 语义色（颜色之外必须有形与字）

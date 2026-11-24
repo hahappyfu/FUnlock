@@ -1,5 +1,5 @@
 // IMSettingsCard.swift
-// 设置页 iMessage 通知卡片：开关 / 收件人校验 / 授权状态 / 单个测试按钮 + 行内结果
+// 设置页 iMessage 通知卡片：开关 / 收件人校验 / 授权状态 / 测试按钮 + 行内结果
 
 import SwiftUI
 
@@ -28,33 +28,36 @@ struct IMSettingsCard: View {
             let parts = r.split(separator: "@")
             return parts.count == 2 && !parts[0].isEmpty && parts[1].contains(".")
         }
-        // 手机号：允许可选 "+" 国际前缀，其余须为数字（10-15 位）
         let digits = r.hasPrefix("+") ? String(r.dropFirst()) : r
         return digits.count >= 10 && digits.count <= 15 && digits.allSatisfy(\.isNumber)
     }
 
     var body: some View {
-        // 显式容器：卡片化后不再依赖 Form/Section 的隐式展平，保证纵向堆叠
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
             Toggle(isOn: $iMessageNotify) {
-                HStack(spacing: 10) {
-                    LiquidIconBadge(icon: "message.fill", color: .blue)
+                HStack(spacing: FUnlockTheme.Space.xs) {
+                    IconTile(systemImage: "message.fill", tone: .neutral)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(t("im_settings_title"))
-                        Text(t("im_settings_desc")).font(.caption).foregroundColor(.secondary)
+                            .font(.body)
+                            .foregroundStyle(FUnlockTheme.Text.primary.color)
+                        Text(t("im_settings_desc"))
+                            .font(.caption)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     }
                 }
             }
             .toggleStyle(.switch)
+
             if iMessageNotify {
                 recipientRow
                 authorizationRow
-                LiquidDivider()
+                Hairline()
                 testRow
                 if !testStateMessage.isEmpty {
                     Text(testStateMessage)
                         .font(.caption)
-                        .foregroundColor(testStateColor)
+                        .foregroundStyle(testStateColor)
                 }
             }
         }
@@ -64,52 +67,52 @@ struct IMSettingsCard: View {
 
     private var recipientRow: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: FUnlockTheme.Space.xs) {
                 Text(t("im_recipient_label"))
+                    .font(.body)
                 TextField(t("im_recipient_placeholder"), text: $recipient)
-                    .textFieldStyle(.plain)
-                    .liquidInputField()
+                    .font(.body)
+                    .precisionField()
             }
             if !recipient.isEmpty && !recipientValid {
                 Text(t("im_recipient_invalid"))
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(FUnlockTheme.State.dangerText.color)
             }
         }
     }
 
     private var authorizationRow: some View {
-        HStack {
+        HStack(spacing: FUnlockTheme.Space.xs) {
             if case .failure(let msg) = testState, msg.contains("授权") {
                 Text(t("im_unauthorized"))
-                    .foregroundColor(.red)
-                Spacer()
-                Button(t("im_go_authorize")) {
-                    openAutomationSettings()
-                }
+                    .font(.caption)
+                    .foregroundStyle(FUnlockTheme.State.dangerText.color)
+                Spacer(minLength: 0)
+                InstrumentButton(title: t("im_go_authorize"), kind: .secondary,
+                                 action: openAutomationSettings)
             } else {
-                // 「已授权」状态包装为绿色微胶囊，弱化整行色块、强化状态语义
                 Text(t("im_authorized"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.green)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(FUnlockTheme.State.safeText.color)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.green.opacity(0.14)))
-                    .overlay(Capsule().strokeBorder(Color.green.opacity(0.28), lineWidth: 0.8))
+                    .background(Capsule().fill(FUnlockTheme.State.safeFill.color.opacity(0.12)))
+                    .overlay(Capsule().strokeBorder(FUnlockTheme.State.safeFill.color.opacity(0.28),
+                                                    lineWidth: 1))
+                Spacer(minLength: 0)
             }
         }
     }
 
     private var testRow: some View {
-        HStack {
-            Button(t("im_send_test")) {
-                runTest()
-            }
-            .disabled(isTesting || !recipientValid)
+        HStack(spacing: FUnlockTheme.Space.xs) {
+            InstrumentButton(title: t("im_send_test"), kind: .secondary,
+                             isEnabled: !isTesting && recipientValid, action: runTest)
             if isTesting {
                 ProgressView().controlSize(.small)
-                    .padding(.leading, 4)
             }
+            Spacer(minLength: 0)
         }
     }
 
@@ -123,9 +126,9 @@ struct IMSettingsCard: View {
 
     private var testStateColor: Color {
         switch testState {
-        case .success: return .green
-        case .failure: return .red
-        case .idle: return .secondary
+        case .success: return FUnlockTheme.State.safeText.color
+        case .failure: return FUnlockTheme.State.dangerText.color
+        case .idle: return FUnlockTheme.Text.secondary.color
         }
     }
 

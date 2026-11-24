@@ -1,35 +1,43 @@
 // MainWindowView.swift
-// NavigationSplitView 主骨架：分组侧边栏 + 内容区 + sheet 管理
+// 4 分区主骨架：侧边栏 + 内容区 + 权限提示 + 底部操作栏 + Sheet 管理
 
 import SwiftUI
 import AppKit
 import CoreBluetooth
 import Combine
 
-// MARK: - Tab 枚举
+// MARK: - Tab 枚举（4 分区 + 旧 key 兼容路由）
 
-enum MenuTab: String, CaseIterable {
-    case overview   = "overview"
-    case basic      = "basic"
-    case unlock     = "unlock"
-    case lock       = "lock"
-    case network    = "network"
-    case config     = "config"
+enum MenuTab: String, CaseIterable, Identifiable {
+    case overview    = "overview"
+    case behavior    = "behavior"
+    case scenarios   = "scenarios"
     case diagnostics = "diagnostics"
+
+    var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .overview:  return "gauge.medium"
-        case .basic:     return "gearshape"
-        case .unlock:    return "lock.open"
-        case .lock:      return "lock"
-        case .network:   return "wifi"
-        case .config:    return "folder"
-        case .diagnostics: return "waveform.path.ecg"
+        case .overview:    "gauge.with.dots.needle.bottom.50percent"
+        case .behavior:    "switch.2"
+        case .scenarios:   "square.stack.3d.up"
+        case .diagnostics: "waveform.path.ecg"
         }
     }
 
     var label: String { t(rawValue) }
+
+    /// 旧版 Tab key（basic/unlock/lock/network/config）继续路由到新分区，
+    /// 保证诊断页 `.goToTab` 按钮与外部 DistributedNotification 不会静默失效。
+    static func resolve(_ raw: String) -> MenuTab? {
+        switch raw {
+        case "overview":                       .overview
+        case "behavior", "basic", "unlock", "lock": .behavior
+        case "scenarios", "network", "config": .scenarios
+        case "diagnostics":                    .diagnostics
+        default:                               nil
+        }
+    }
 }
 
 struct MainWindowView: View {
@@ -39,22 +47,18 @@ struct MainWindowView: View {
     @State private var selectedTab: MenuTab = .overview
     @State private var showCalibration = false
     @State private var showOnboarding = false
-    @State private var showAutomation = false
     @State private var showAbout = false
-    @State private var showStats = false
     @State private var onboardingStep = 0
     @State private var toastMessage: String? = nil
     @State private var toastIcon = ""
     @State private var toastColor: Color = .green
-    /// 当前 toast 的世代标识：连续 showToast 时旧延迟任务据此放弃收尾，避免提前关闭新 toast
+    /// 当前 toast 的世代标识：连续 showToast 时旧延迟任务据此放弃收尾
     @State private var currentToastID = UUID()
     @State private var previousConnected: Bool? = nil
 
-    @Environment(\.colorScheme) private var colorScheme
-    /// 权限状态（仅 UI 展示用，不影响解锁逻辑；权限缺失期间每 5 秒刷新一次）
+    /// 权限状态（仅 UI 展示，不影响解锁逻辑；缺失期间每 5 秒刷新）
     @State private var axGranted = false
     @State private var btGranted = false
-    /// 权限轮询订阅：仅权限缺失时存活（banner 可见期），授予后停止，不再常驻 Timer
     @State private var permissionPollCancellable: AnyCancellable?
 
     init(manager: FUnManager, fun: FUn, initialTab: MenuTab = .overview) {
@@ -65,18 +69,20 @@ struct MainWindowView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selectedTab: $selectedTab, manager: manager)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+            SidebarView(selectedTab: $selectedTab, manager: manager) {
+                showAbout = true
+            }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
                 if !axGranted || !btGranted {
-                    permissionBanner
-                        .padding(.horizontal, 14)
-                        .padding(.top, 12)
-                        .padding(.bottom, 8)
+                    permissionNotices
+                        .padding(.horizontal, FUnlockTheme.Space.md)
+                        .padding(.top, FUnlockTheme.Space.sm)
+                        .padding(.bottom, FUnlockTheme.Space.xs)
                 }
                 contentView
-                    .padding(.bottom, 26)
+                    .padding(.bottom, FUnlockTheme.Space.lg)
             }
         }
         .frame(minWidth: 560, minHeight: 460)
@@ -101,7 +107,7 @@ struct MainWindowView: View {
             if let msg = toastMessage {
                 ToastView(message: msg, icon: toastIcon, color: toastColor)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 8)
+                    .padding(.top, FUnlockTheme.Space.xs)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: toastMessage)
@@ -126,13 +132,13 @@ struct MainWindowView: View {
             }
             previousConnected = connected
             if connected {
-                showToast(t("toast_bt_connected"), icon: "antenna.radiowaves.left.and.right", color: .green)
+                showToast(t("toast_bt_connected"), icon: "antenna.radiowaves.left.and.right", color: FUnlockTheme.State.safeFill.color)
             } else {
-                showToast(t("toast_bt_disconnected"), icon: "wifi.slash", color: .orange)
+                showToast(t("toast_bt_disconnected"), icon: "wifi.slash", color: FUnlockTheme.State.amberFill.color)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuShowStats)) { _ in
-            showStats = true
+            withAnimation(.easeInOut(duration: 0.2)) { selectedTab = .diagnostics }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissions()
@@ -141,10 +147,8 @@ struct MainWindowView: View {
             refreshPermissions()
         }
         .onReceive(DistributedNotificationCenter.default.publisher(for: NSNotification.Name("com.funlock.selectTab"))) { notif in
-            if let tabName = notif.object as? String, let tab = MenuTab(rawValue: tabName) {
-                withAnimation(.funSpring) {
-                    selectedTab = tab
-                }
+            if let raw = notif.object as? String, let tab = MenuTab.resolve(raw) {
+                withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
             }
         }
         .sheet(isPresented: $showCalibration) {
@@ -153,53 +157,46 @@ struct MainWindowView: View {
         .sheet(isPresented: $showOnboarding) {
             OnboardingView(step: $onboardingStep, isPresented: $showOnboarding)
         }
-        .sheet(isPresented: $showAutomation) {
-            AutomationView(isPresented: $showAutomation)
-        }
         .sheet(isPresented: $showAbout) {
             AboutView()
         }
-        .sheet(isPresented: $showStats) {
-            StatsView(isPresented: $showStats)
-        }
     }
+
+    // MARK: - 底部操作栏
 
     private var bottomBar: some View {
         VStack(spacing: 0) {
-            LiquidDivider()
-            HStack(spacing: 10) {
-                LiquidPillButton(title: t("lock_now"), systemImage: "lock.fill") {
+            Hairline()
+            HStack(spacing: FUnlockTheme.Space.xs) {
+                InstrumentButton(title: t("lock_now"), systemImage: "lock.fill",
+                                 kind: .destructive) {
                     manager.lockNow()
                 }
                 Spacer()
-                LiquidPillButton(title: t("quit"), systemImage: "power") {
+                InstrumentButton(title: t("quit"), systemImage: "power",
+                                 kind: .secondary) {
                     NSApplication.shared.terminate(nil)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.horizontal, FUnlockTheme.Space.md)
+            .padding(.vertical, FUnlockTheme.Space.xs)
         }
-        .background(Color.white.opacity(colorScheme == .dark ? 0.03 : 0.08))
+        .background(FUnlockTheme.Surface.canvas.color)
     }
+
+    // MARK: - 内容
 
     @ViewBuilder
     private var contentView: some View {
         switch selectedTab {
         case .overview:
-            OverviewView(manager: manager, fun: fun,
-                         showCalibration: $showCalibration)
-        case .basic:
-            BasicSettingsView()
-        case .unlock:
-            UnlockSettingsView()
-        case .lock:
-            LockSettingsView()
-        case .network:
-            NetworkSettingsView(manager: manager)
-        case .config:
-            ConfigSettingsView(manager: manager, onToast: { message, icon, color in
-                self.showToast(message, icon: icon, color: color)
-            })
+            OverviewView(manager: manager, fun: fun, showCalibration: $showCalibration)
+        case .behavior:
+            BehaviorSettingsView()
+        case .scenarios:
+            ScenariosSettingsView(manager: manager) { message, icon, color in
+                showToast(message, icon: icon, color: color)
+            }
         case .diagnostics:
             DiagnosticsView(manager: manager,
                             onNavigate: { selectedTab = $0 })
@@ -213,7 +210,6 @@ struct MainWindowView: View {
         let toastID = UUID()
         currentToastID = toastID
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            // 已被后续 toast 覆盖：旧任务的到期收尾直接丢弃，交由最新世代的定时器关闭
             guard currentToastID == toastID else { return }
             withAnimation { toastMessage = nil }
         }
@@ -221,15 +217,15 @@ struct MainWindowView: View {
 
     // MARK: - 权限提醒
 
-    /// 权限缺失时的顶部警告条（辅助功能 / 蓝牙），仅当任一权限缺失时显示
     @ViewBuilder
-    private var permissionBanner: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var permissionNotices: some View {
+        VStack(alignment: .leading, spacing: FUnlockTheme.Space.xs) {
             if !axGranted {
-                LiquidAmberBanner(
-                    message: t("permission_banner_ax"),
-                    hint: t("permission_banner_ax_hint"),
-                    actionLabel: t("permission_banner_ax_action")
+                InlineNotice(
+                    tone: .warning,
+                    title: t("permission_banner_ax"),
+                    message: t("permission_banner_ax_hint"),
+                    actionTitle: t("permission_banner_ax_action")
                 ) {
                     openAccessibilitySettings()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -238,9 +234,10 @@ struct MainWindowView: View {
                 }
             }
             if !btGranted {
-                LiquidAmberBanner(
-                    message: t("permission_banner_bt"),
-                    actionLabel: t("permission_banner_bt_action")
+                InlineNotice(
+                    tone: .warning,
+                    title: t("permission_banner_bt"),
+                    actionTitle: t("permission_banner_bt_action")
                 ) {
                     openBluetoothSettings()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -251,7 +248,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// 刷新两个权限状态（仅影响警告条显示，不改任何解锁逻辑）
     private func refreshPermissions() {
         axGranted = AXIsProcessTrusted()
         let btAuth = (CBManager.authorization == .allowedAlways)
@@ -259,11 +255,10 @@ struct MainWindowView: View {
         btGranted = btAuth || btPoweredOn
     }
 
-    /// 权限轮询生命周期：缺失时启动 5s 轮询，授予后立即停（辅助功能权限无可靠的变更通知，轮询是缺失期的最小手段）
+    /// 权限轮询生命周期：缺失时启动 5s 轮询，授予后立即停
     private func updatePermissionPolling() {
         let needed = !axGranted || !btGranted
         if needed, permissionPollCancellable == nil {
-            // View 为 struct：闭包捕获值拷贝即可，@State 写入走引用语义
             permissionPollCancellable = Timer.publish(every: 5, on: .main, in: .common)
                 .autoconnect()
                 .sink { _ in refreshPermissions() }
@@ -273,7 +268,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// 切换侧边栏显示/隐藏（等价于系统 NavigationSplitView 的 toolbar 切换按钮）
     private func toggleSidebar() {
         NSApp.keyWindow?.firstResponder?
             .tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)

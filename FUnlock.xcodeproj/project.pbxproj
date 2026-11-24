@@ -26,8 +26,6 @@
 		AA000020226C1DF200000001 /* FUnlockStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000021226C1DF200000001 /* FUnlockStateMachine.swift */; };
 		AA000022226C1DF200000001 /* FUnlockStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */; };
 		AB0000012026062500000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000001 /* OnboardingView.swift */; };
-		AB0000012026062500000002 /* AutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000002 /* AutomationView.swift */; };
-		AB0000012026062500000003 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000003 /* StatsView.swift */; };
 		AB0000012026062500000004 /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000022026062500000004 /* ToastView.swift */; };
 		B200000122784D550017D8B9 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000222784D550017D8B9 /* AboutView.swift */; };
 		B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200000422784D550017D8B9 /* FUnlockUtils.swift */; };
@@ -49,6 +47,7 @@
 		UAT000020000000100000001 /* UATVisualTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UAT000010000000100000001 /* UATVisualTests.swift */; };
 		PT0000020000000100000001 /* PrecisionThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PT0000010000000100000001 /* PrecisionThemeTests.swift */; };
 		RR0000040000000100000001 /* RangeRailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RR0000030000000100000001 /* RangeRailTests.swift */; };
+		MT0000020000000100000001 /* MenuTabRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = MT0000010000000100000001 /* MenuTabRoutingTests.swift */; };
 		IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000010000000100000001 /* iMessageNotifierTests.swift */; };
 		IM0000040000000100000001 /* BarkNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IM0000030000000100000001 /* BarkNotifierTests.swift */; };
 		LR0000020000000100000001 /* LogRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LR0000010000000100000001 /* LogRotationTests.swift */; };
@@ -59,14 +58,12 @@
 		FT0000020000000100000001 /* FUnlockTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FT0000010000000100000001 /* FUnlockTheme.swift */; };
 		PC0000020000000100000001 /* PrecisionComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = PC0000010000000100000001 /* PrecisionComponents.swift */; };
 		RR0000020000000100000001 /* RangeRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RR0000010000000100000001 /* RangeRailView.swift */; };
+		BV0000020000000100000001 /* BehaviorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BV0000010000000100000001 /* BehaviorSettingsView.swift */; };
+		SC0000020000000100000001 /* ScenariosSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SC0000010000000100000001 /* ScenariosSettingsView.swift */; };
+		SG0000020000000100000001 /* SignalChartsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SG0000010000000100000001 /* SignalChartsView.swift */; };
 		AA0000DD00000001 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000011 /* MainWindowView.swift */; };
 		AA0000DD00000002 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000012 /* SidebarView.swift */; };
 		AA0000DD00000003 /* OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000013 /* OverviewView.swift */; };
-		AA0000DD00000004 /* BasicSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000014 /* BasicSettingsView.swift */; };
-		AA0000DD00000005 /* UnlockSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000015 /* UnlockSettingsView.swift */; };
-		AA0000DD00000006 /* LockSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000016 /* LockSettingsView.swift */; };
-		AA0000DD00000007 /* NetworkSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000017 /* NetworkSettingsView.swift */; };
-		AA0000DD00000008 /* ConfigSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000018 /* ConfigSettingsView.swift */; };
 		AA0000DD00000009 /* iMessageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD00000019 /* iMessageNotifier.swift */; };
 		AA0000DD0000001F /* BarkSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001E /* BarkSettingsCard.swift */; };
 		AA0000DD0000001D /* BarkNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000DD0000001C /* BarkNotifier.swift */; };
@@ -144,8 +141,6 @@
 		AA000021226C1DF200000001 /* FUnlockStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachine.swift; sourceTree = "<group>"; };
 		AA000023226C1DF200000001 /* FUnlockStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockStateMachineTests.swift; sourceTree = "<group>"; };
 		AB0000022026062500000001 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
-		AB0000022026062500000002 /* AutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationView.swift; sourceTree = "<group>"; };
-		AB0000022026062500000003 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		AB0000022026062500000004 /* ToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastView.swift; sourceTree = "<group>"; };
 		B1EFF91622E010F50010DB0A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		B200000222784D550017D8B9 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
@@ -170,23 +165,22 @@
 		FT0000010000000100000001 /* FUnlockTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockTheme.swift; sourceTree = "<group>"; };
 		PC0000010000000100000001 /* PrecisionComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrecisionComponents.swift; sourceTree = "<group>"; };
 		RR0000010000000100000001 /* RangeRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RangeRailView.swift; sourceTree = "<group>"; };
+		BV0000010000000100000001 /* BehaviorSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BehaviorSettingsView.swift; sourceTree = "<group>"; };
+		SC0000010000000100000001 /* ScenariosSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScenariosSettingsView.swift; sourceTree = "<group>"; };
+		SG0000010000000100000001 /* SignalChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalChartsView.swift; sourceTree = "<group>"; };
 		DT0000010000000100000001 /* DecisionLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLoggerTests.swift; sourceTree = "<group>"; };
 		RM0000010000000100000001 /* ReasonActionMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasonActionMappingTests.swift; sourceTree = "<group>"; };
 		DV0000010000000100000002 /* DiagnosticsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsViewTests.swift; sourceTree = "<group>"; };
 		UAT000010000000100000001 /* UATVisualTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UATVisualTests.swift; sourceTree = "<group>"; };
 		PT0000010000000100000001 /* PrecisionThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrecisionThemeTests.swift; sourceTree = "<group>"; };
 		RR0000030000000100000001 /* RangeRailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RangeRailTests.swift; sourceTree = "<group>"; };
+		MT0000010000000100000001 /* MenuTabRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuTabRoutingTests.swift; sourceTree = "<group>"; };
 		IM0000010000000100000001 /* iMessageNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifierTests.swift; sourceTree = "<group>"; };
 		IM0000030000000100000001 /* BarkNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkNotifierTests.swift; sourceTree = "<group>"; };
 		LR0000010000000100000001 /* LogRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogRotationTests.swift; sourceTree = "<group>"; };
 		AA0000DD00000011 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		AA0000DD00000012 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		AA0000DD00000013 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewView.swift; sourceTree = "<group>"; };
-		AA0000DD00000014 /* BasicSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicSettingsView.swift; sourceTree = "<group>"; };
-		AA0000DD00000015 /* UnlockSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnlockSettingsView.swift; sourceTree = "<group>"; };
-		AA0000DD00000016 /* LockSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockSettingsView.swift; sourceTree = "<group>"; };
-		AA0000DD00000017 /* NetworkSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkSettingsView.swift; sourceTree = "<group>"; };
-		AA0000DD00000018 /* ConfigSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigSettingsView.swift; sourceTree = "<group>"; };
 		AA0000DD00000019 /* iMessageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageNotifier.swift; sourceTree = "<group>"; };
 		AA0000DD0000001E /* BarkSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkSettingsCard.swift; sourceTree = "<group>"; };
 		AA0000DD0000001C /* BarkNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarkNotifier.swift; sourceTree = "<group>"; };
@@ -260,8 +254,6 @@
 			children = (
 				B200000222784D550017D8B9 /* AboutView.swift */,
 				AB0000022026062500000001 /* OnboardingView.swift */,
-				AB0000022026062500000002 /* AutomationView.swift */,
-				AB0000022026062500000003 /* StatsView.swift */,
 				AB0000022026062500000004 /* ToastView.swift */,
 				AB0000022026062900000001 /* RingBuffer.swift */,
 				AB0000022026062900000002 /* SignalDataStore.swift */,
@@ -277,6 +269,9 @@
 				FT0000010000000100000001 /* FUnlockTheme.swift */,
 				PC0000010000000100000001 /* PrecisionComponents.swift */,
 				RR0000010000000100000001 /* RangeRailView.swift */,
+				BV0000010000000100000001 /* BehaviorSettingsView.swift */,
+				SC0000010000000100000001 /* ScenariosSettingsView.swift */,
+				SG0000010000000100000001 /* SignalChartsView.swift */,
 				B200000422784D550017D8B9 /* FUnlockUtils.swift */,
 				WF0000010000000100000002 /* WiFiMonitor.swift */,
 				3D600A35226CC1A40068FB7B /* Localizable.strings */,
@@ -305,11 +300,6 @@
 				AA0000DD00000011 /* MainWindowView.swift */,
 				AA0000DD00000012 /* SidebarView.swift */,
 				AA0000DD00000013 /* OverviewView.swift */,
-				AA0000DD00000014 /* BasicSettingsView.swift */,
-				AA0000DD00000015 /* UnlockSettingsView.swift */,
-				AA0000DD00000016 /* LockSettingsView.swift */,
-				AA0000DD00000017 /* NetworkSettingsView.swift */,
-				AA0000DD00000018 /* ConfigSettingsView.swift */,
 				AA0000DD00000019 /* iMessageNotifier.swift */,
 				AA0000DD0000001E /* BarkSettingsCard.swift */,
 				AA0000DD0000001C /* BarkNotifier.swift */,
@@ -351,6 +341,7 @@
 				UAT000010000000100000001 /* UATVisualTests.swift */,
 				PT0000010000000100000001 /* PrecisionThemeTests.swift */,
 				RR0000030000000100000001 /* RangeRailTests.swift */,
+				MT0000010000000100000001 /* MenuTabRoutingTests.swift */,
 				IM0000010000000100000001 /* iMessageNotifierTests.swift */,
 				IM0000030000000100000001 /* BarkNotifierTests.swift */,
 				LR0000010000000100000001 /* LogRotationTests.swift */,
@@ -516,8 +507,6 @@
 				526FFBAB-1B12-449F-9ADB-26685142280A /* UpdateInstaller.swift in Sources */,
 				B200000122784D550017D8B9 /* AboutView.swift in Sources */,
 				AB0000012026062500000001 /* OnboardingView.swift in Sources */,
-				AB0000012026062500000002 /* AutomationView.swift in Sources */,
-				AB0000012026062500000003 /* StatsView.swift in Sources */,
 				AB0000012026062500000004 /* ToastView.swift in Sources */,
 				AB0000012026062900000001 /* RingBuffer.swift in Sources */,
 				AB0000012026062900000002 /* SignalDataStore.swift in Sources */,
@@ -533,6 +522,9 @@
 				FT0000020000000100000001 /* FUnlockTheme.swift in Sources */,
 				PC0000020000000100000001 /* PrecisionComponents.swift in Sources */,
 				RR0000020000000100000001 /* RangeRailView.swift in Sources */,
+				BV0000020000000100000001 /* BehaviorSettingsView.swift in Sources */,
+				SC0000020000000100000001 /* ScenariosSettingsView.swift in Sources */,
+				SG0000020000000100000001 /* SignalChartsView.swift in Sources */,
 				B200000522784D550017D8B9 /* FUnlockUtils.swift in Sources */,
 				WF0000010000000100000001 /* WiFiMonitor.swift in Sources */,
 				3D6070E226DBC68E00EE4E48 /* LEDeviceInfo.swift in Sources */,
@@ -543,11 +535,6 @@
 				AA0000DD00000001 /* MainWindowView.swift in Sources */,
 				AA0000DD00000002 /* SidebarView.swift in Sources */,
 				AA0000DD00000003 /* OverviewView.swift in Sources */,
-				AA0000DD00000004 /* BasicSettingsView.swift in Sources */,
-				AA0000DD00000005 /* UnlockSettingsView.swift in Sources */,
-				AA0000DD00000006 /* LockSettingsView.swift in Sources */,
-				AA0000DD00000007 /* NetworkSettingsView.swift in Sources */,
-				AA0000DD00000008 /* ConfigSettingsView.swift in Sources */,
 				AA0000DD00000009 /* iMessageNotifier.swift in Sources */,
 				AA0000DD0000001F /* BarkSettingsCard.swift in Sources */,
 				AA0000DD0000001D /* BarkNotifier.swift in Sources */,
@@ -580,6 +567,7 @@
 				UAT000020000000100000001 /* UATVisualTests.swift in Sources */,
 				PT0000020000000100000001 /* PrecisionThemeTests.swift in Sources */,
 				RR0000040000000100000001 /* RangeRailTests.swift in Sources */,
+				MT0000020000000100000001 /* MenuTabRoutingTests.swift in Sources */,
 				IM0000020000000100000001 /* iMessageNotifierTests.swift in Sources */,
 				IM0000040000000100000001 /* BarkNotifierTests.swift in Sources */,
 				LR0000020000000100000001 /* LogRotationTests.swift in Sources */,

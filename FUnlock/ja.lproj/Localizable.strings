@@ -318,3 +318,10 @@
 "bark_test_title" = "Bark テスト通知";
 "bark_send_test" = "テスト通知を送信";
 "bark_test_success" = "送信しました。iPhone を確認してください";
+
+// Precision Instrument tabs & shared labels (Phase 2)
+"behavior" = "動作と通知";
+"scenarios" = "シーンと設定";
+"status_standby" = "スタンバイ";
+"sheet_close" = "閉じる";
+"stats_anomaly" = "異常点";

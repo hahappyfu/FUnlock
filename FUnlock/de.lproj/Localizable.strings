@@ -314,3 +314,10 @@
 "bark_test_title" = "Bark-Testbenachrichtigung";
 "bark_send_test" = "Testbenachrichtigung senden";
 "bark_test_success" = "Gesendet – siehe iPhone";
+
+// Precision Instrument tabs & shared labels (Phase 2)
+"behavior" = "Verhalten & Mitteilungen";
+"scenarios" = "Szenen & Konfiguration";
+"status_standby" = "Bereitschaft";
+"sheet_close" = "Schließen";
+"stats_anomaly" = "Anomalie";

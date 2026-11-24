@@ -1,5 +1,5 @@
 // BarkSettingsCard.swift
-// 设置页 Bark 推送通知卡片：开关 / Key 与服务器配置校验 / 单个测试按钮 + 行内结果
+// 设置页 Bark 推送通知卡片：开关 / Key 与服务器校验 / 测试按钮 + 行内结果
 
 import SwiftUI
 
@@ -33,26 +33,31 @@ struct BarkSettingsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
             Toggle(isOn: $barkNotify) {
-                HStack(spacing: 10) {
-                    LiquidIconBadge(icon: "bell.badge.fill", color: .orange)
+                HStack(spacing: FUnlockTheme.Space.xs) {
+                    IconTile(systemImage: "bell.badge.fill", tone: .neutral)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(t("bark_settings_title"))
-                        Text(t("bark_settings_desc")).font(.caption).foregroundColor(.secondary)
+                            .font(.body)
+                            .foregroundStyle(FUnlockTheme.Text.primary.color)
+                        Text(t("bark_settings_desc"))
+                            .font(.caption)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     }
                 }
             }
             .toggleStyle(.switch)
+
             if barkNotify {
                 keyRow
                 serverRow
-                LiquidDivider()
+                Hairline()
                 testRow
                 if !testStateMessage.isEmpty {
                     Text(testStateMessage)
                         .font(.caption)
-                        .foregroundColor(testStateColor)
+                        .foregroundStyle(testStateColor)
                 }
             }
         }
@@ -62,46 +67,46 @@ struct BarkSettingsCard: View {
 
     private var keyRow: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: FUnlockTheme.Space.xs) {
                 Text(t("bark_key_label"))
+                    .font(.body)
                 TextField(t("bark_key_placeholder"), text: $key)
-                    .textFieldStyle(.plain)
-                    .liquidInputField()
+                    .font(.body)
+                    .precisionField()
             }
             if !key.isEmpty && !keyValid {
                 Text(t("bark_key_invalid"))
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(FUnlockTheme.State.dangerText.color)
             }
         }
     }
 
     private var serverRow: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: FUnlockTheme.Space.xs) {
                 Text(t("bark_server_label"))
+                    .font(.body)
                 TextField(t("bark_server_placeholder"), text: $server)
-                    .textFieldStyle(.plain)
-                    .liquidInputField()
+                    .font(.body)
+                    .precisionField()
             }
             if !normalizedServer.isEmpty && !serverValid {
                 Text(t("bark_server_https_only"))
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundStyle(FUnlockTheme.State.dangerText.color)
             }
         }
     }
 
     private var testRow: some View {
-        HStack {
-            Button(t("bark_send_test")) {
-                runTest()
-            }
-            .disabled(isTesting || !keyValid || !serverValid)
+        HStack(spacing: FUnlockTheme.Space.xs) {
+            InstrumentButton(title: t("bark_send_test"), kind: .secondary,
+                             isEnabled: !isTesting && keyValid && serverValid, action: runTest)
             if isTesting {
                 ProgressView().controlSize(.small)
-                    .padding(.leading, 4)
             }
+            Spacer(minLength: 0)
         }
     }
 
@@ -115,9 +120,9 @@ struct BarkSettingsCard: View {
 
     private var testStateColor: Color {
         switch testState {
-        case .success: return .green
-        case .failure: return .red
-        case .idle: return .secondary
+        case .success: return FUnlockTheme.State.safeText.color
+        case .failure: return FUnlockTheme.State.dangerText.color
+        case .idle: return FUnlockTheme.Text.secondary.color
         }
     }
 

@@ -9,16 +9,23 @@ struct ToastView: View {
     let color: Color
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: FUnlockTheme.Space.xs) {
             Image(systemName: icon)
-                .foregroundColor(color)
+                .font(.callout)
+                .foregroundStyle(color)
             Text(message)
                 .font(.callout)
+                .foregroundStyle(FUnlockTheme.Text.primary.color)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.regularMaterial)
-        .cornerRadius(10)
-        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+        .padding(.horizontal, FUnlockTheme.Space.md)
+        .padding(.vertical, FUnlockTheme.Space.xs)
+        .background(
+            RoundedRectangle(cornerRadius: FUnlockTheme.Radius.md)
+                .fill(FUnlockTheme.Surface.card.color)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: FUnlockTheme.Radius.md)
+                .strokeBorder(FUnlockTheme.Surface.border.color, lineWidth: 1)
+        )
     }
 }

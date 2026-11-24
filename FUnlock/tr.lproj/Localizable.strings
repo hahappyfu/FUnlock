@@ -314,3 +314,10 @@
 "bark_test_title" = "Bark Test Bildirimi";
 "bark_send_test" = "Test Bildirimi Gönder";
 "bark_test_success" = "Gönderildi – iPhone'una bak";
+
+// Precision Instrument tabs & shared labels (Phase 2)
+"behavior" = "Davranış ve Bildirimler";
+"scenarios" = "Senaryolar ve Yapılandırma";
+"status_standby" = "Bekleme";
+"sheet_close" = "Kapat";
+"stats_anomaly" = "Anomali";
