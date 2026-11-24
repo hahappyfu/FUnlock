@@ -10,6 +10,11 @@ enum DebugLog {
 
     static var logDirectory: URL {
         if let testDir = testLogDirectory { return testDir }
+        // 测试进程自动隔离：绝不写用户生产日志
+        if NSClassFromString("XCTestCase") != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("FUnlock-TestLogs", isDirectory: true)
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock")
     }

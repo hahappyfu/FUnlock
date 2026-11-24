@@ -264,3 +264,32 @@ final class ScriptRunnerLogRotationTests: XCTestCase {
         XCTAssertFalse(currentContent.contains("big-event"))
     }
 }
+
+// MARK: - Task 21：全部日志写入器在 XCTest 下自动隔离
+
+final class TestLogIsolationTests: XCTestCase {
+
+    func testAllLogWritersAutoIsolateFromProductionLogsUnderXCTest() {
+        DebugLog.testLogDirectory = nil
+        configureTimingLogForTesting(directory: nil)
+        TelemetryLogger.shared.testLogDirectory = nil
+        ScriptRunner.shared.testLogDirectory = nil
+
+        let prodLogs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/FUnlock").path
+        XCTAssertFalse(DebugLog.logDirectory.path.hasPrefix(prodLogs),
+                       "DebugLog 测试期不得写生产目录")
+        XCTAssertFalse(timingLogDirectory.path.hasPrefix(prodLogs),
+                       "timingLog 测试期不得写生产目录")
+        XCTAssertFalse(TelemetryLogger.shared.testLogFile.path.hasPrefix(prodLogs),
+                       "TelemetryLogger 测试期不得写生产目录")
+        XCTAssertTrue(ScriptRunner.shared.eventsLogURL?.path.contains(FileManager.default.temporaryDirectory.path) == true,
+                      "ScriptRunner 测试期应写临时目录")
+    }
+
+    func testBundleGuardInstallsLockActionOverrideBeforeEachCase() {
+        // TestBundleGuard 在每个用例开始前确保锁屏动作已被 no-op 拦截
+        XCTAssertNotNil(SystemInteractionService.lockActionOverride,
+                        "测试用例开始前必须已安装 lockActionOverride 防止真实锁屏")
+    }
+}

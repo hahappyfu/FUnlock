@@ -40,3 +40,25 @@ func resetSessionProvidersForTesting() {
     SystemInteractionService.screensaverRunningProvider = nil
 }
 
+// MARK: - 测试 bundle 守卫
+
+/// 测试 bundle 主类（FUnlockTests/Info.plist NSPrincipalClass）：
+/// 每个用例开始前确保 lockActionOverride 已安装，任何新增测试都不会真实锁屏。
+@objc(TestBundleGuard)
+final class TestBundleGuard: NSObject, XCTestObservation {
+    override init() {
+        super.init()
+        XCTestObservationCenter.shared.addTestObserver(self)
+    }
+
+    func testBundleWillStart(_ testBundle: Bundle) {
+        SystemInteractionService.lockActionOverride = {}
+    }
+
+    func testCaseWillStart(_ testCase: XCTestCase) {
+        if SystemInteractionService.lockActionOverride == nil {
+            SystemInteractionService.lockActionOverride = {}
+        }
+    }
+}
+

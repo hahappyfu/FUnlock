@@ -23,6 +23,12 @@ final class ScriptRunner: @unchecked Sendable {
         if let testDir = testLogDirectory {
             return testDir.appendingPathComponent("events.log")
         }
+        // 测试进程自动隔离：绝不写用户生产日志
+        if NSClassFromString("XCTestCase") != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("FUnlock-TestLogs", isDirectory: true)
+                .appendingPathComponent("events.log")
+        }
         guard let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
         return dir.appendingPathComponent("FUnlock", isDirectory: true).appendingPathComponent("events.log")
     }

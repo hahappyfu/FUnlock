@@ -44,6 +44,12 @@ final class TelemetryLogger: @unchecked Sendable {
         if let testDir = testLogDirectory {
             return testDir.appendingPathComponent("shadow_telemetry.csv")
         }
+        // 测试进程自动隔离：绝不写用户生产日志
+        if NSClassFromString("XCTestCase") != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("FUnlock-TestLogs", isDirectory: true)
+                .appendingPathComponent("shadow_telemetry.csv")
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock/shadow_telemetry.csv")
     }
@@ -83,6 +89,10 @@ final class TelemetryLogger: @unchecked Sendable {
 
     private var logDirectory: URL {
         if let testDir = testLogDirectory { return testDir }
+        if NSClassFromString("XCTestCase") != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("FUnlock-TestLogs", isDirectory: true)
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent("Library/Logs/FUnlock")
     }

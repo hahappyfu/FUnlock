@@ -215,6 +215,11 @@ final class SystemInteractionService: Sendable {
             override()
             return
         }
+        // 纵深防御：即使某个测试忘了安装注入点，测试进程也绝不执行真实锁屏
+        if NSClassFromString("XCTestCase") != nil {
+            AppLog.error(.lock, "lockSuppressedUnderTest", [("action", "noOverrideInstalled")])
+            return
+        }
         if useScreensaver {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ScreenSaver.Engine") {
                 let config = NSWorkspace.OpenConfiguration()
