@@ -210,17 +210,6 @@ final class UpdateChainTests: XCTestCase {
     /// 下载完成后必须在 delegate 回调返回前同步移动文件：URLSession 会在回调返回后
     /// 立即删除临时文件，异步 move 会读到已删除的路径。
     func testDownloaderMovesLocationSynchronouslyBeforeCallbackReturns() throws {
-        class SyncMoveProbe: NSObject, URLSessionDownloadDelegate {
-            var movedBeforeReturn = false
-            var zipExistsAfterReturn = false
-            func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                            didFinishDownloadingTo location: URL) {
-                // 立即探测 zip 是否已在 tempDir（同步移动的证据）
-                let fm = FileManager.default
-                let candidates = (try? fm.contentsOfDirectory(atPath: NSTemporaryDirectory())) ?? []
-                movedBeforeReturn = candidates.contains { $0.hasPrefix("FUnlock-update-") }
-            }
-        }
         // 造一个假下载文件模拟 URLSession 的临时 location
         let srcDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("UpdateChainTests-move-\(UUID().uuidString)")
@@ -230,8 +219,7 @@ final class UpdateChainTests: XCTestCase {
         try Data("zip".utf8).write(to: src)
 
         let downloader = UpdateDownloader()
-        _ = SyncMoveProbe()
-        // 反射不可行——改为直接调用 didFinishDownloadingTo 并在返回后检查 zip 移动结果
+        // 直接调用 didFinishDownloadingTo 并在返回后检查 zip 是否已被同步移动
         downloader.urlSession(.shared, downloadTask: makeFakeDownloadTask(),
                               didFinishDownloadingTo: src)
         let fm = FileManager.default
