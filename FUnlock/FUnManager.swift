@@ -63,11 +63,28 @@ final class FUnManager {
     @ObservationIgnored var deferredLockGeneration: UInt64 = 0
     /// 安全 Wi-Fi 补锁复查间隔（测试可注入）
     var trustedWiFiRecheckInterval: TimeInterval = 10.0
+    /// 系统锁屏通知复核延迟（测试可注入）
+    var screenLockVerifyDelay: TimeInterval = 0.3
+    /// 锁屏通知复核任务：会话未锁时 0.3s 后复查，onUnlock 可取消
+    @ObservationIgnored var screenLockVerifyTask: Task<Void, Never>?
     @ObservationIgnored private var mediaWasPlaying = false
 
     /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
     /// （在 init 末尾装配；强持有，orchestrator 以 unowned 反向引用本类）
     private(set) var orchestrator: UnlockOrchestrator!
+
+    /// 漏收解锁通知自愈：会话已明确解锁但本地仍是陈旧锁定/手动锁态时，对齐为 unlocked。
+    /// 注意：displaySleeping / screensaver 是真实电源/屏保状态，不在此处覆盖。
+    func reconcileUnlockedSessionIfNeeded() {
+        let isStaleLockedState: Bool
+        if case .locked = state.screen { isStaleLockedState = true } else { isStaleLockedState = false }
+        guard isStaleLockedState || state.intent.isManualLockActive else { return }
+        guard SystemInteractionService.shared.isExplicitlyUnlockedSession() else { return }
+        AppLog.info(.sm, "reconcileUnlockedSession", [("screen", "\(state.screen)")])
+        state.screen = .unlocked
+        state.intent = .autoLock
+        clearSelfLockWindow()
+    }
 
     // MARK: - 冷却与缓冲策略（可测试时间源）
     /// 可注入时间源：仅门控判定内部读取，不驱动视图，故排除在跟踪之外
@@ -91,7 +108,7 @@ final class FUnManager {
 
     /// 标记手动锁定意图（lockNow / 屏保启动 / 系统锁屏三处的单一入口）
     func markManualLock() {
-        state.intent = .manualLock(deadline: Date().addingTimeInterval(FUnManager.manualLockIntentDuration))
+        state.intent = .manualLock(deadline: now.addingTimeInterval(FUnManager.manualLockIntentDuration))
     }
 
     /// 当前是否处于自锁窗口内。
@@ -176,6 +193,7 @@ final class FUnManager {
         intrudeCheckTask?.cancel()
         systemWakeTask?.cancel()
         deferredLockTask?.cancel()
+        screenLockVerifyTask?.cancel()
         // orchestrator 随本类释放，其 deinit 负责取消 wakeTask / unlockTask
     }
 
@@ -247,6 +265,8 @@ final class FUnManager {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
         // 手动锁定：清空自锁窗口，永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
         cancelDeferredLockRecheck()
+        screenLockVerifyTask?.cancel()
+        screenLockVerifyTask = nil
         clearSelfLockWindow()
         markManualLock()
         state.screen = .locked(reason: .manual)
@@ -356,6 +376,8 @@ final class FUnManager {
         systemWakeTask?.cancel()
         systemWakeGeneration &+= 1
         cancelDeferredLockRecheck()
+        screenLockVerifyTask?.cancel()
+        screenLockVerifyTask = nil
         intrudeCheckTask?.cancel()
     }
 

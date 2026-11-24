@@ -185,6 +185,9 @@ extension UnlockOrchestrator {
                 guard !Task.isCancelled else { return }
                 funlock_wakeDisplay()
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s（优化：从 1s 降到 0.5s）
+                // 取消后 sleep 会立即返回；必须先检查再访问 unowned manager，
+                // 否则测试/退出清理释放 manager 后会读悬空引用。
+                guard !Task.isCancelled else { return }
                 let displayReady = SystemInteractionService.shared.isDisplayPoweredOn()
                 timingLog("event=wakeAttemptDone attempt=\(attempt) displayReady=\(displayReady)")
                 // 唤醒成功：收到唤醒通知或检测到显示器已通电亮起

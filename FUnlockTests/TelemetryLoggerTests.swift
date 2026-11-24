@@ -689,6 +689,8 @@ class LegacyCompatibilityTests: XCTestCase {
 
     /// FUnManager.onSystemScreenLocked 设置 lastLockTime，isLockBufferActive 生效
     func testOnSystemScreenLockedActivatesLockBuffer() {
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         let manager = FUnManager(fun: FUn())
         let before = Date()
         manager.onSystemScreenLocked()
@@ -701,6 +703,8 @@ class LegacyCompatibilityTests: XCTestCase {
 
     /// FUnManager 状态机：onUnlock → onSystemScreenLocked 序列正确
     func testUnlockThenLockSequenceMaintainsStateConsistency() {
+        setSessionLockedForTesting(false)
+        defer { resetSessionProvidersForTesting() }
         let manager = FUnManager(fun: FUn())
 
         // 初始：unlocked
@@ -712,6 +716,7 @@ class LegacyCompatibilityTests: XCTestCase {
         XCTAssertTrue(manager.state.intent == .autoLock, "onUnlock 后 intent 应为 autoLock")
 
         // 手动锁屏
+        setSessionLockedForTesting(true)
         manager.onSystemScreenLocked()
         if case .locked(let reason) = manager.state.screen {
             XCTAssertEqual(reason, .manual, "手动锁屏后 reason 应为 manual")

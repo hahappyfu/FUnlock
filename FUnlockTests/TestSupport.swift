@@ -27,3 +27,16 @@ struct ConfigKeySnapshot: @unchecked Sendable {
     }
 }
 
+// MARK: - 会话锁态测试开关
+
+/// 测试注入：模拟系统会话锁定/解锁（CGSession + 屏保 provider）。
+func setSessionLockedForTesting(_ locked: Bool) {
+    SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": locked ? 1 : 0] }
+    SystemInteractionService.screensaverRunningProvider = { false }
+}
+
+func resetSessionProvidersForTesting() {
+    SystemInteractionService.sessionDictProvider = nil
+    SystemInteractionService.screensaverRunningProvider = nil
+}
+

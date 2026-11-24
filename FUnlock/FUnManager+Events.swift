@@ -19,6 +19,7 @@ extension FUnManager {
     func onDisplayWake() {
         AppLog.info(.sm, "displayWake", [("screen", "\(self.state.screen)")])
         recordSystem(.displayWake)
+        reconcileUnlockedSessionIfNeeded()
         // 审计修复 #4/#10：必须在 cancelWakeRetry 复位 displayWakeRequested 之前捕获——
         // true 表示本次唤醒由 FUn 预唤醒（startWakeRetry）发起，属程序自唤醒而非用户手动唤醒
         let isSelfWake = orchestrator.displayWakeRequested
@@ -81,6 +82,7 @@ extension FUnManager {
             // 恢复菜单栏 agent 形态（配对 onSystemSleep 的临时 regular，见该处注释）
             NSApp.setActivationPolicy(.accessory)
             self.state.system = .awake
+            self.reconcileUnlockedSessionIfNeeded()
             self.orchestrator.attemptAutoUnlock()
         }
     }
@@ -97,6 +99,13 @@ extension FUnManager {
 
     func onUnlock() {
         AppLog.info(.sm, "userUnlocked")
+        screenLockVerifyTask?.cancel()
+        screenLockVerifyTask = nil
+        // 分布式通知可被本地进程伪造：会话仍锁定时忽略，且不得清除 manualLock
+        guard !SystemInteractionService.shared.isSystemSessionLocked() else {
+            AppLog.info(.sm, "spoofedUnlockIgnored", [("reason", "systemSessionStillLocked")])
+            return
+        }
         cancelDeferredLockRecheck()
         clearSelfLockWindow()
         state.screen = .unlocked
@@ -175,6 +184,27 @@ extension FUnManager {
     func onSystemScreenLocked() {
         AppLog.info(.sm, "systemScreenLocked")
         cancelDeferredLockRecheck()
+        screenLockVerifyTask?.cancel()
+        screenLockVerifyTask = nil
+        // 会话已锁：立即同步执行；未锁：可能是伪造/迟到通知，延迟 0.3s 复核后再决定
+        if SystemInteractionService.shared.isSystemSessionLocked() {
+            applySystemScreenLocked()
+            return
+        }
+        let delay = max(0.01, screenLockVerifyDelay)
+        screenLockVerifyTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            guard SystemInteractionService.shared.isSystemSessionLocked() else {
+                AppLog.info(.sm, "systemScreenLockedDiscarded", [("reason", "sessionUnlocked")])
+                return
+            }
+            self.applySystemScreenLocked()
+        }
+    }
+
+    /// 应用系统锁屏状态（已通过 CGSession/屏保复核）。
+    private func applySystemScreenLocked() {
         // 自锁窗口内：按自动锁处理且不清空窗口（屏保通知可能随后到达）；
         // 窗口外：手动锁，永久阻止自动解锁直到 onUnlock。
         let isSelfLock = isWithinSelfLockWindow
@@ -253,6 +283,7 @@ extension FUnManager {
     }
 
     func onDeviceApproached() {
+        reconcileUnlockedSessionIfNeeded()
         cancelDeferredLockRecheck()
         let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁

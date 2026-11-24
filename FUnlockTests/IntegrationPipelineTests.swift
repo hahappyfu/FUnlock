@@ -16,6 +16,14 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         currentTime = Date(timeIntervalSince1970: 1_700_000_000)
         let fun = FUn()
         manager = FUnManager(fun: fun, nowProvider: { [unowned self] in self.currentTime })
+        setSessionLockedForTesting(true)
+    }
+
+    override func tearDown() async throws {
+        resetSessionProvidersForTesting()
+        manager?.orchestrator.cancelPendingTasks()
+        manager = nil
+        try await super.tearDown()
     }
 
     // MARK: - 完整解锁流程：BLE 信号 → 预备唤醒 → 密码注入
@@ -73,6 +81,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         manager.fun.presence = true
 
         // 模拟解锁成功路径
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked,
                        "解锁成功后 screen 应为 unlocked")
@@ -142,6 +151,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         manager.onSystemScreenLocked()
 
         // 1. 首次解锁
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked)
         XCTAssertEqual(manager.state.intent, .autoLock, "onUnlock 应重置 intent，恢复自动解锁能力")
@@ -153,6 +163,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
 
         // 3. 设备远离 → 锁屏
         manager.isSelfLocking = true
+        setSessionLockedForTesting(true)
         manager.onSystemScreenLocked()
         if case .locked(let reason) = manager.state.screen {
             XCTAssertEqual(reason, .manual, "锁屏后应为 locked(manual)")
@@ -161,6 +172,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         }
 
         // 4. 再次解锁
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked,
                        "第二次解锁后应为 unlocked")
@@ -271,6 +283,8 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
 
     /// 场景：降级后恢复 → 重新进入正常解锁循环
     func testDegradedThenRecoveryFullCycle() {
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         manager.fun.unlockRSSI = -60
         manager.fun.lockRSSI = -80
         manager.fun.presence = true
@@ -289,16 +303,19 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
         // 3. 正常解锁
         manager.onSystemScreenLocked()
         currentTime = currentTime.addingTimeInterval(1)
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked)
 
         // 4. 再次锁屏
         currentTime = currentTime.addingTimeInterval(6)
         manager.isSelfLocking = true
+        setSessionLockedForTesting(true)
         manager.onSystemScreenLocked()
         XCTAssertTrue(manager.state.isEffectivelyLocked)
 
         // 5. 再次解锁 — 验证完整循环正常
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertEqual(manager.state.screen, .unlocked)
         XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0,

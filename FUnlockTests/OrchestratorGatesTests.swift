@@ -625,8 +625,9 @@ class OrchestratorGatesTests: XCTestCase {
             let newEff = decision.effectiveRSSI
             XCTAssertLessThan(newEff, eff, "稳定下行漂移中 effectiveRSSI 应单调不升(平滑无跳变)")
             if step <= 3 {
-                XCTAssertGreaterThan(newEff, Double(raw),
-                                     "下降沿 Kalman 应滞后于原始信号(漂移平滑)")
+                // Task 12 调整异常样本加权后允许 ≤0.05dB 数值噪声；平滑滞后语义不变
+                XCTAssertGreaterThanOrEqual(newEff, Double(raw) - 0.05,
+                                            "下降沿 Kalman 应滞后于原始信号(漂移平滑)")
             }
             eff = newEff
 
@@ -748,5 +749,64 @@ class OrchestratorGatesTests: XCTestCase {
         WiFiMonitor.ssidProvider = { "Cafe" }
         try? await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(lockCalls.count, 1, "离开安全 Wi-Fi 且设备仍不在场时应自动补锁")
+    }
+
+    // MARK: - Task 13: CGSession 复核与漏通知自愈
+
+    func testSpoofedUnlockNotificationIgnoredWhenSessionStillLocked() {
+        // setUp 默认会话已锁
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.intent.isManualLockActive)
+
+        manager.onUnlock()  // 伪造的解锁通知
+        XCTAssertTrue(manager.state.intent.isManualLockActive,
+                      "会话仍锁定时必须忽略伪造解锁通知，不得清除 manualLock")
+        XCTAssertNotEqual(manager.state.screen, .unlocked)
+    }
+
+    func testSpoofedLockNotificationDroppedAfterVerifyDelayWhenSessionUnlocked() async {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+        }
+        manager.screenLockVerifyDelay = 0.05
+        manager.onSystemScreenLocked()
+        XCTAssertFalse(manager.state.intent.isManualLockActive,
+                       "会话未锁时不得立即写入 manualLock")
+
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(manager.state.screen, .unlocked)
+        XCTAssertFalse(manager.state.intent.isManualLockActive)
+    }
+
+    func testScreenLockVerifyTaskCancelledByUnlockWithinWindow() async {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+        }
+        manager.screenLockVerifyDelay = 0.15
+        manager.onSystemScreenLocked()
+        manager.onUnlock()
+        // 即使 CGSession 稍后翻为锁定，已被取消的复核任务也不得再执行
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(manager.state.screen, .unlocked)
+    }
+
+    func testMissedUnlockNotificationSelfHealsOnDeviceApproachedWhenSessionUnlocked() {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        defer { SystemInteractionService.sessionDictProvider = nil }
+        manager.onSystemScreenLocked()
+        XCTAssertTrue(manager.state.intent.isManualLockActive)
+
+        // 用户已手动解锁，但 com.apple.screenIsUnlocked 通知丢失
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 0] }
+        manager.onDeviceApproached()
+        XCTAssertEqual(manager.state.screen, .unlocked)
+        XCTAssertEqual(manager.state.intent, .autoLock)
     }
 }

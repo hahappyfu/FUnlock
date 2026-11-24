@@ -87,6 +87,14 @@ final class SystemInteractionService: Sendable {
         return isScreenSaverRunning
     }
 
+    /// 会话明确解锁：会话字典存在、CGSSession 未锁且无屏保。
+    /// nil 字典表示无法判定，不视为「明确解锁」（避免误清手动锁）。
+    func isExplicitlyUnlockedSession() -> Bool {
+        guard let dict = currentSessionDict else { return false }
+        let cgLocked = dict["CGSSessionScreenIsLocked"] as? Int == 1
+        return !cgLocked && !isScreenSaverRunning
+    }
+
     private var currentSessionDict: [String: Any]? {
         if let provider = Self.sessionDictProvider { return provider() }
         return CGSessionCopyCurrentDictionary() as? [String: Any]

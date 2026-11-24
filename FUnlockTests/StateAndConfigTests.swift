@@ -451,6 +451,8 @@ class FUnManagerCooldownTests: XCTestCase {
 
     /// onSystemScreenLocked() 应设置 lastLockTime，使缓冲机制生效
     func testLastLockTimeSetOnSystemScreenLocked() {
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         manager.onSystemScreenLocked()
         XCTAssertEqual(manager.lastLockTime, currentTime,
                        "onSystemScreenLocked 应将 lastLockTime 设为当前时间")

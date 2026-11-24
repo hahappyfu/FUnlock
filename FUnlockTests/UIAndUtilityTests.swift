@@ -379,6 +379,8 @@ final class ManualLockThrottleTests: XCTestCase {
     }
 
     func testManualLockActiveThrottled30s() {
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         let fun = FUn()
         let manager = FUnManager(fun: fun, nowProvider: { Date() }, decisionLogger: logger)
 

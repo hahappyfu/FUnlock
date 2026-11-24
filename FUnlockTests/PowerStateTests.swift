@@ -11,6 +11,7 @@ class PreWakeStaircaseTests: XCTestCase {
         try await super.setUp()
         let fun = FUn()
         manager = FUnManager(fun: fun)
+        setSessionLockedForTesting(true)
         // 快照生产域原值并注册恢复（FUnManager 硬编码读 ConfigStore.shared），再写入测试值
         let snapshot = ConfigKeySnapshot(keys: ["wakeOnProximity", "enabled", "wakeAdvance", "preUnlockTrigger"])
         addTeardownBlock { snapshot.restore() }
@@ -20,6 +21,13 @@ class PreWakeStaircaseTests: XCTestCase {
         // 阶梯参数显式固定，保证派生阈值确定性（wake 提前 20dB、预解锁触发 10dB）
         ConfigStore.shared.defaults.set(20, forKey: "wakeAdvance")
         ConfigStore.shared.defaults.set(10, forKey: "preUnlockTrigger")
+    }
+
+    override func tearDown() async throws {
+        resetSessionProvidersForTesting()
+        manager?.orchestrator.cancelPendingTasks()
+        manager = nil
+        try await super.tearDown()
     }
 
     // MARK: - smoothedRSSI 集成
@@ -215,6 +223,7 @@ class PreWakeStaircaseTests: XCTestCase {
         }
 
         // 3. 用户手动解锁 → intent 重置，恢复自动解锁能力
+        setSessionLockedForTesting(false)
         manager.onUnlock()
         XCTAssertFalse(manager.state.intent.isManualLockActive,
                        "手动解锁后应清除 manualLock，恢复自动解锁能力")

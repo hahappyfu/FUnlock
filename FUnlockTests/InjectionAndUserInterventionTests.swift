@@ -413,6 +413,8 @@ class AuditBatch4FixTests: XCTestCase {
 
     func testStaleSelfLockingFlagTreatedAsManualLock() {
         // com.apple.screenIsLocked 通知丢失 → 窗口残留；10s 后用户手动锁屏
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         manager.isSelfLocking = true
         manager.beginSelfLockWindow(duration: -11)
         manager.onSystemScreenLocked()
@@ -422,6 +424,8 @@ class AuditBatch4FixTests: XCTestCase {
     }
 
     func testFreshSelfLockingFlagStillConsumedAsAutoLock() {
+        setSessionLockedForTesting(true)
+        defer { resetSessionProvidersForTesting() }
         manager.isSelfLocking = true
         manager.onSystemScreenLocked()
         XCTAssertEqual(manager.state.intent, .autoLock,
@@ -630,7 +634,7 @@ final class SecureInjectionSessionTests: XCTestCase {
 // MARK: - Task 6：取消安全（不得盲打、不得计失败）
 
 /// 线程安全计数盒子：测试钩子可能在非主 executor 触发。
-private final class CancellationTestCounter: @unchecked Sendable {
+final class CancellationTestCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
     func increment() { lock.lock(); value += 1; lock.unlock() }
