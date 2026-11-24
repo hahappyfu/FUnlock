@@ -6,7 +6,7 @@
 
 FUnlock 在锁屏/解锁 Mac 时通过 iMessage 发通知（显示在 Apple Watch）。用户新增需求：同时支持 Bark 推送到 iPhone（App 已装）。**用户决策：并存可切换**——iMessage 链路保留不动，Bark 作为独立通道、独立开关。
 
-历史经验（NotchEvery 项目，2026-10-28 实测）：Bark 手机端已装，key `swMSCpBr9baWGYCiu6ijoK`，`POST https://api.day.app/$KEY` + JSON `{title, body, group, level}` 返回 HTTP 200 通路验证通过。
+历史经验（NotchEvery 项目，2026-10-28 实测）：Bark 手机端已装，key 为用户私有 key（已随审计 #11 从默认值移除），`POST https://api.day.app/$KEY` + JSON `{title, body, group, level}` 返回 HTTP 200 通路验证通过。
 
 ## 目标 / 非目标 / 反目标
 
@@ -24,7 +24,7 @@ FUnlock 在锁屏/解锁 Mac 时通过 iMessage 发通知（显示在 Apple Watc
 
 ### 默认值与规范化（BarkNotifier 内收敛）
 
-- `enum Defaults { static let key = "swMSCpBr9baWGYCiu6ijoK"; static let server = "https://api.day.app" }`——key 与 server 的唯一事实来源，UI placeholder 与 notifier fallback 都引用它。
+- `enum Defaults { static let key = "<YOUR_BARK_KEY>"（实现前真实默认值，已随审计 #11 移除，现恒为空串）; static let server = "https://api.day.app" }`——key 与 server 的唯一事实来源，UI placeholder 与 notifier fallback 都引用它。
 - `barkNotifyServer` 无值时 fallback 到 `Defaults.server`，`barkNotifyKey` 无值时 fallback 到 `Defaults.key`（`@AppStorage` 初值不写入 UserDefaults，[IMSettingsCard.swift:7-8](FUnlock/IMSettingsCard.swift:7-8) 同款行为，故 notifier 侧必须自带 fallback，否则开关打开也静默不发）。
 - 纯函数规范化（模式对齐 `normalizeRecipient`，[IMMessageComposer.swift:60](FUnlock/IMMessageComposer.swift:60)）：`normalizeServer` = trim + 去尾部 `/`；`normalizeKey` = trim。URL 组装：key 经 `addingPercentEncoding(.urlPathAllowed)` 后拼 `server + "/" + key`，`URL(string:)` 为 nil 则静默失败记日志。
 
