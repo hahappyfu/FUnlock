@@ -386,6 +386,7 @@ struct RangeRailView: View {
                     .font(.body.monospacedDigit())
                     .frame(width: 52)
                     .precisionField()
+                    .accessibilityLabel(Text(title + " dBm"))
                 stepButton("plus") { onSet(min(value + 1, range.upperBound)) }
                 Text(unit)
                     .font(.caption2)

@@ -9,6 +9,8 @@ struct OnboardingView: View {
     /// 末步「打开校准向导」回调（由 MainWindowView 在关闭引导后执行）
     var onOpenCalibration: (() -> Void)? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         SheetScaffold(title: "FUnlock", onClose: finishOnboarding) {
             VStack(spacing: FUnlockTheme.Space.md) {
@@ -40,14 +42,14 @@ struct OnboardingView: View {
                 SheetFooter {
                     if step > 0 {
                         InstrumentButton(title: t("onboarding_back"), kind: .ghost) {
-                            withAnimation(FUnlockTheme.Motion.standard) { step -= 1 }
+                            withAnimation(reduceMotion ? nil : FUnlockTheme.Motion.standard) { step -= 1 }
                         }
                     }
                     if step < 2 {
                         InstrumentButton(title: t("onboarding_skip"), kind: .ghost,
                                          action: finishOnboarding)
                         InstrumentButton(title: t("onboarding_next"), kind: .primary) {
-                            withAnimation(FUnlockTheme.Motion.standard) { step += 1 }
+                            withAnimation(reduceMotion ? nil : FUnlockTheme.Motion.standard) { step += 1 }
                         }
                     } else {
                         InstrumentButton(title: t("onboarding_open_calibration"), kind: .secondary) {

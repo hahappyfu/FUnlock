@@ -56,6 +56,8 @@ struct MainWindowView: View {
     @State private var currentToastID = UUID()
     @State private var previousConnected: Bool? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// 权限状态（仅 UI 展示，不影响解锁逻辑；缺失期间每 5 秒刷新）
     @State private var axGranted = false
     @State private var btGranted = false
@@ -110,7 +112,7 @@ struct MainWindowView: View {
                     .padding(.top, FUnlockTheme.Space.xs)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: toastMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: toastMessage)
         .onAppear {
             previousConnected = manager.connected
             refreshPermissions()
@@ -138,7 +140,7 @@ struct MainWindowView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .menuShowStats)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) { selectedTab = .diagnostics }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedTab = .diagnostics }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissions()
@@ -148,7 +150,7 @@ struct MainWindowView: View {
         }
         .onReceive(DistributedNotificationCenter.default.publisher(for: NSNotification.Name("com.funlock.selectTab"))) { notif in
             if let raw = notif.object as? String, let tab = MenuTab.resolve(raw) {
-                withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedTab = tab }
             }
         }
         .sheet(isPresented: $showCalibration) {
@@ -216,7 +218,7 @@ struct MainWindowView: View {
         currentToastID = toastID
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             guard currentToastID == toastID else { return }
-            withAnimation { toastMessage = nil }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { toastMessage = nil }
         }
     }
 

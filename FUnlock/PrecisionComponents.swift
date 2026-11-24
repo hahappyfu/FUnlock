@@ -29,7 +29,7 @@ struct FUnlockCard<Content: View>: View {
 
 // MARK: - 分隔线
 
-/// 1pt 实体分隔线（替代 LiquidDivider 的渐隐光带）
+/// 1pt 实体分隔线（替代旧版渐隐光带）
 struct Hairline: View {
     var inset: CGFloat = 0
 

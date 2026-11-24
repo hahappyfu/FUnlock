@@ -53,8 +53,6 @@
 		LR0000020000000100000001 /* LogRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LR0000010000000100000001 /* LogRotationTests.swift */; };
 		DV0000020000000100000001 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DV0000010000000100000001 /* DiagnosticsView.swift */; };
 		MB0000020000000100000001 /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000001 /* MenuBarPopover.swift */; };
-		MB0000020000000100000002 /* MenuRowButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB0000010000000100000002 /* MenuRowButton.swift */; };
-		LG0000020000000100000001 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = LG0000010000000100000001 /* LiquidGlass.swift */; };
 		FT0000020000000100000001 /* FUnlockTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = FT0000010000000100000001 /* FUnlockTheme.swift */; };
 		PC0000020000000100000001 /* PrecisionComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = PC0000010000000100000001 /* PrecisionComponents.swift */; };
 		RR0000020000000100000001 /* RangeRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RR0000010000000100000001 /* RangeRailView.swift */; };
@@ -160,8 +158,6 @@
 		DL0000010000000100000001 /* DecisionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionLogger.swift; sourceTree = "<group>"; };
 		DV0000010000000100000001 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		MB0000010000000100000001 /* MenuBarPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopover.swift; sourceTree = "<group>"; };
-		MB0000010000000100000002 /* MenuRowButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuRowButton.swift; sourceTree = "<group>"; };
-		LG0000010000000100000001 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 		FT0000010000000100000001 /* FUnlockTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FUnlockTheme.swift; sourceTree = "<group>"; };
 		PC0000010000000100000001 /* PrecisionComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrecisionComponents.swift; sourceTree = "<group>"; };
 		RR0000010000000100000001 /* RangeRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RangeRailView.swift; sourceTree = "<group>"; };
@@ -264,8 +260,6 @@
 				DL0000010000000100000001 /* DecisionLogger.swift */,
 				DV0000010000000100000001 /* DiagnosticsView.swift */,
 				MB0000010000000100000001 /* MenuBarPopover.swift */,
-				MB0000010000000100000002 /* MenuRowButton.swift */,
-				LG0000010000000100000001 /* LiquidGlass.swift */,
 				FT0000010000000100000001 /* FUnlockTheme.swift */,
 				PC0000010000000100000001 /* PrecisionComponents.swift */,
 				RR0000010000000100000001 /* RangeRailView.swift */,
@@ -517,8 +511,6 @@
 				DL0000020000000100000001 /* DecisionLogger.swift in Sources */,
 				DV0000020000000100000001 /* DiagnosticsView.swift in Sources */,
 				MB0000020000000100000001 /* MenuBarPopover.swift in Sources */,
-				MB0000020000000100000002 /* MenuRowButton.swift in Sources */,
-				LG0000020000000100000001 /* LiquidGlass.swift in Sources */,
 				FT0000020000000100000001 /* FUnlockTheme.swift in Sources */,
 				PC0000020000000100000001 /* PrecisionComponents.swift in Sources */,
 				RR0000020000000100000001 /* RangeRailView.swift in Sources */,

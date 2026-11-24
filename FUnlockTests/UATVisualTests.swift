@@ -31,13 +31,27 @@ final class UATVisualTests: XCTestCase {
                 .frame(width: 660, height: 580)
             saveView(view: mainView, size: NSSize(width: 660, height: 580), to: "\(outputDir)/\(filename).png")
         }
+
+        // 3. Dark mode spot checks（Light + Dark 双态实测）
+        let dark = NSAppearance(named: .darkAqua)
+        let darkOverview = MainWindowView(manager: manager, fun: fun, initialTab: .overview)
+            .frame(width: 660, height: 580)
+        saveView(view: darkOverview, size: NSSize(width: 660, height: 580),
+                 to: "\(outputDir)/05_overview_dark.png", appearance: dark)
+
+        let darkPopover = MenuBarPopoverView(manager: manager, fun: fun, onAction: { _ in })
+            .frame(width: 282)
+        saveView(view: darkPopover, size: NSSize(width: 282, height: 380),
+                 to: "\(outputDir)/06_popover_dark.png", appearance: dark)
     }
 
-    private func saveView<V: View>(view: V, size: NSSize, to path: String) {
+    private func saveView<V: View>(view: V, size: NSSize, to path: String,
+                                   appearance: NSAppearance? = nil) {
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
+        window.appearance = appearance
         window.contentViewController = hosting
         window.makeKeyAndOrderFront(nil)
         hosting.view.frame = NSRect(origin: .zero, size: size)

@@ -20,6 +20,8 @@ struct OverviewView: View {
     /// 主读数是唯一允许使用 @ScaledMetric 的例外（规格 §2.6）
     @ScaledMetric(relativeTo: .largeTitle) private var readoutSize: CGFloat = 30
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FUnlockTheme.Space.sm) {
@@ -74,7 +76,7 @@ struct OverviewView: View {
                 HStack(spacing: 6) {
                     Text(t("distance_scenario_label"))
                         .font(.caption2)
-                        .foregroundStyle(FUnlockTheme.Text.tertiary.color)
+                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
                     Circle()
                         .fill(scenarioColor)
                         .frame(width: 7, height: 7)
@@ -103,7 +105,7 @@ struct OverviewView: View {
                 .frame(width: 110, height: 110)
                 .rotationEffect(.degrees(-90))
                 // 高频仪表盘数据：仅保留 0.1s 防闪烁过渡
-                .animation(.easeOut(duration: 0.1), value: signalStrength)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: signalStrength)
 
             VStack(spacing: 2) {
                 Text(manager.rssi.map { "\($0)" } ?? "—")
@@ -153,7 +155,7 @@ struct OverviewView: View {
                     DeviceRowView(device: device) {
                         manager.selectDevice(device)
                         stopScan()
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                             isDeviceListExpanded = false
                         }
                     }
@@ -204,7 +206,7 @@ struct OverviewView: View {
     // MARK: - 扫描
 
     private func toggleDeviceList() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
             isDeviceListExpanded.toggle()
         }
         if isDeviceListExpanded {
@@ -225,7 +227,7 @@ struct OverviewView: View {
                 let sorted = manager.discoveredDevices
                     .filter { boundUUID == nil || $0.uuid != boundUUID }
                     .sorted { $0.rssi > $1.rssi }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                     frozenDevices = sorted
                 }
             }

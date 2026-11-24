@@ -338,11 +338,11 @@ struct MenuBarPopoverView: View {
 
     private func startUpdateCheck() {
         guard updateStatus != .checking else { return }
-        withAnimation(FUnlockTheme.Motion.fast) { updateStatus = .checking }
+        withAnimation(reduceMotion ? nil : FUnlockTheme.Motion.fast) { updateStatus = .checking }
         manager.forceCheckUpdate { version in
             DispatchQueue.main.async {
                 guard version == nil else { return }
-                withAnimation(FUnlockTheme.Motion.fast) { updateStatus = .latest }
+                withAnimation(reduceMotion ? nil : FUnlockTheme.Motion.fast) { updateStatus = .latest }
                 // 有新版：download 自动开始，进度由 onChange(of: updateState) 接管
             }
         }
