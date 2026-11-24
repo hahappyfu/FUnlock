@@ -43,6 +43,8 @@ final class FUnManager {
             selfLockWindowDeadline = isSelfLocking ? now.addingTimeInterval(10) : nil
         }
     }
+    /// 校准模式：向导采样期间为 true，onDeviceLeft 拦截不锁
+    var isCalibrating = false
     /// 自锁时间窗口：屏保/系统锁通知任意顺序到达都能在窗口内识别为 FUnlock 自锁。
     /// 仅 onUnlock / lockNow 主动清除；窗口到期自然失效。
     @ObservationIgnored var selfLockWindowDeadline: Date?
@@ -216,12 +218,15 @@ final class FUnManager {
         fun.unlockRSSI = value
         ConfigStore.shared.set(value, forKey: "unlockRSSI")
         if value != FUn.UNLOCK_DISABLED {
-            // 迟滞联动：锁定阈值应比解锁阈值更远（更小）；
-            // 若受下限钳制无法拉满 gap，强制保证 lock < unlock
-            let idealLock = value - lockUnlockDelayGap
-            let clampedLock = SignalHysteresisEngine.clampRSSI(idealLock)
-            let safeLock = min(clampedLock, value - 1)
-            setLockRSSI(safeLock)
+            // 迟滞联动仅修正「违反序关系」的锁定阈值：
+            // 用户已自定义合法更远的 lock（lock < value）时不覆写；
+            // 只有 lock 缺省/越界（lock >= value 或为禁用哨兵）才联动到 unlock-10
+            if lockRSSI != FUn.LOCK_DISABLED && lockRSSI >= value {
+                let idealLock = value - lockUnlockDelayGap
+                let clampedLock = SignalHysteresisEngine.clampRSSI(idealLock)
+                let safeLock = min(clampedLock, value - 1)
+                setLockRSSI(safeLock)
+            }
         }
     }
 

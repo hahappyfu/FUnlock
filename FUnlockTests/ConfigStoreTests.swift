@@ -256,6 +256,8 @@ final class ConfigStoreTests: XCTestCase {
     /// "+86" 开头手机号)导出后被 decodeSettingValue 还原为 Int(string→Int 类型漂移)。
     /// 影响评估:string(forKey:) 对数值可强制转换读回,pauseOnWiFiSSID 匹配功能无损;
     /// 仅 object(forKey:) as? String 精确转型分支受影响。同根因见 lastUpdateCheck(Double→String)。
+    /// finding(2026-09-28) 已在 Task 17 修复：stringKeys（SSID/手机号）导入后保持 String。
+    /// 旧缺陷：纯数字/带符号数字字符串导出后被还原为 Int（类型漂移、+ 号丢失）。
     func testImportNumericStringLosesStringType() {
         store.set("12345678", forKey: "pauseOnWiFiSSID")
 
@@ -266,12 +268,11 @@ final class ConfigStoreTests: XCTestCase {
         store.defaults.removeObject(forKey: "pauseOnWiFiSSID")
 
         XCTAssertNotNil(store.importAllSettings(json: json))
-        XCTAssertTrue(store.defaults.object(forKey: "pauseOnWiFiSSID") is Int,
-                      "已知缺陷:纯数字字符串被 decodeSettingValue 还原为 Int")
-        XCTAssertEqual(store.defaults.string(forKey: "pauseOnWiFiSSID"), "12345678",
-                       "string(forKey:) 对数值可强制转换,SSID 匹配功能不受影响")
+        XCTAssertTrue(store.defaults.object(forKey: "pauseOnWiFiSSID") is String,
+                      "Task 17 修复后：纯数字 SSID 必须保持 String 类型")
+        XCTAssertEqual(store.defaults.string(forKey: "pauseOnWiFiSSID"), "12345678")
 
-        // 同根因第二形态:带 + 号的手机号(Int("+86...") 解析合法,+ 号丢失)
+        // 旧缺陷第二形态（已修复）：带 + 号的手机号不得被解析为 Int
         store.set("+8613800000000", forKey: "iMessageNotifyRecipient")
         guard let json2 = store.exportAllSettings() else {
             XCTFail("exportAllSettings 应成功生成 JSON")
@@ -279,10 +280,10 @@ final class ConfigStoreTests: XCTestCase {
         }
         store.defaults.removeObject(forKey: "iMessageNotifyRecipient")
         XCTAssertNotNil(store.importAllSettings(json: json2))
-        XCTAssertTrue(store.defaults.object(forKey: "iMessageNotifyRecipient") is Int,
-                      "已知缺陷:\"+86…\" 手机号被还原为 Int 且丢失 + 号")
-        XCTAssertEqual(store.defaults.string(forKey: "iMessageNotifyRecipient"), "8613800000000",
-                       "已知缺陷:手机号 + 号在往返中丢失")
+        XCTAssertTrue(store.defaults.object(forKey: "iMessageNotifyRecipient") is String,
+                      "Task 17 修复后：手机号必须保持 String 类型")
+        XCTAssertEqual(store.defaults.string(forKey: "iMessageNotifyRecipient"), "+8613800000000",
+                       "Task 17 修复后：+ 号在往返中保持不丢")
     }
 
     /// finding(2026-09-28)修复后表征: "_b64:" 前缀但 base64 解码失败时,decodeSettingValue
@@ -344,5 +345,45 @@ final class ConfigStoreTests: XCTestCase {
                        "导入不得覆盖本机已有 Bark Key")
         XCTAssertNotEqual(store.string(forKey: "barkNotifyServer"), "http://evil.com",
                           "明文 http 服务器必须被拒绝写入")
+    }
+
+    // MARK: - Task 17：导出/导入类型精确还原
+
+    /// 纯数字字符串（SSID/手机号/设备名）不得被误转 Int；Bool 不得变成 "1"/"0"
+    func testExportImportPreservesNumericStringsAndBooleans() {
+        store.set("123456", forKey: "pauseOnWiFiSSID")
+        store.set("13800138000", forKey: "iMessageNotifyRecipient")
+        store.set("42", forKey: "deviceName")
+        store.set(true, forKey: "enabled")
+        store.set(false, forKey: "passiveMode")
+        store.set(-65, forKey: "unlockRSSI")
+
+        guard let json = store.exportAllSettings() else { return XCTFail("导出应成功") }
+        let roundtripSuite = "com.fuhahah.FUnlock.test-roundtrip-\(UUID().uuidString)"
+        let imported = ConfigStore(suiteName: roundtripSuite)
+        defer { imported.defaults.removePersistentDomain(forName: roundtripSuite) }
+        _ = imported.importAllSettings(json: json)
+
+        XCTAssertTrue(imported.object(forKey: "pauseOnWiFiSSID") is String)
+        XCTAssertEqual(imported.string(forKey: "pauseOnWiFiSSID"), "123456")
+        XCTAssertTrue(imported.object(forKey: "iMessageNotifyRecipient") is String)
+        XCTAssertEqual(imported.string(forKey: "iMessageNotifyRecipient"), "13800138000")
+        XCTAssertTrue(imported.object(forKey: "deviceName") is String, "纯数字设备名必须保持 String")
+        XCTAssertTrue(imported.bool(forKey: "enabled"))
+        XCTAssertTrue(imported.defaults.object(forKey: "enabled") is Bool, "Bool 导入后仍须是 Bool 类型")
+        XCTAssertFalse(imported.bool(forKey: "passiveMode"))
+        XCTAssertEqual(imported.object(forKey: "unlockRSSI") as? Int, -65)
+    }
+
+    /// 旧版导出文件用 "1"/"0" 表示布尔：导入需兼容还原为 Bool
+    func testImportLegacyNumericBoolStrings() {
+        let legacy = """
+        {"enabled":"1","passiveMode":"0","launchAtLogin":"1","_exportedKeys":""}
+        """
+        XCTAssertNotNil(store.importAllSettings(json: legacy))
+        XCTAssertTrue(store.bool(forKey: "enabled"))
+        XCTAssertTrue(store.defaults.object(forKey: "enabled") is Bool, "旧版数字字符串应还原为 Bool true")
+        XCTAssertFalse(store.bool(forKey: "passiveMode"))
+        XCTAssertTrue(store.bool(forKey: "launchAtLogin"))
     }
 }

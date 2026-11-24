@@ -99,12 +99,24 @@ final class ProfileManager {
                 skipped += 1
                 continue
             }
-            // 阈值范围与序关系校验与钳制
+            // 哨兵豁免：UNLOCK_DISABLED/LOCK_DISABLED 是合法语义值，不参与钳制
             var sanitized = p
-            let clampedUnlock = SignalHysteresisEngine.clampRSSI(p.unlockRSSI)
-            let clampedLock = SignalHysteresisEngine.clampRSSI(p.lockRSSI)
-            sanitized.unlockRSSI = clampedUnlock
-            sanitized.lockRSSI = min(clampedLock, clampedUnlock - 1)
+            if p.unlockRSSI == SignalHysteresisEngine.unlockDisabled {
+                sanitized.unlockRSSI = p.unlockRSSI
+            } else {
+                sanitized.unlockRSSI = SignalHysteresisEngine.clampRSSI(p.unlockRSSI)
+            }
+            if p.lockRSSI == SignalHysteresisEngine.lockDisabled {
+                sanitized.lockRSSI = p.lockRSSI
+            } else {
+                // 有效锁定阈值须严格小于解锁阈值（解锁为哨兵时无法比较，仅钳范围）
+                if sanitized.unlockRSSI == SignalHysteresisEngine.unlockDisabled {
+                    sanitized.lockRSSI = SignalHysteresisEngine.clampRSSI(p.lockRSSI)
+                } else {
+                    sanitized.lockRSSI = min(SignalHysteresisEngine.clampRSSI(p.lockRSSI),
+                                              sanitized.unlockRSSI - 1)
+                }
+            }
 
             if let idx = profiles.firstIndex(where: { $0.id == sanitized.id }) {
                 profiles[idx] = sanitized

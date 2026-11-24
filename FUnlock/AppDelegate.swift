@@ -442,10 +442,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         prefs.synchronize()
         let lockRSSI = prefs.integer(forKey: "lockRSSI"); if lockRSSI != 0 { fun.lockRSSI = lockRSSI }
         let unlockRSSI = prefs.integer(forKey: "unlockRSSI"); if unlockRSSI != 0 { fun.unlockRSSI = unlockRSSI }
-        let timeout = prefs.integer(forKey: "timeout"); if timeout != 0 { fun.signalTimeout = Double(timeout) }
+        // 正数范围校验：外部写入的 0/负值不恢复（避免把无效配置当真值应用）
+        if let timeout = prefs.object(forKey: "timeout") as? Int, timeout > 0 {
+            fun.signalTimeout = Double(timeout)
+        }
         fun.setPassiveMode(prefs.bool(forKey: "passiveMode"))
         let thresholdRSSI = prefs.integer(forKey: "thresholdRSSI"); if thresholdRSSI != 0 { fun.thresholdRSSI = thresholdRSSI }
-        let lockDelay = prefs.integer(forKey: "lockDelay"); if lockDelay != 0 { fun.proximityTimeout = Double(lockDelay) }
+        if let lockDelay = prefs.object(forKey: "lockDelay") as? Int, lockDelay > 0 {
+            fun.proximityTimeout = Double(lockDelay)
+        }
     }
 
     /// 初始化 manager 并接线 delegate / inputMonitor

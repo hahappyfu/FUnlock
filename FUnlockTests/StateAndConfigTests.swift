@@ -540,3 +540,61 @@ class ScriptRunnerEventLoggingTests: XCTestCase {
                       "logEvent 应将 unlock_timeout 写入 events.log")
     }
 }
+
+// MARK: - Task 17：Profile 哨兵保护与校准阈值
+
+@MainActor
+final class ProfileSentinelAndCalibrationTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        // setUnlockRSSI/setLockRSSI 硬编码写生产域：快照恢复，避免污染用户真实阈值
+        let snapshot = ConfigKeySnapshot(keys: ["unlockRSSI", "lockRSSI"])
+        addTeardownBlock { snapshot.restore() }
+    }
+
+    func testProfileImportPreservesDisabledSentinels() {
+        let json = """
+        [{"id":"p1","name":"LockOnly","lockRSSI":-80,"unlockRSSI":1,"enabled":true},
+         {"id":"p2","name":"UnlockOnly","lockRSSI":-100,"unlockRSSI":-60,"enabled":true}]
+        """
+        let pm = ProfileManager()
+        _ = pm.importFrom(json: json)
+        XCTAssertEqual(pm.profiles.first(where: { $0.id == "p1" })?.unlockRSSI, FUn.UNLOCK_DISABLED,
+                       "UNLOCK_DISABLED 哨兵不得被 clampRSSI 篡改")
+        XCTAssertEqual(pm.profiles.first(where: { $0.id == "p2" })?.lockRSSI, FUn.LOCK_DISABLED,
+                       "LOCK_DISABLED 哨兵不得被 lock<unlock 钳制篡改")
+    }
+
+    func testCalibrationFinalThresholdsAreClampedWithinRange() {
+        let result = CalibrationWizardView.computeFinalThresholds(avgUnlock: -30, avgLock: -30)
+        XCTAssertLessThanOrEqual(result.unlock, SignalHysteresisEngine.rssiRange.upperBound)
+        XCTAssertGreaterThanOrEqual(result.unlock, SignalHysteresisEngine.rssiRange.lowerBound)
+        XCTAssertLessThan(result.lock, result.unlock, "应用值必须保证 lock < unlock")
+    }
+
+    func testCalibrationBlocksAutoLockAndSetUnlockPreservesValidCustomLock() {
+        let manager = FUnManager(fun: FUn())
+        manager.setUnlockRSSI(-60)
+        manager.setLockRSSI(-85)
+        // 改解锁阈值到 -65：已自定义的合法锁定阈值 -85（< -65）不得被覆写成 -75
+        manager.setUnlockRSSI(-65)
+        XCTAssertEqual(manager.lockRSSI, -85, "合法的自定义锁定阈值不得被联动覆写")
+
+        // 校准期间离开不锁屏
+        SystemInteractionService.lockActionOverride = {}
+        setSessionLockedForTesting(false)
+        defer {
+            SystemInteractionService.lockActionOverride = nil
+            resetSessionProvidersForTesting()
+        }
+        manager.isCalibrating = true
+        manager.state.screen = .unlocked
+        manager.fun.lock.withLock {
+            manager.fun.presence = false
+            manager.fun.effectiveRSSI = -90
+        }
+        manager.onDeviceLeft(reason: "away")
+        XCTAssertEqual(manager.state.screen, .unlocked, "校准期间设备离开不得锁屏")
+    }
+}

@@ -304,12 +304,22 @@ class FUnManagerThresholdLinkTests: XCTestCase {
     }
 
     func testSetUnlockRSSIAutoAdjustsLock() {
+        // Task 17 语义：仅当现有 lock 违反序关系（lock >= 新 unlock）时才联动。
+        // FUn 默认 lockRSSI=-80 对 -55 合法（-80 < -55）→ 不覆写，保持 -80。
         let fun = FUn()
         let manager = FUnManager(fun: fun)
         manager.setUnlockRSSI(-55)
-        XCTAssertEqual(manager.lockRSSI, -65, "调解解锁阈值后锁定应自动设为解锁-10")
-        XCTAssertEqual(fun.lockRSSI, -65)
-        XCTAssertEqual(ConfigStore.shared.defaults.integer(forKey: "lockRSSI"), -65)
+        XCTAssertEqual(manager.lockRSSI, -80, "已自定义的合法锁定阈值（-80 < -55）不得被联动覆写")
+        XCTAssertEqual(fun.lockRSSI, -80)
+
+        // 真实触发场景：用户把解锁阈值下调到低于现有 lock（-56 >= -60）→ 违反序关系，
+        // 联动修正到 unlock-10 = -70
+        manager.setUnlockRSSI(-55)
+        manager.setLockRSSI(-56)  // 合法：-56 < -55
+        manager.setUnlockRSSI(-60)
+        XCTAssertEqual(manager.lockRSSI, -70, "lock >= 新 unlock 时应联动到 unlock-10")
+        XCTAssertEqual(fun.lockRSSI, -70)
+        XCTAssertEqual(ConfigStore.shared.defaults.integer(forKey: "lockRSSI"), -70)
     }
 
     func testSetUnlockRSSIDisabledDoesNotAdjustLock() {
@@ -323,6 +333,8 @@ class FUnManagerThresholdLinkTests: XCTestCase {
     func testSetUnlockRSSIClampToRangeMin() {
         let fun = FUn()
         let manager = FUnManager(fun: fun)
+        // 先让 lock 违反序关系，再设解锁到下界触发联动钳制
+        manager.setLockRSSI(-50)
         manager.setUnlockRSSI(-95)
         // 审计修复：联动值钳制时必须保证 lock < unlock（-96 < -95），防止两阈值重合导致迟滞死循环
         XCTAssertEqual(manager.lockRSSI, -96, "联动值在下界时必须严格小于解锁阈值（-96 < -95），防止反向迟滞/死锁循环")

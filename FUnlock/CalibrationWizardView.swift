@@ -40,6 +40,10 @@ struct CalibrationWizardView: View {
         .onDisappear {
             samplingTask?.cancel()
             countdownTask?.cancel()
+            if manager.isCalibrating {
+                manager.isCalibrating = false
+                manager.fun.refreshProximityGrace()
+            }
         }
     }
 
@@ -224,8 +228,8 @@ struct CalibrationWizardView: View {
 
             resultRow(icon: "lock.open.fill", label: t("calibration_avg_unlock"), value: "\(avgUnlock) dBm", color: .green)
             resultRow(icon: "lock.fill", label: t("calibration_avg_lock"), value: "\(avgLock) dBm", color: .orange)
-            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(suggestedUnlock) dBm", color: .blue)
-            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(suggestedLock) dBm", color: .purple)
+            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_unlock"), value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).unlock) dBm", color: .blue)
+            resultRow(icon: "slider.horizontal.3", label: t("calibration_suggested_lock"), value: "\(Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock).lock) dBm", color: .purple)
 
             HStack(spacing: 12) {
                 Button(t("cancel")) { cancelAndClose() }
@@ -265,6 +269,28 @@ struct CalibrationWizardView: View {
         return SignalHysteresisEngine.clampRSSI(v)
     }
 
+    /// 实际应用的最终阈值（静态纯函数，供测试与 Step 5 预览共用）：
+    /// 均先钳制到 rssiRange；迟滞不足 gap 时上移 unlock（再钳上限），并保证 lock < unlock。
+    static func computeFinalThresholds(avgUnlock: Int, avgLock: Int) -> (unlock: Int, lock: Int) {
+        let suggestedUnlock = SignalHysteresisEngine.clampRSSI(avgUnlock - 2)
+        let suggestedLock = SignalHysteresisEngine.clampRSSI(avgLock - 2)
+        var finalUnlock = max(suggestedUnlock, suggestedLock + lockUnlockDelayGap)
+        finalUnlock = min(max(finalUnlock, SignalHysteresisEngine.rssiRange.lowerBound),
+                          SignalHysteresisEngine.rssiRange.upperBound)
+        let finalLock = min(suggestedLock, finalUnlock - 1)
+        return (finalUnlock, finalLock)
+    }
+
+    /// 退出校准：复位标记并给用户走回电脑的缓冲（防止采样期积累的离场判定立即锁屏）
+    private func endCalibration() {
+        samplingTask?.cancel()
+        countdownTask?.cancel()
+        if manager.isCalibrating {
+            manager.isCalibrating = false
+            manager.fun.refreshProximityGrace()
+        }
+    }
+
     // MARK: - 流程控制
 
     private func startUnlockCalibration() {
@@ -272,6 +298,7 @@ struct CalibrationWizardView: View {
         countdown = 5
         samples = []
         errorMessage = ""
+        manager.isCalibrating = true
         countdownTask = Task {
             for i in (1...5).reversed() {
                 guard !Task.isCancelled else { return }
@@ -351,6 +378,7 @@ struct CalibrationWizardView: View {
     private func abortCalibration() {
         samplingTask?.cancel()
         countdownTask?.cancel()
+        endCalibration()
         samples = []
         currentRSSI = nil
         errorMessage = t("calibration_no_signal_retry")
@@ -358,18 +386,15 @@ struct CalibrationWizardView: View {
     }
 
     private func applyValues() {
-        let lock = SignalHysteresisEngine.clampRSSI(suggestedLock)
-        let unlock = SignalHysteresisEngine.clampRSSI(suggestedUnlock)
-        // 统一使用全局迟滞标准 lockUnlockDelayGap (10dB)，确保迟滞保护完整
-        let finalUnlock = max(unlock, lock + lockUnlockDelayGap)
-        manager.setUnlockRSSI(finalUnlock)
-        manager.setLockRSSI(lock)
+        let final = Self.computeFinalThresholds(avgUnlock: avgUnlock, avgLock: avgLock)
+        manager.setUnlockRSSI(final.unlock)
+        manager.setLockRSSI(final.lock)
+        endCalibration()
         isPresented = false
     }
 
     private func cancelAndClose() {
-        samplingTask?.cancel()
-        countdownTask?.cancel()
+        endCalibration()
         isPresented = false
     }
 }

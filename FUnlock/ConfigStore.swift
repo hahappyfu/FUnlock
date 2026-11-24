@@ -99,8 +99,9 @@ final class ConfigStore: @unchecked Sendable {
     private static let exportedKeysKey = "_exportedKeys"
     private static let dataPrefix = "_b64:"
 
-    /// 导出全部业务设置为 JSON：值统一转字符串，Data 走 base64 前缀编码；
-    /// 附带 _exportedKeys 清单，导入时按清单删除旧 key（支持多设备配置完全替换）。
+    /// 导出全部业务设置为 JSON：Bool 输出 "true"/"false"（CFBoolean 判定），
+    /// Data 走 base64 前缀，其余按类型字符串化；附带 _exportedKeys 清单，
+    /// 导入时按清单删除旧 key（支持多设备配置完全替换）。
     func exportAllSettings() -> String? {
         var dict: [String: String] = [:]
         for key in ConfigStore.exportableKeys {
@@ -109,6 +110,8 @@ final class ConfigStore: @unchecked Sendable {
             guard let value = defaults.object(forKey: key) else { continue }
             if let data = value as? Data {
                 dict[key] = ConfigStore.dataPrefix + data.base64EncodedString()
+            } else if CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() {
+                dict[key] = (value as? Bool) == true ? "true" : "false"
             } else {
                 dict[key] = "\(value)"
             }
@@ -164,7 +167,7 @@ final class ConfigStore: @unchecked Sendable {
                     continue
                 }
             }
-            let value = ConfigStore.decodeSettingValue(raw)
+            let value = ConfigStore.decodeSettingValue(raw, key: key)
             defaults.set(value, forKey: key)
             applied += 1
         }
@@ -184,14 +187,50 @@ final class ConfigStore: @unchecked Sendable {
         return SettingsImportStats(applied: applied, removed: removed)
     }
 
-    /// 字符串 → 原类型还原：base64 Data / Int / Bool / String
-    private static func decodeSettingValue(_ raw: String) -> Any {
+    // MARK: - key 类型表（导出/导入精确还原）
+
+    /// 布尔开关键。导出为 "true"/"false"（CFBoolean 判定，不会变成 "1"/"0"）。
+    static let boolKeys: Set<String> = [
+        "enabled", "launchAtLogin", "lockOnIdle", "passiveMode",
+        "wakeOnProximity", "wakeWithoutUnlocking", "sleepDisplay", "screensaver",
+        "pauseOnWiFi", "pauseItunes", "iMessageNotify", "manualLockNoAutoUnlock",
+        "hasCompletedOnboarding", "hasShownGuide", "hasCheckedAccessibility",
+        "permissionOnboarded", "barkNotify",
+    ]
+    /// 整数键（阈值/秒数）。
+    static let intKeys: Set<String> = [
+        "lockRSSI", "unlockRSSI", "wakeAdvance", "preUnlockTrigger",
+        "thresholdRSSI", "timeout", "lockDelay", "unlockMargin",
+    ]
+    /// 字符串键：即使值是纯数字（SSID/手机号/设备名）也必须保持 String，不误转 Int。
+    static let stringKeys: Set<String> = [
+        "device", "deviceName", "pauseOnWiFiSSID",
+        "iMessageNotifyRecipient", "activeProfileID", "barkNotifyServer",
+    ]
+    /// Data 键（JSON payload）。
+    static let dataKeys: Set<String> = ["profiles"]
+
+    /// 导入按 key 已知类型还原：Bool 兼容旧版 "1"/"0"；stringKeys 恒为 String（不误转 Int）。
+    private static func decodeSettingValue(_ raw: String, key: String) -> Any {
         if raw.hasPrefix(dataPrefix) {
             if let d = Data(base64Encoded: String(raw.dropFirst(dataPrefix.count))) {
                 return d
             }
-            // base64 解码失败：告警后保持原字符串落盘（导出→导入幂等，损坏数据不扩散成其他类型）
             AppLog.error(.app, "importBase64DecodeFailed", [("prefix", String(raw.prefix(48)))])
+        }
+        if boolKeys.contains(key) {
+            if raw == "true" { return true }
+            if raw == "false" { return false }
+            // 旧版导出格式兼容："1"/"0" 视为布尔
+            if raw == "1" { return true }
+            if raw == "0" { return false }
+        }
+        if stringKeys.contains(key) {
+            // 字符串键恒为 String：纯数字（SSID/手机号）不得误转 Int
+            return raw
+        }
+        if intKeys.contains(key) || dataKeys.contains(key) || key == "lastUpdateCheck" {
+            if let i = Int(raw) { return i }
         }
         if raw == "true" { return true }
         if raw == "false" { return false }

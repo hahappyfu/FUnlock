@@ -333,6 +333,7 @@ extension FUnManager {
             ("eff", String(format: "%.1f", snap.effectiveRSSI))
         ])
         guard enabled else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "enabledFalse")]); return }
+        guard !isCalibrating else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "isCalibrating")]); return }
         guard screenState == .unlocked else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "screenNotUnlocked"), ("screen", "\(screenState)")]); return }
         guard !lockDisabled else { AppLog.info(.lock, "deviceLeftBlocked", [("reason", "lockDisabled")]); return }
         // 锁冷静期：解锁成功后短时间内（proximityGracePeriod=5s）信号再弱也不锁，
