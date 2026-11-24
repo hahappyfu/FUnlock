@@ -586,6 +586,69 @@ class DisplaySleepInjectionProtectionTests: XCTestCase {
 
         XCTAssertEqual(orchestrator.consecutiveUnlockAttempts, 0, "唤醒重试不应累加密码失败次数")
     }
+
+    /// 回归：经典屏保激活时，injectPasswordWithPrelude 必须在屏保退出后再静置 ≥200ms 才注入，
+    /// 不得在固定 300ms 提前盲打导致密码被屏保退场动画吞掉
+    func testScreensaverPreludeWaitsForDismissalAndSettleBeforeInjecting() async {
+        let screensaverActive = OSAllocatedUnfairLock(initialState: true)
+        var injectedAt: Date?
+        SystemInteractionService.displayPoweredOnProvider = { true }
+        SystemInteractionService.screensaverRunningProvider = {
+            screensaverActive.withLock { $0 }
+        }
+        SystemInteractionService.fakeKeyStrokesOverride = { _, _ in
+            injectedAt = Date()
+            return true
+        }
+        defer {
+            SystemInteractionService.displayPoweredOnProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+            SystemInteractionService.fakeKeyStrokesOverride = nil
+        }
+
+        let start = Date()
+        let dismissTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000) // 350ms 后模拟屏保退出
+            screensaverActive.withLock { $0 = false }
+        }
+        let posted = await SystemInteractionService.shared.injectPasswordWithPrelude("test-password") { true }
+        await dismissTask.value
+
+        XCTAssertTrue(posted, "屏保退场并静置后应正常执行密码注入")
+        guard let injectedAt else {
+            return XCTFail("应调用按键注入阶段")
+        }
+        let elapsed = injectedAt.timeIntervalSince(start)
+        XCTAssertGreaterThanOrEqual(elapsed, 0.50,
+                                    "屏保在 350ms 退出 + 200ms 焦点静置，总等待不应早于 500ms（避免 300ms 抢跑丢字）")
+    }
+
+    /// 回归：现代 macOS 锁屏壁纸屏保在解锁前保持运行，前奏应等待 800ms 让密码框淡入聚焦并照常注入（不得误中止）
+    func testScreensaverPreludeWaits800msAndProceedsWhenWallpaperScreensaverPersists() async {
+        var injectedAt: Date?
+        SystemInteractionService.displayPoweredOnProvider = { true }
+        SystemInteractionService.screensaverRunningProvider = { true }
+        SystemInteractionService.fakeKeyStrokesOverride = { _, _ in
+            injectedAt = Date()
+            return true
+        }
+        defer {
+            SystemInteractionService.displayPoweredOnProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+            SystemInteractionService.fakeKeyStrokesOverride = nil
+        }
+
+        let start = Date()
+        let posted = await SystemInteractionService.shared.injectPasswordWithPrelude("test-password") { true }
+
+        XCTAssertTrue(posted, "现代 macOS 壁纸屏保持续运行时，等待聚焦窗口后仍应放行密码注入")
+        guard let injectedAt else {
+            return XCTFail("应调用按键注入阶段")
+        }
+        let elapsed = injectedAt.timeIntervalSince(start)
+        XCTAssertGreaterThanOrEqual(elapsed, 0.72,
+                                    "屏保持续运行时应等待约 800ms 供密码框淡入聚焦，而非 300ms 抢跑")
+    }
 }
 
 // MARK: - Task 5：真实会话锁态与注入安全门控

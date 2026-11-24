@@ -174,7 +174,9 @@ extension FUnManager {
     func onScreensaverStop() {
         AppLog.info(.sm, "screensaverStop")
         if state.screen == .screensaver {
-            state.screen = .locked(reason: .manual)
+            // 手动屏保退回手动锁屏；自动锁屏触发的屏保退回 .away，避免误标手动锁屏
+            let reason: ScreenState.LockReason = state.intent.isManualLockActive ? .manual : .away
+            state.screen = .locked(reason: reason)
             state.unlockedAt = Date(timeIntervalSince1970: 0)  // 重置解锁时间，允许新的解锁
         }
     }
@@ -210,10 +212,18 @@ extension FUnManager {
         let isSelfLock = isWithinSelfLockWindow
         if isSelfLock {
             state.intent = .autoLock
+            // 自锁触发的系统锁屏通知：保留已有自动锁原因（.away / .lost），
+            // 若此前处于 .screensaver / .displaySleeping / .unlocked 则归类为 .away，避免误标手动锁屏
+            switch state.screen {
+            case .locked(reason: .away), .locked(reason: .lost):
+                break
+            default:
+                state.screen = .locked(reason: .away)
+            }
         } else {
             markManualLock()
+            state.screen = .locked(reason: .manual)
         }
-        state.screen = .locked(reason: .manual)
         state.unlockedAt = Date(timeIntervalSince1970: 0)
         lastLockTime = now
         // 在 state.screen 更新后记录，保证诊断日志的屏幕状态为锁屏后的 .locked(manual)，

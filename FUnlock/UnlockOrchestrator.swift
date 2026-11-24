@@ -126,6 +126,33 @@ final class UnlockOrchestrator {
         manager.state.system == .awake
     }
 
+    /// 按状态机实际阻断原因分类记录：
+    /// - `.degraded` → 连续失败达上限已暂停（记录 `.stateMachineBlocked`，UI 展示「恢复自动解锁」按钮）
+    /// - `.unlocking` → 注入/验证已在途（与 `hasPendingUnlockTask` 一致仅写 AppLog，不向时间线刷误导性降级卡片）
+    /// - 失败重试冷却 / 防抖冷却 → 记录 `.unlockCooldownActive`（UI 展示「解锁冷却中」，不误报已暂停）
+    func recordStateMachineSkip(source: String) {
+        let sm = manager.stateMachine
+        if sm.currentState == .degraded {
+            AppLog.info(.unlock, "unlockSkip", [("reason", "stateMachineDegraded"), ("source", source)])
+            timingLog("event=unlockSkip reason=stateMachineDegraded source=\(source)")
+            recordUnlock(reason: .stateMachineBlocked)
+        } else if sm.currentState == .unlocking {
+            AppLog.info(.unlock, "unlockSkip", [("reason", "unlockInProgress"), ("source", source)])
+            timingLog("event=unlockSkip reason=unlockInProgress source=\(source)")
+        } else {
+            AppLog.info(.unlock, "unlockSkip", [
+                ("reason", "failureCooldownActive"),
+                ("source", source),
+                ("failures", "\(sm.consecutiveFailures)")
+            ])
+            timingLog("event=unlockSkip reason=failureCooldownActive source=\(source)")
+            let detail = sm.consecutiveFailures > 0
+                ? "第 \(sm.consecutiveFailures)/3 次失败后等待重试"
+                : "状态机冷却中"
+            recordUnlock(reason: .unlockCooldownActive, detail: detail)
+        }
+    }
+
     /// 抽取解锁逻辑（被 attemptAutoUnlock 和并行唤醒共用）
     /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
     func tryUnlock() async {
@@ -146,7 +173,7 @@ final class UnlockOrchestrator {
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = m.stateMachine.attemptUnlock()
-        guard smAllowed else { AppLog.info(.unlock, "unlockSkip", [("reason", "stateMachineDenied")]); recordUnlock(reason: .stateMachineBlocked); return nil }
+        guard smAllowed else { recordStateMachineSkip(source: "guardFetchPassword"); return nil }
 
         let sinceUnlock = now.timeIntervalSince(m.state.unlockedAt)
         guard sinceUnlock > 3 else {

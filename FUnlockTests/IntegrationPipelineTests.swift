@@ -166,7 +166,7 @@ class FullUnlockFlowIntegrationTests: XCTestCase {
         setSessionLockedForTesting(true)
         manager.onSystemScreenLocked()
         if case .locked(let reason) = manager.state.screen {
-            XCTAssertEqual(reason, .manual, "锁屏后应为 locked(manual)")
+            XCTAssertEqual(reason, .away, "自锁后应为 locked(away)，不得误标为手动锁屏")
         } else {
             XCTFail("锁屏后 screen 应为 .locked")
         }
@@ -378,6 +378,8 @@ class PasswordChangeDegradationRecoveryIntegrationTests: XCTestCase {
 
     /// 场景：阈值设置后信号处理 → 密码修改期间的行为一致性
     func testThresholdChangeDuringDegradation() {
+        let snapshot = ConfigKeySnapshot(keys: ["unlockRSSI", "lockRSSI"])
+        addTeardownBlock { snapshot.restore() }
         manager.fun.unlockRSSI = -60
         manager.fun.lockRSSI = -80
 

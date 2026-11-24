@@ -438,6 +438,7 @@ final class SystemInteractionService: Sendable {
         guard !Task.isCancelled else { return false }
 
         let displayWasOff = !isDisplayPoweredOn()
+        let screensaverWasRunning = isScreenSaverRunning
         // 前奏自行唤醒显示器时创建了 IOPMAssertion，退出时必须释放，
         // 否则 Mac 会被持续阻止自动熄屏。
         defer {
@@ -458,10 +459,17 @@ final class SystemInteractionService: Sendable {
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         var waitedMs = 0
         if shiftSent {
-            AppLog.info(.unlock, "injectPreludeWaitingDisplayReady", [("maxWaitMs", "\(displayWasOff ? 2500 : 300)")])
-            // 熄屏唤醒最多轮询 2.5s，亮屏状态 300ms 即可
-            let maxWaitMs = displayWasOff ? 2500 : 300
+            // 熄屏唤醒最多轮询 2.5s；屏保激活时预留 800ms 等待屏保淡出/密码框聚焦
+            //（若屏保进程提前退出，则退出后再静置 200ms 保障 loginwindow 接管焦点）；
+            // 普通亮屏锁屏保持 300ms 不变。
+            let maxWaitMs = displayWasOff ? 2500 : (screensaverWasRunning ? 800 : 300)
+            let minWaitMs = screensaverWasRunning ? 800 : 300
+            AppLog.info(.unlock, "injectPreludeWaitingDisplayReady", [
+                ("maxWaitMs", "\(maxWaitMs)"),
+                ("screensaver", "\(screensaverWasRunning)")
+            ])
             let stepMs = 100
+            var screensaverClearedAtMs: Int? = nil
             while waitedMs < maxWaitMs {
                 guard !Task.isCancelled else {
                     AppLog.error(.unlock, "injectPreludeAborted", [("reason", "cancelled")])
@@ -480,12 +488,29 @@ final class SystemInteractionService: Sendable {
                     AppLog.error(.unlock, "injectPreludeAborted", [("reason", "screenNotSecure")])
                     return false
                 }
-                // 基础 300ms 保障 loginwindow 响应 Shift 聚焦；超过 300ms 且显示器已唤醒即可注入
-                if waitedMs >= 300 && isDisplayPoweredOn() {
+                if screensaverWasRunning && screensaverClearedAtMs == nil && !isScreenSaverRunning {
+                    screensaverClearedAtMs = waitedMs
+                }
+                let screensaverReady: Bool
+                if !screensaverWasRunning {
+                    screensaverReady = true
+                } else if let clearedAt = screensaverClearedAtMs {
+                    // 经典屏保已退出：退出后再等待 200ms 供 loginwindow 密码框完成聚焦
+                    screensaverReady = (waitedMs - clearedAt) >= 200 && waitedMs >= 300
+                } else {
+                    // 现代 macOS 锁屏壁纸屏保在解锁前保持运行，等待 minWaitMs（800ms）供密码框淡入聚焦
+                    screensaverReady = waitedMs >= minWaitMs
+                }
+                // 基础等待保障 loginwindow 响应 Shift 聚焦；显示器点亮且屏保过渡就绪即可注入
+                if waitedMs >= 300 && isDisplayPoweredOn() && screensaverReady {
                     break
                 }
             }
-            AppLog.info(.unlock, "injectPreludeDisplayReady", [("waitedMs", "\(waitedMs)")])
+            AppLog.info(.unlock, "injectPreludeDisplayReady", [
+                ("waitedMs", "\(waitedMs)"),
+                ("screensaverWasRunning", "\(screensaverWasRunning)"),
+                ("screensaverStillRunning", "\(isScreenSaverRunning)")
+            ])
         } else {
             AppLog.error(.unlock, "injectPreludeShiftFailed", [("action", "proceedingWithoutDelay")])
         }

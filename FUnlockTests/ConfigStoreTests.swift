@@ -386,4 +386,17 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertFalse(store.bool(forKey: "passiveMode"))
         XCTAssertTrue(store.bool(forKey: "launchAtLogin"))
     }
+
+    /// 回归：XCTest 进程中 ConfigStore.shared 必须自动隔离到独立测试域，不得写入本机生产配置域
+    func testSharedStoreIsIsolatedFromProductionSuiteUnderXCTest() {
+        XCTAssertNotEqual(ConfigStore.defaultSuiteName, ConfigStore.suiteName,
+                          "XCTest 进程下 defaultSuiteName 必须与生产 suiteName 分离")
+        let canaryKey = "__xctest_isolation_canary_\(UUID().uuidString)"
+        ConfigStore.shared.set("isolated", forKey: canaryKey)
+        defer { ConfigStore.shared.removeObject(forKey: canaryKey) }
+
+        let prodDefaults = UserDefaults(suiteName: ConfigStore.suiteName)
+        XCTAssertNil(prodDefaults?.object(forKey: canaryKey),
+                     "写入 ConfigStore.shared 绝不能穿透到生产配置域 \(ConfigStore.suiteName)")
+    }
 }

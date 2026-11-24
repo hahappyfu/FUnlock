@@ -9,16 +9,23 @@ import Foundation
 /// （初始化后不再变化），且 UserDefaults 自身文档明确线程安全（"UserDefaults is thread-safe"），
 /// 故跨线程共享本类实例不会引入数据竞争。
 final class ConfigStore: @unchecked Sendable {
-    static let shared = ConfigStore()
+    static let shared = ConfigStore(suiteName: ConfigStore.defaultSuiteName)
 
-    /// 固定 suite 域名（不随 bundle id 变）
+    /// 固定生产 suite 域名（不随 bundle id 变）
     static let suiteName = "com.fuhahah.Funlock.config"
+    /// 运行时默认 suite 域名：XCTest 进程中自动隔离到独立测试域，防止单元测试污染本机真实配置
+    static var defaultSuiteName: String {
+        if NSClassFromString("XCTestCase") != nil {
+            return "\(suiteName).xctest"
+        }
+        return suiteName
+    }
     private static let didMigrateKey = "didMigrate"
 
     let defaults: UserDefaults
 
     /// 测试注入：允许指定 suite 名隔离
-    init(suiteName: String = ConfigStore.suiteName) {
+    init(suiteName: String = ConfigStore.defaultSuiteName) {
         // UserDefaults(suiteName:) 失败时回退 standard（理论不触发）
         defaults = UserDefaults(suiteName: suiteName) ?? .standard
     }

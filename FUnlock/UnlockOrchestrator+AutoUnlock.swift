@@ -56,8 +56,11 @@ extension UnlockOrchestrator {
             recordUnlock(reason: .signalBelowThreshold, detail: "信号 \(String(format: "%.1f", snap.effectiveRSSI)) dBm 低于解锁阈值 \(m.fun.unlockRSSI) dBm")
             return
         }
-        // 状态机门控：degraded 或失败冷却期间拒绝解锁
-        guard m.stateMachine.canAttemptUnlock else { AppLog.info(.unlock, "unlockSkip", [("reason", "stateMachineNotReady")]); timingLog("event=unlockSkip reason=stateMachineNotReady"); recordUnlock(reason: .stateMachineBlocked); return }
+        // 状态机门控：degraded、注入在途或失败冷却期间拒绝解锁
+        guard m.stateMachine.canAttemptUnlock else {
+            recordStateMachineSkip(source: "attemptAutoUnlock")
+            return
+        }
 
         // 锁屏缓冲：刚锁屏后不立即尝试解锁，防止刚离开又回来的抖动
         let sinceLock = now.timeIntervalSince(m.lastLockTime)

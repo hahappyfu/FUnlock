@@ -95,7 +95,7 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertEqual(unlockEvents(reason: .noPresence).count, 1,
                        "无在场标志应记录 noPresence 决策")
         XCTAssertNil(manager.orchestrator.unlockTask, "noPresence 分支不得调度解锁任务")
-        XCTAssertEqual(manager.state.screen, .locked(reason: .manual), "SKIP 不得改写屏幕状态")
+        XCTAssertEqual(manager.state.screen, .locked(reason: .away), "SKIP 不得改写屏幕状态")
     }
 
     /// 解锁开关关闭(unlockRSSI == UNLOCK_DISABLED 哨兵)→ SKIP unlockDisabled
@@ -124,7 +124,7 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertNil(manager.orchestrator.unlockTask)
     }
 
-    /// 状态机注入中(.unlocking)→ canAttemptUnlock false → SKIP stateMachineBlocked
+    /// 状态机注入中(.unlocking)→ canAttemptUnlock false → 静默拦截，不误报降级暂停
     func testStateMachineUnlockingBlocksAndRecords() {
         lockAsAutoLock()
         manager.fun.presence = true
@@ -134,11 +134,53 @@ class OrchestratorGatesTests: XCTestCase {
 
         manager.attemptAutoUnlock()
 
-        XCTAssertEqual(unlockEvents(reason: .stateMachineBlocked).count, 1,
-                       "注入在途应记录 stateMachineBlocked 决策")
+        XCTAssertTrue(unlockEvents(reason: .stateMachineBlocked).isEmpty,
+                      "注入在途不得误报 stateMachineBlocked（连续失败已暂停）")
         XCTAssertEqual(manager.stateMachine.currentState, .unlocking,
                        "SKIP 不得改写状态机注入中状态")
         XCTAssertNil(manager.orchestrator.unlockTask)
+    }
+
+    /// 状态机非降级失败冷却(.cooldown)→ 记录 unlockCooldownActive，不得误报「连续失败后自动解锁已暂停」
+    func testStateMachineFailureCooldownRecordsCooldownNotDegraded() {
+        lockAsAutoLock()
+        manager.fun.presence = true
+        manager.fun.effectiveRSSI = -50
+        manager.stateMachine.handleUnlockFailure()  // 第 1 次失败 → 10s 冷却，非降级
+        XCTAssertEqual(manager.stateMachine.currentState, .cooldown)
+        XCTAssertTrue(manager.stateMachine.isInCooldown)
+
+        manager.attemptAutoUnlock()
+
+        XCTAssertEqual(unlockEvents(reason: .unlockCooldownActive).count, 1,
+                       "失败重试冷却期应记录 unlockCooldownActive")
+        XCTAssertTrue(unlockEvents(reason: .stateMachineBlocked).isEmpty,
+                      "未达降级上限时不得误报 stateMachineBlocked")
+        XCTAssertNil(manager.orchestrator.unlockTask)
+    }
+
+    /// 回归：自动锁屏(away)后屏保启动再收到系统锁屏通知，screen 应保持 locked(away) 而非 locked(manual)
+    func testAutoLockWithScreensaverPreservesAwayScreenReason() {
+        snapshotKeys(["enabled", "sleepDisplay", "screensaver", "pauseOnWiFi"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(false, forKey: "sleepDisplay")
+        ConfigStore.shared.defaults.set(true, forKey: "screensaver")
+        ConfigStore.shared.defaults.set(false, forKey: "pauseOnWiFi")
+        manager.state.screen = .unlocked
+        manager.fun.lock.withLock {
+            manager.fun.presence = false
+            manager.fun.effectiveRSSI = -90
+        }
+
+        manager.onDeviceLeft(reason: "away")
+        XCTAssertEqual(manager.state.screen, .locked(reason: .away))
+        manager.onScreensaverStart()
+        XCTAssertEqual(manager.state.screen, .screensaver)
+        manager.onSystemScreenLocked()
+
+        XCTAssertEqual(manager.state.intent, .autoLock, "自锁窗口内不得误标 manualLock")
+        XCTAssertEqual(manager.state.screen, .locked(reason: .away),
+                       "自动锁屏经屏保与系统锁通知后应保持 locked(away)，不得误标 locked(manual)")
     }
 
     /// 状态机连续 3 次失败降级(.degraded)→ SKIP stateMachineBlocked
