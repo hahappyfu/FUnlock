@@ -54,4 +54,22 @@ final class AppLogTests: XCTestCase {
             XCTAssertTrue(content.contains("\(tag) event=probe"))
         }
     }
+
+    // MARK: - Task 20：敏感字段脱敏
+
+    func testAppLogRedactsSensitiveKeys() {
+        let msg = AppLog.message("deviceLeftSkipped", [
+            ("reason", "trustedWiFi"),
+            ("ssid", "MySecretOfficeWiFi")
+        ])
+        XCTAssertFalse(msg.contains("MySecretOfficeWiFi"), "SSID 明文不得进入日志")
+        XCTAssertTrue(msg.contains("ssid=My***"), "敏感值应保留前 2 位并掩码，实际: \(msg)")
+
+        // 短值整体掩码；key 大小写不敏感
+        XCTAssertEqual(AppLog.redactedValue(forKey: "SSID", value: "abc"), "***")
+        XCTAssertEqual(AppLog.redactedValue(forKey: "key", value: "1234"), "12***")
+        XCTAssertEqual(AppLog.redactedValue(forKey: "barkKey", value: "secret-key"), "se***")
+        XCTAssertEqual(AppLog.redactedValue(forKey: "reason", value: "trustedWiFi"), "trustedWiFi",
+                       "非敏感键保持原值")
+    }
 }
