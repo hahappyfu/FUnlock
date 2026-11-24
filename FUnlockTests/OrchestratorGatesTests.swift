@@ -354,7 +354,7 @@ class OrchestratorGatesTests: XCTestCase {
     // MARK: - 锁屏事件乱序序列
 
     /// ① 解锁通知先于 onDeviceApproached:用户已手动解锁,后到的靠近事件
-    /// 在冷却期内被冷却门控拦截;冷却过期后屏幕已解锁,静默早退不调度注入
+    /// 在「屏幕已解锁」早退分支被静默忽略（Task 19 起不再进入冷却门控）
     func testUnlockNotificationArrivingBeforeDeviceApproach() throws {
         try skipIfHostSessionLocked()
         // 覆盖 setUp 的默认锁态：解锁通知先到，后续应为已解锁会话
@@ -369,21 +369,21 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertEqual(manager.state.screen, .unlocked)
         XCTAssertEqual(manager.state.intent, .autoLock)
 
-        // 后到的靠近事件(冷却期内):不得重复解锁
+        // 后到的靠近事件:屏幕已解锁 → 静默早退，不产生新的解锁决策、不调度任务
+        let unlockEventsBefore = logger.events.filter { $0.category == .unlock }.count
         manager.fun.presence = true
         manager.fun.effectiveRSSI = -50
         manager.onDeviceApproached()
-        XCTAssertTrue(logger.events.contains { $0.category == .unlock && $0.reason == .unlockCooldownActive },
-                      "解锁冷却期内后到的靠近事件应被冷却门控拦截")
         XCTAssertNil(manager.orchestrator.unlockTask)
+        XCTAssertEqual(logger.events.filter { $0.category == .unlock }.count, unlockEventsBefore,
+                       "已解锁会话的靠近事件应静默早退，不产生新的解锁决策记录")
 
-        // 冷却过期后:屏幕已解锁 → 静默早退(无新增解锁决策)
-        let unlockEventsBeforeSilentExit = logger.events.filter { $0.category == .unlock }.count
+        // 冷却过期后仍应静默早退
         currentTime = currentTime.addingTimeInterval(6)
         manager.onDeviceApproached()
         XCTAssertNil(manager.orchestrator.unlockTask,
                      "屏幕已解锁时靠近事件不得调度解锁任务")
-        XCTAssertEqual(logger.events.filter { $0.category == .unlock }.count, unlockEventsBeforeSilentExit,
+        XCTAssertEqual(logger.events.filter { $0.category == .unlock }.count, unlockEventsBefore,
                        "屏幕已解锁时靠近事件不得产生新的解锁决策记录")
         XCTAssertEqual(manager.state.screen, .unlocked)
         XCTAssertFalse(manager.state.isEffectivelyLocked)
@@ -808,5 +808,38 @@ class OrchestratorGatesTests: XCTestCase {
         manager.onDeviceApproached()
         XCTAssertEqual(manager.state.screen, .unlocked)
         XCTAssertEqual(manager.state.intent, .autoLock)
+    }
+
+    // MARK: - Task 19: 锁屏可观测性与信号活跃度
+
+    func testOnDeviceLeftRecordsLockedAwayScreenNotDisplaySleepingWhenSleepDisplayOff() {
+        snapshotKeys(["enabled", "sleepDisplay", "pauseOnWiFi"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(false, forKey: "sleepDisplay")
+        ConfigStore.shared.defaults.set(false, forKey: "pauseOnWiFi")
+        manager.state.screen = .unlocked
+        manager.fun.lock.withLock {
+            manager.fun.presence = false
+            manager.fun.effectiveRSSI = -90
+        }
+
+        manager.onDeviceLeft(reason: "away")
+
+        XCTAssertEqual(manager.state.screen, .locked(reason: .away),
+                       "sleepDisplay 关闭时锁屏态应为 locked(away)，不是 displaySleeping")
+        let lockEvent = logger.events.last { $0.category == .lock }
+        XCTAssertEqual(lockEvent?.screen, "locked(away)",
+                       "锁屏决策记录必须反映真实 locked(away) 屏幕态")
+    }
+
+    func testIsDeviceSignalAliveExpiresAfter15SecondsWithoutActiveConnection() {
+        let fun = FUn()
+        let t0 = Date(timeIntervalSince1970: 5000)
+        fun.lock.withLock { fun.lastReceiveTime = t0 }
+
+        XCTAssertTrue(fun.isDeviceSignalAlive(now: t0.addingTimeInterval(10)),
+                      "15s 内收到过信号应视为活跃")
+        XCTAssertFalse(fun.isDeviceSignalAlive(now: t0.addingTimeInterval(16)),
+                       "超过 15s 无信号应视为不活跃")
     }
 }

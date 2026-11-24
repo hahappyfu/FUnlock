@@ -119,6 +119,8 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     var proximityTimeout = 5.0
     var signalTimeout = 60.0
     private var powerWarn = true
+    /// 上次断电告警时间：同一分钟内的重复断电不反复弹窗
+    private var lastPowerWarnTime = Date.distantPast
     /// 设备发现入库的最低信号门限（AppDelegate 从偏好写入；读写转发到 BLEScanner 并统一走 lock，
     /// 修复此前独立存储导致偏好写入被丢弃、扫描侧仍用默认值的问题）。
     /// 默认 -100：与最低可配置解锁阈值（-100）对齐——此前默认 -90 会导致解锁阈值放宽到 -100 时
@@ -276,16 +278,19 @@ extension FUn {
     }
 
     func scannerDidPowerOn(_ scanner: BLEScanner) {
-        powerWarn = false
+        // 恢复供电后重置告警资格；真正弹窗仍由 scannerDidPowerOff 的 60s 限频控制
+        lock.withLock { powerWarn = true }
     }
 
     func scannerDidPowerOff(_ scanner: BLEScanner) {
         invalidateAllTimers()
+        let now = Date()
         let shouldWarn: Bool = lock.withLock {
             presence = false
-            let w = powerWarn
+            guard powerWarn, now.timeIntervalSince(lastPowerWarnTime) >= 60 else { return false }
+            lastPowerWarnTime = now
             powerWarn = false
-            return w
+            return true
         }
         if shouldWarn {
             Task { @MainActor [weak self] in
@@ -326,6 +331,13 @@ extension FUn {
 
     func scannerDeviceScanTimeout(_ scanner: BLEScanner) -> TimeInterval {
         signalTimeout
+    }
+
+    /// 监控设备信号是否仍在活跃窗口内（15s 内收到过广播/readRSSI）。
+    /// 供菜单栏 connected 状态及时下线，而不是等 3 次 signalTimeout（最长 180s）。
+    func isDeviceSignalAlive(now: Date = Date(), maxAge: TimeInterval = 15.0) -> Bool {
+        let last = lock.withLock { lastReceiveTime }
+        return now.timeIntervalSince(last) <= maxAge
     }
 
     var bleDelegate: FUnDelegate? {

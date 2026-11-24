@@ -255,6 +255,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
             AppLog.info(.ble, "bluetoothPoweredOff")
             // 宿主负责：取消全部计时器、清在场态、按需派发电源告警
             host?.scannerDidPowerOff(self)
+        case .unauthorized:
+            AppLog.error(.ble, "bluetoothUnauthorized", [("authorization", "\(CBManager.authorization.rawValue)")])
+        case .unsupported:
+            AppLog.error(.ble, "bluetoothUnsupported")
         default:
             break
         }

@@ -43,9 +43,9 @@ extension UnlockOrchestrator {
         let m = manager
         let snap = m.fun.signalSnapshot()
         let sys = SystemInteractionService.shared
-        let screenLocked = sys.isScreenLocked(screenState: m.state.screen)
-        timingLog("event=attemptAutoUnlock presence=\(snap.presence) screen=\(m.state.screen) system=\(m.state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI)) locked=\(screenLocked)")
-        AppLog.debug(.unlock, "autoUnlockAttempt", [("presence", "\(snap.presence)"), ("screen", "\(m.state.screen)"), ("wakeWO", "\(m.prefs.bool(forKey: "wakeWithoutUnlocking"))"), ("locked", "\(screenLocked)")])
+        // 昂贵门控（CGSession + 进程查询）延后到廉价内存门控之后执行
+        timingLog("event=attemptAutoUnlock presence=\(snap.presence) screen=\(m.state.screen) system=\(m.state.system) rssi=\(String(format: "%.1f", snap.effectiveRSSI))")
+        AppLog.debug(.unlock, "autoUnlockAttempt", [("presence", "\(snap.presence)"), ("screen", "\(m.state.screen)"), ("wakeWO", "\(m.prefs.bool(forKey: "wakeWithoutUnlocking"))")])
         guard snap.presence else { AppLog.info(.unlock, "unlockSkip", [("reason", "noPresence")]); timingLog("event=unlockSkip reason=noPresence"); recordUnlock(reason: .noPresence); return }
         guard m.fun.unlockRSSI != FUn.UNLOCK_DISABLED else { AppLog.info(.unlock, "unlockSkip", [("reason", "unlockDisabled")]); timingLog("event=unlockSkip reason=unlockDisabled"); recordUnlock(reason: .unlockDisabled); return }
         // 信号门控：唤醒路径（onSystemWake/onDisplayWake/startWakeRetry）的 presence 可能残留为 true，
@@ -141,6 +141,7 @@ extension UnlockOrchestrator {
 
         // 屏幕已解锁：无需尝试解锁，直接早退，避免每轮 RSSI 轮询走到 guardFetchPassword 刷 screenNotLocked 噪音日志
         // （放在所有 SKIP 决策记录之后，保留 noPresence/unlockDisabled 等低频决策的仪表化语义）
+        let screenLocked = sys.isScreenLocked(screenState: m.state.screen)
         guard screenLocked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenAlreadyUnlocked")]); return }
 
         // 屏幕已锁定等 0.3s；已有在途任务则直接复用，不在高频回调下取消重建

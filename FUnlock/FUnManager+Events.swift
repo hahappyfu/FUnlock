@@ -285,6 +285,10 @@ extension FUnManager {
     func onDeviceApproached() {
         reconcileUnlockedSessionIfNeeded()
         cancelDeferredLockRecheck()
+        // 已解锁且系统会话确认未锁：靠近事件无任何事可做，直接早退（省掉快轮询高频派发）
+        if state.screen == .unlocked && !SystemInteractionService.shared.isSystemSessionLocked() {
+            return
+        }
         let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = ConfigStore.shared.bool(forKey: "enabled", default: true)
@@ -359,13 +363,18 @@ extension FUnManager {
         }
 
         orchestrator.displayWakeRequested = false
-        state.screen = .displaySleeping
+        let sleepDisplay = prefs.bool(forKey: "sleepDisplay")
+        // 屏幕态如实反映本次锁屏：关屏时 displaySleeping，否则 locked(away/lost)；
+        // 供 lock 决策记录与后续状态判断使用（不再一律误标 displaySleeping）。
+        state.screen = sleepDisplay
+            ? .displaySleeping
+            : .locked(reason: reason == "lost" ? .lost : .away)
         lastLockTime = now
         checkAndPauseMedia()
         beginSelfLockWindow()
         let sys = SystemInteractionService.shared
         sys.lockOrSaveScreen(useScreensaver: prefs.bool(forKey: "screensaver"),
-                             sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
+                             sleepDisplayAfter: sleepDisplay)
         // 只有真正执行锁屏动作后才记录采样事件（被拦截时不产生虚假 .locked 点）
         SignalDataStore.shared.record(
             rawRSSI: Double(rssi ?? -100),

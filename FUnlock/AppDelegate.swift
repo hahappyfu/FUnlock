@@ -180,14 +180,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor func updateRSSI(rssi: Int?, active: Bool) {
         manager.onRSSIUpdated(rssi: rssi, active: active)
-        if let _ = rssi {
-            if !manager.connected {
-                manager.updateConnected(true)
-            }
-        } else {
-            if manager.connected {
-                manager.updateConnected(false)
-            }
+        // 连接态以「近期是否收到信号」为准，避免离开后菜单栏长期滞留 Connected
+        let alive = rssi != nil && fun.isDeviceSignalAlive()
+        if manager.connected != alive {
+            manager.updateConnected(alive)
         }
         updateStatusBarIcon()
     }
@@ -197,6 +193,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 此处再转调 manager.onDeviceApproached() 会让首次靠近触发两次解锁派发（双包装修复）
         if !presence {
             manager.onDeviceLeft(reason: reason)
+        }
+        let alive = fun.isDeviceSignalAlive()
+        if manager.connected != alive {
+            manager.updateConnected(alive)
         }
         updateStatusBarIcon()
     }
