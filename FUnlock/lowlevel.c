@@ -1,13 +1,18 @@
 #include "lowlevel.h"
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOKitLib.h>
-#include <CoreGraphics/CoreGraphics.h>
+#include <dlfcn.h>
+#include <pthread.h>
+#include <os/lock.h>
 
 static IOPMAssertionID wakeAssertionID = 0;
 static IOPMAssertionID preventSleepAssertionID = 0;
+// 两个 assertion ID 会被主线程（注入前奏）与唤醒重试共享，统一保护
+static os_unfair_lock assertionLock = OS_UNFAIR_LOCK_INIT;
 
 void funlock_wakeDisplay(void)
 {
+    os_unfair_lock_lock(&assertionLock);
     // 释放前一个未释放的 assertion
     if (wakeAssertionID != 0) {
         IOPMAssertionRelease(wakeAssertionID);
@@ -30,6 +35,7 @@ void funlock_wakeDisplay(void)
         kIOPMAssertionLevelOn,
         CFSTR("FUnlock Keep Awake"),
         &preventSleepAssertionID);
+    os_unfair_lock_unlock(&assertionLock);
 
     // 方式3: 通过 IORegistry 直接唤醒显示器（深层兜底，Intel 平台）
     io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
@@ -46,6 +52,7 @@ void funlock_wakeDisplay(void)
 
 void funlock_releaseWakeAssertion(void)
 {
+    os_unfair_lock_lock(&assertionLock);
     if (wakeAssertionID != 0) {
         IOPMAssertionRelease(wakeAssertionID);
         wakeAssertionID = 0;
@@ -54,6 +61,7 @@ void funlock_releaseWakeAssertion(void)
         IOPMAssertionRelease(preventSleepAssertionID);
         preventSleepAssertionID = 0;
     }
+    os_unfair_lock_unlock(&assertionLock);
 }
 
 void funlock_sleepDisplay(void)
@@ -65,54 +73,31 @@ void funlock_sleepDisplay(void)
     }
 }
 
+// 真 SACLockScreenImmediate：从 login.framework 动态加载（不需要辅助功能权限，
+// 也不依赖模拟 Control+Command+Q 的修饰键/前台窗口状态）。
+typedef void (*SACLockScreenFn)(void);
+
+static SACLockScreenFn lockScreenFn = NULL;
+static pthread_once_t lockScreenOnce = PTHREAD_ONCE_INIT;
+
+static void loadLockScreenFn(void)
+{
+    void *handle = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login",
+                          RTLD_LAZY);
+    if (handle != NULL) {
+        lockScreenFn = (SACLockScreenFn)dlsym(handle, "SACLockScreenImmediate");
+    }
+}
+
 int SACLockScreenImmediate(void)
 {
-    // 发送真正的系统锁屏快捷键：Control+Command+Q（macOS 内置"锁定屏幕"快捷键）
-    // 注意：旧实现（IORequestIdle）只会熄灭屏幕、不会锁定会话，本函数改用 CGEvent 模拟真实按键
-    CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-    if (src == NULL) {
-        // 事件源创建失败（罕见），降级为关屏兜底
-        goto fallback;
+    pthread_once(&lockScreenOnce, loadLockScreenFn);
+    if (lockScreenFn != NULL) {
+        lockScreenFn();
+        return 0;
     }
 
-    // 1. Control+Command 按下（keyCode 59 = Control 键）
-    CGEventRef modsDown = CGEventCreateKeyboardEvent(src, 59, true);
-    // 2. Q 按下（virtualKey 12）
-    CGEventRef qDown = CGEventCreateKeyboardEvent(src, 12, true);
-    // 3. Q 抬起
-    CGEventRef qUp = CGEventCreateKeyboardEvent(src, 12, false);
-    // 4. Control+Command 抬起
-    CGEventRef modsUp = CGEventCreateKeyboardEvent(src, 59, false);
-
-    if (modsDown == NULL || qDown == NULL || qUp == NULL || modsUp == NULL) {
-        // 事件构造失败（常见于无辅助功能权限），释放已创建对象后降级为关屏兜底
-        if (modsDown) CFRelease(modsDown);
-        if (qDown) CFRelease(qDown);
-        if (qUp) CFRelease(qUp);
-        if (modsUp) CFRelease(modsUp);
-        CFRelease(src);
-        goto fallback;
-    }
-
-    CGEventSetFlags(modsDown, kCGEventFlagMaskControl | kCGEventFlagMaskCommand);
-    CGEventSetFlags(qDown, kCGEventFlagMaskControl | kCGEventFlagMaskCommand);
-    CGEventSetFlags(qUp, kCGEventFlagMaskControl | kCGEventFlagMaskCommand);
-    CGEventSetFlags(modsUp, kCGEventFlagMaskControl | kCGEventFlagMaskCommand);
-
-    CGEventPost(kCGHIDEventTap, modsDown);
-    CGEventPost(kCGHIDEventTap, qDown);
-    CGEventPost(kCGHIDEventTap, qUp);
-    CGEventPost(kCGHIDEventTap, modsUp);
-
-    CFRelease(modsDown);
-    CFRelease(qDown);
-    CFRelease(qUp);
-    CFRelease(modsUp);
-    CFRelease(src);
-    return 0;
-
-fallback:
-    ; // 空语句：标签必须附着在语句上，不能直接跟声明（旧版 clang 严格报错）
+    // 私有框架不可用时仅降级为关屏（不会锁定会话），由上层回读验证并回滚状态
     io_registry_entry_t reg = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler");
     if (reg) {
         IORegistryEntrySetCFProperty(reg, CFSTR("IORequestIdle"), kCFBooleanTrue);

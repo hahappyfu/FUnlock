@@ -445,3 +445,22 @@ final class DisplayWakeSessionStateTests: XCTestCase {
         XCTAssertEqual(manager.state.screen, .unlocked)
     }
 }
+
+// MARK: - Task 11：唤醒断言释放
+
+@MainActor
+final class WakeAssertionReleaseTests: XCTestCase {
+
+    func testInjectPreludeReleasesWakeAssertionAfterWakingDisplay() async {
+        let released = CancellationTestCounter()
+        SystemInteractionService.displayPoweredOnProvider = { false }
+        SystemInteractionService.wakeAssertionReleaseOverride = { released.increment() }
+        defer {
+            SystemInteractionService.displayPoweredOnProvider = nil
+            SystemInteractionService.wakeAssertionReleaseOverride = nil
+        }
+
+        _ = await SystemInteractionService.shared.injectPasswordWithPrelude("pw") { false }
+        XCTAssertEqual(released.count, 1, "因注入前奏而唤醒显示器后必须释放 IOPMAssertion")
+    }
+}

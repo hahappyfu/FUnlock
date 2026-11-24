@@ -60,6 +60,9 @@ final class SystemInteractionService: Sendable {
     /// 测试注入：告警展示器（nil = 真实 NSAlert）
     nonisolated(unsafe) static var alertPresenterOverride: (@MainActor (DeferredAlertKind) -> Void)?
 
+    /// 测试注入：替换唤醒断言释放（nil = 调用 funlock_releaseWakeAssertion）
+    nonisolated(unsafe) static var wakeAssertionReleaseOverride: (() -> Void)?
+
     // MARK: - Screen State Detection
 
     /// 屏幕是否处于锁定/屏保态。
@@ -422,6 +425,17 @@ final class SystemInteractionService: Sendable {
         guard !Task.isCancelled else { return false }
 
         let displayWasOff = !isDisplayPoweredOn()
+        // 前奏自行唤醒显示器时创建了 IOPMAssertion，退出时必须释放，
+        // 否则 Mac 会被持续阻止自动熄屏。
+        defer {
+            if displayWasOff {
+                if let release = Self.wakeAssertionReleaseOverride {
+                    release()
+                } else {
+                    funlock_releaseWakeAssertion()
+                }
+            }
+        }
         if displayWasOff {
             AppLog.info(.unlock, "injectPreludeWakingDisplay")
             guard await wakeDisplay() else { return false }
