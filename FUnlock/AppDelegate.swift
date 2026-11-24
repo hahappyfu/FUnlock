@@ -640,11 +640,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let hostingVC = NSHostingController(rootView: dashboard)
         settingsWindow = NSWindow(contentViewController: hostingVC)
         settingsWindow.title = "Funlock"
-        settingsWindow.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
-        // 玻璃底座：标题栏透明 + 非不透明窗口 + 清空底色，让极光流光与桌面壁纸从红绿灯一路透到窗口底边
-        settingsWindow.titlebarAppearsTransparent = true
-        settingsWindow.isOpaque = false
-        settingsWindow.backgroundColor = .clear
+        settingsWindow.styleMask = [.titled, .closable, .resizable]
+        // 精密仪器风：原生不透明窗口，内容区由 FUnlockTheme.Surface.canvas 铺底
+        settingsWindow.isOpaque = true
+        settingsWindow.backgroundColor = .windowBackgroundColor
         settingsWindow.contentMinSize = NSSize(width: 560, height: 460)
         settingsWindow.isReleasedWhenClosed = false
         settingsWindow.center()

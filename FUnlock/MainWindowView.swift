@@ -81,15 +81,8 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 560, minHeight: 460)
         .background {
-            ZStack {
-                // 超薄材质垫底，硬件加速透射桌面壁纸
-                Rectangle().fill(.ultraThinMaterial)
-                // 极光自发光网格在毛玻璃之上向视窗内晕染，避免双层 Material 互叠变牛奶白
-                LiquidAuroraMesh(opacity: colorScheme == .dark ? 0.25 : 0.50)
-                // 晶体表面薄霜（轻微润色，维持极致通透度）
-                Color.white.opacity(colorScheme == .dark ? 0.03 : 0.08)
-            }
-            .ignoresSafeArea()
+            // 精密仪器风：实体画布底，无材质、无极光、无渐变
+            FUnlockTheme.Surface.canvas.color.ignoresSafeArea()
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
