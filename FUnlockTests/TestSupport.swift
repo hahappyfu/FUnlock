@@ -5,7 +5,8 @@ import XCTest
 /// 读写 ConfigStore.shared（生产 suite 域），测试侧无法注入替代 store，只能写后恢复。
 /// init 时快照 key 原始状态，restore() 精确还原（原值回写 / 原不存在则删除），
 /// 注册为 teardown block 后断言失败也会执行，保证测试对生产配置域零净影响。
-struct ConfigKeySnapshot {
+/// @unchecked Sendable：快照 init 后不可变，UserDefaults 自身线程安全。
+struct ConfigKeySnapshot: @unchecked Sendable {
     private let defaults: UserDefaults
     private let originals: [(key: String, value: Any?)]
 

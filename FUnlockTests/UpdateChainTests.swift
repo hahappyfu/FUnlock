@@ -88,7 +88,7 @@ final class UpdateChainTests: XCTestCase {
             states.append(state)
             if case .downloading = state { exp.fulfill() }
         }
-        downloader.urlSession(.shared, downloadTask: URLSessionDownloadTask(),
+        downloader.urlSession(.shared, downloadTask: makeFakeDownloadTask(),
                               didWriteData: 50, totalBytesWritten: 50, totalBytesExpectedToWrite: 100)
         wait(for: [exp], timeout: 2)
         guard case .downloading(let progress) = states.first else {
@@ -102,7 +102,7 @@ final class UpdateChainTests: XCTestCase {
         let exp = expectation(description: "totalBytesExpectedToWrite=0 不应发状态")
         exp.isInverted = true
         downloader.onStateChange = { _ in exp.fulfill() }
-        downloader.urlSession(.shared, downloadTask: URLSessionDownloadTask(),
+        downloader.urlSession(.shared, downloadTask: makeFakeDownloadTask(),
                               didWriteData: 50, totalBytesWritten: 50, totalBytesExpectedToWrite: 0)
         wait(for: [exp], timeout: 0.3)
     }
@@ -117,7 +117,7 @@ final class UpdateChainTests: XCTestCase {
         }
         let error = NSError(domain: "UpdateChainTests", code: 42,
                             userInfo: [NSLocalizedDescriptionKey: "网络中断"])
-        downloader.urlSession(.shared, task: URLSessionTask(), didCompleteWithError: error)
+        downloader.urlSession(.shared, task: makeFakeURLSessionTask(), didCompleteWithError: error)
         wait(for: [exp], timeout: 2)
         XCTAssertEqual(states.first, .failed("网络中断"))
     }
@@ -127,7 +127,7 @@ final class UpdateChainTests: XCTestCase {
         let exp = expectation(description: "无 error 的完成回调不应发状态")
         exp.isInverted = true
         downloader.onStateChange = { _ in exp.fulfill() }
-        downloader.urlSession(.shared, task: URLSessionTask(), didCompleteWithError: nil)
+        downloader.urlSession(.shared, task: makeFakeURLSessionTask(), didCompleteWithError: nil)
         wait(for: [exp], timeout: 0.3)
     }
 
@@ -224,4 +224,16 @@ final class UpdateChainTests: XCTestCase {
         checker.check()
         wait(for: [exp], timeout: 0.5)
     }
+}
+
+/// 构造未启动的 URLSession 任务，用于直接调用 URLSession delegate 回调（不触发网络）。
+/// 旧 `URLSessionDownloadTask()` / `URLSessionTask()` 初始化器自 macOS 10.15 起已废弃。
+private func makeFakeDownloadTask() -> URLSessionDownloadTask {
+    URLSession(configuration: .ephemeral)
+        .downloadTask(with: URL(string: "https://example.invalid/fake.zip")!)
+}
+
+private func makeFakeURLSessionTask() -> URLSessionTask {
+    URLSession(configuration: .ephemeral)
+        .dataTask(with: URL(string: "https://example.invalid/")!)
 }

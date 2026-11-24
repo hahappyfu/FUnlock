@@ -2,6 +2,7 @@
 import XCTest
 @testable import FUnlock
 
+@MainActor
 final class DiagnosticsViewTests: XCTestCase {
     func testScreenLabelMapsKnownStates() {
         XCTAssertEqual(DecisionEvent.screenLabel("locked(away)"), "screen_locked_away")

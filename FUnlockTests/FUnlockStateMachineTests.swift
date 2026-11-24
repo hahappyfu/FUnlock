@@ -449,6 +449,14 @@ final class AttemptUnlockFailureBudgetTests: XCTestCase {
 @MainActor
 final class DegradedNotificationDeliveryTests: XCTestCase {
 
+    /// 通知设置回调后台线程写、测试线程读：用锁保护，避免并发捕获局部 var。
+    private final class AuthorizationStatusBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: UNAuthorizationStatus?
+        func set(_ newValue: UNAuthorizationStatus) { lock.lock(); value = newValue; lock.unlock() }
+        func get() -> UNAuthorizationStatus? { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
     func testHandleUnlockFailureDegradePathPostsLocalNotification() throws {
         let center = UNUserNotificationCenter.current()
         // 清理历史投递，避免旧残留造成假阳性
@@ -461,12 +469,13 @@ final class DegradedNotificationDeliveryTests: XCTestCase {
         XCTAssertEqual(sm.currentState, .degraded, "前置：3 次失败进入降级路径")
 
         let settingsExp = expectation(description: "notification settings")
-        var status: UNAuthorizationStatus?
+        let statusBox = AuthorizationStatusBox()
         center.getNotificationSettings { settings in
-            status = settings.authorizationStatus
+            statusBox.set(settings.authorizationStatus)
             settingsExp.fulfill()
         }
         wait(for: [settingsExp], timeout: 5)
+        let status = statusBox.get()
         guard let status, [.authorized, .provisional].contains(status) else {
             throw XCTSkip("通知未授权(\(String(describing: status)))，无法验证系统投递；授权环境下运行此用例")
         }

@@ -182,19 +182,27 @@ final class BarkNotifier: @unchecked Sendable {
         }
     }
 
+    /// URLSession 回调在后台线程写、queue 线程读：用锁保护，避免并发捕获局部 var。
+    private final class HTTPResultBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: (Int, Data)?
+        func set(_ newValue: (Int, Data)) { lock.lock(); value = newValue; lock.unlock() }
+        func get() -> (Int, Data)? { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
     /// 阻塞执行 HTTP 请求，返回 (状态码, 响应体)。仅允许从 queue 队列内调用。
     private func runRequest(_ request: URLRequest) -> (Int, Data)? {
         if let sender = requestSender {
             return sender(request)
         }
         let semaphore = DispatchSemaphore(value: 0)
-        var result: (Int, Data)?
+        let resultBox = HTTPResultBox()
         URLSession.shared.dataTask(with: request) { data, response, _ in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            result = (status, data ?? Data())
+            resultBox.set((status, data ?? Data()))
             semaphore.signal()
         }.resume()
         semaphore.wait()
-        return result
+        return resultBox.get()
     }
 }

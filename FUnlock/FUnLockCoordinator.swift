@@ -326,7 +326,7 @@ extension FUn {
             heartbeatTimer = nil
             return t
         }
-        if let t = old { DispatchQueue.main.async { t.invalidate() } }
+        old?.invalidateOnMain()
     }
 
     // MARK: - 锁冷静期
@@ -366,7 +366,7 @@ extension FUn {
             lockTimerExtended = false
             return old
         }
-        if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }
+        oldTimer?.invalidateOnMain()
         RunLoop.main.add(timer, forMode: .common)
         // 立即补采一次：让单样本骤降在定时器到期前拿到确认样本
         scanner.handler.triggerImmediateRSSIProbe()
@@ -480,7 +480,7 @@ extension FUn {
                 lockTimerExtended = false
                 return t
             }
-            if let oldTimer { DispatchQueue.main.async { oldTimer.invalidate() } }
+            oldTimer?.invalidateOnMain()
         } else {
             let (curPresence, curTimer) = lock.withLock { (presence, proximityTimer) }
             AppLog.debug(.lock, "applyLockTimer", [("eff", String(format: "%.1f", effectiveRSSI)), ("threshold", "\(Int(threshold))"), ("presence", "\(curPresence)"), ("hasTimer", "\(curTimer != nil)")])

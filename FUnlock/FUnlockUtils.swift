@@ -5,6 +5,22 @@ func t(_ key: String) -> String {
     return NSLocalizedString(key, comment: "")
 }
 
+// MARK: - Timer 主队列失效
+
+/// Timer 不是 Sendable，但 invalidate 必须在注册线程（主 RunLoop）执行。
+/// 只把只读盒子交给主队列，盒子内部只调用 invalidate，无并发读写。
+private struct MainInvalidateTimerBox: @unchecked Sendable {
+    let timer: Timer
+}
+
+extension Timer {
+    /// 异步在主队列失效（Timer 注册在主 RunLoop）。
+    func invalidateOnMain() {
+        let box = MainInvalidateTimerBox(timer: self)
+        DispatchQueue.main.async { box.timer.invalidate() }
+    }
+}
+
 // MARK: - 日志滚动（防无界增长）
 
 /// 日志文件滚动：单文件超过上限时归档为 `<filename>.old`（覆盖旧备份）并新建空文件，

@@ -166,7 +166,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         }
 
         // invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+        oldTimer?.invalidateOnMain()
         if let p = peripheralToCancel {
             centralMgr.cancelPeripheralConnection(p)
         }
@@ -185,7 +185,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
             return collected
         }
         // invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        for t in timers { DispatchQueue.main.async { t.invalidate() } }
+        timers.forEach { $0.invalidateOnMain() }
     }
 
     /// 锁内按 id 取设备并转为不可变快照，供统一派发点复用
@@ -204,7 +204,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
             device.scanTimer = nil
             return t
         }
-        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+        oldTimer?.invalidateOnMain()
         let uuid = device.uuid
         // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
         let peripheral = device.peripheral

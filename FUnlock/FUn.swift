@@ -207,7 +207,7 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             scanner.monitoredUUIDs = [uuid]
             return (old, timers)
         }
-        for t in oldTimers { DispatchQueue.main.async { t.invalidate() } }
+        oldTimers.forEach { $0.invalidateOnMain() }
 
         // proximityTimer 置换：锁内取引用并清空，invalidate 派发回主线程
         let oldProximity: Timer? = lock.withLock {
@@ -217,7 +217,7 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             lockTimerExtended = false
             return t
         }
-        if let t = oldProximity { DispatchQueue.main.async { t.invalidate() } }
+        oldProximity?.invalidateOnMain()
         resetSignalTimer()
         cancelHeartbeat()
 
@@ -247,7 +247,7 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             if let t = heartbeatTimer { collected.append(t); heartbeatTimer = nil }
             return collected
         }
-        for t in timers { DispatchQueue.main.async { t.invalidate() } }
+        timers.forEach { $0.invalidateOnMain() }
         scanner?.handler.invalidateAllTimers()
     }
 

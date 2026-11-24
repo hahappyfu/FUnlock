@@ -79,7 +79,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             connectionTimer = nil
             return t
         }
-        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+        oldTimer?.invalidateOnMain()
         let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] timer in
             guard let self = self else { return }
             // 过期 fire 丢弃：didConnect 已置换/清空计时器（60s 边界防误 cancel 刚建立的连接）
@@ -101,7 +101,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             activeModeTimer = nil
             return (activePollInterval, t)
         }
-        if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+        oldTimer?.invalidateOnMain()
 
         let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] timer in
             guard let self = self else {
@@ -141,7 +141,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             if let t = connectionTimer { collected.append(t); connectionTimer = nil }
             return collected
         }
-        for t in timers { DispatchQueue.main.async { t.invalidate() } }
+        timers.forEach { $0.invalidateOnMain() }
     }
 
     // MARK: - 中央管理器转发
@@ -185,7 +185,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
                 connectionTimer = nil
                 return t
             }
-            if let t = oldTimer { DispatchQueue.main.async { t.invalidate() } }
+            oldTimer?.invalidateOnMain()
             // 优化 4：主动模式已连接，停掉全局扫描
             scanner.centralMgr.stopScan()
             peripheral.readRSSI()
