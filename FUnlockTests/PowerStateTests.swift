@@ -383,6 +383,16 @@ class PowerStateScanControlIntegrationTests: XCTestCase {
         manager.fun.invalidateAllTimers()
         // 无崩溃即通过
     }
+
+    /// 二次睡眠必须取消挂起的系统唤醒任务，避免旧任务把状态倒置为 awake
+    func testSecondSleepCancelsPendingSystemWakeTask() async {
+        manager.systemWakeDelay = 0.2
+        manager.onSystemSleep()
+        manager.onSystemWake()
+        manager.onSystemSleep()  // 0.2s 内再次睡眠
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(manager.state.system, .sleeping)
+    }
 }
 
 // MARK: - InputActivityMonitor

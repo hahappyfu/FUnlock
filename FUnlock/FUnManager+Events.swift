@@ -52,6 +52,10 @@ extension FUnManager {
         AppLog.info(.sm, "systemSleep")
         recordSystem(.systemSleep)
         state.system = .sleeping
+        systemWakeTask?.cancel()
+        systemWakeTask = nil
+        systemWakeGeneration &+= 1
+        cancelDeferredLockRecheck()
         // 休眠期间临时转 regular：睡眠/唤醒窗口内可能需要弹出交互窗（改密确认、更新安装确认），
         // accessory（菜单栏 agent）拿不到关键窗口焦点；唤醒完成在 onSystemWake 恢复 accessory
         NSApp.setActivationPolicy(.regular)
@@ -60,12 +64,20 @@ extension FUnManager {
     func onSystemWake() {
         AppLog.info(.sm, "systemWake")
         recordSystem(.systemWake)
-        // 延迟等待蓝牙栈恢复（默认 1s，测试注入更小值）
+        // 延迟等待蓝牙栈恢复（默认 1s，测试注入更小值）；二次睡眠/重复唤醒会取消旧任务
+        systemWakeTask?.cancel()
+        systemWakeGeneration &+= 1
+        let generation = systemWakeGeneration
         let delay = systemWakeDelay
-        Task { @MainActor [weak self] in
+        systemWakeTask = Task { @MainActor [weak self] in
+            defer {
+                if let self, self.systemWakeGeneration == generation {
+                    self.systemWakeTask = nil
+                }
+            }
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
+            guard !Task.isCancelled, let self, self.systemWakeGeneration == generation else { return }
+            guard self.state.system == .sleeping else { return }
             // 恢复菜单栏 agent 形态（配对 onSystemSleep 的临时 regular，见该处注释）
             NSApp.setActivationPolicy(.accessory)
             self.state.system = .awake
@@ -85,6 +97,7 @@ extension FUnManager {
 
     func onUnlock() {
         AppLog.info(.sm, "userUnlocked")
+        cancelDeferredLockRecheck()
         clearSelfLockWindow()
         state.screen = .unlocked
         state.unlockedAt = Date()
@@ -159,6 +172,7 @@ extension FUnManager {
     /// 无条件进入 manualLock 状态，防止设备走远再靠近时自动解锁
     func onSystemScreenLocked() {
         AppLog.info(.sm, "systemScreenLocked")
+        cancelDeferredLockRecheck()
         // 自锁窗口内：按自动锁处理且不清空窗口（屏保通知可能随后到达）；
         // 窗口外：手动锁，永久阻止自动解锁直到 onUnlock。
         let isSelfLock = isWithinSelfLockWindow
@@ -177,7 +191,67 @@ extension FUnManager {
 
     // MARK: - FUn 设备事件
 
+    // MARK: - 延迟补锁复查（安全 Wi-Fi / 解锁冷静期）
+
+    /// 取消待执行的补锁复查（设备回场 / 已锁屏 / 手动操作）。
+    func cancelDeferredLockRecheck() {
+        deferredLockGeneration &+= 1
+        deferredLockTask?.cancel()
+        deferredLockTask = nil
+    }
+
+    private func resolvedLockThresholdValue() -> Int {
+        SignalHysteresisEngine.resolvedLockThreshold(unlockRSSI: fun.unlockRSSI, lockRSSI: fun.lockRSSI)
+    }
+
+    /// 当前是否仍满足自动锁屏条件（屏幕未锁、设备不在场、信号低于锁定阈值、冷静期已过）。
+    private func shouldRetryDeferredLock() -> Bool {
+        guard state.screen == .unlocked else { return false }
+        let snap = fun.signalSnapshot()
+        guard !snap.presence else { return false }
+        guard snap.effectiveRSSI < Double(resolvedLockThresholdValue()) else { return false }
+        guard !fun.isWithinLockGracePeriod() else { return false }
+        return true
+    }
+
+    private func scheduleGraceRecheck(reason: String) {
+        let remaining = fun.lockGraceRemaining
+        cancelDeferredLockRecheck()
+        deferredLockGeneration &+= 1
+        let generation = deferredLockGeneration
+        deferredLockTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0.05, remaining + 0.05) * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.deferredLockGeneration == generation else { return }
+            self.deferredLockTask = nil
+            guard self.shouldRetryDeferredLock() else { return }
+            self.onDeviceLeft(reason: reason)
+        }
+    }
+
+    private func scheduleTrustedWiFiRecheck(reason: String, targetSSID: String) {
+        cancelDeferredLockRecheck()
+        deferredLockGeneration &+= 1
+        let generation = deferredLockGeneration
+        let interval = max(0.01, trustedWiFiRecheckInterval)
+        deferredLockTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled, let self, self.deferredLockGeneration == generation else { return }
+                guard self.shouldRetryDeferredLock() else {
+                    self.deferredLockTask = nil
+                    return
+                }
+                if WiFiMonitor.shared.currentSSID != targetSSID {
+                    self.deferredLockTask = nil
+                    self.onDeviceLeft(reason: reason)
+                    return
+                }
+            }
+        }
+    }
+
     func onDeviceApproached() {
+        cancelDeferredLockRecheck()
         let snap = fun.signalSnapshot()
         // 键缺失时按启用处理（与 UI @AppStorage 默认值一致），避免静默拦截锁屏/解锁
         let enabled = ConfigStore.shared.bool(forKey: "enabled", default: true)
@@ -232,6 +306,8 @@ extension FUnManager {
         // 覆盖 lost 快速锁屏路径（3 次 BLE 超时 → markSignalLost），防止刚解锁又秒锁
         guard !fun.isWithinLockGracePeriod() else {
             AppLog.info(.lock, "deviceLeftBlocked", [("reason", "withinUnlockGracePeriod")])
+            // 冷静期结束后若仍未回场，自动补锁一次
+            scheduleGraceRecheck(reason: reason)
             return
         }
 
@@ -243,6 +319,8 @@ extension FUnManager {
            let targetSSID = ConfigStore.shared.string(forKey: "pauseOnWiFiSSID"), !targetSSID.isEmpty,
            let currentSSID = WiFiMonitor.shared.currentSSID, currentSSID == targetSSID {
             AppLog.info(.lock, "deviceLeftSkipped", [("reason", "trustedWiFi"), ("ssid", currentSSID)])
+            // 离开该 Wi-Fi 且设备仍不在场时自动补锁
+            scheduleTrustedWiFiRecheck(reason: reason, targetSSID: targetSSID)
             return
         }
 
@@ -254,6 +332,14 @@ extension FUnManager {
         let sys = SystemInteractionService.shared
         sys.lockOrSaveScreen(useScreensaver: prefs.bool(forKey: "screensaver"),
                              sleepDisplayAfter: prefs.bool(forKey: "sleepDisplay"))
+        // 只有真正执行锁屏动作后才记录采样事件（被拦截时不产生虚假 .locked 点）
+        SignalDataStore.shared.record(
+            rawRSSI: Double(rssi ?? -100),
+            kalmanEstimate: snap.kalmanEstimate,
+            effectiveRSSI: snap.effectiveRSSI,
+            slope: snap.smoothedSlope,
+            isAnomalous: snap.lastSignalAnomalous,
+            event: .locked)
         sys.notifyLock(reason: reason)
         ScriptRunner.shared.runScript(reason, rssi: rssi, deviceName: monitoredDeviceName)
         ScriptRunner.shared.logEvent("locked: \(reason)", rssi: rssi)

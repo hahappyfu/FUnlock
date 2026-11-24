@@ -293,7 +293,8 @@ extension FUn {
                 AppLog.debug(.lock, "heartbeat", [("eff", String(format: "%.1f", eff)), ("threshold", "\(Int(threshold))"), ("hasTimer", "\(hasTimer)"), ("graceElapsed", String(format: "%.1f", graceElapsed)), ("inputActive", "\(inputActive)")])
             }
             if eff < threshold && !hasTimer && graceElapsed >= self.proximityGracePeriod {
-                if inputActive {
+                let lockOnIdle = ConfigStore.shared.bool(forKey: "lockOnIdle", default: true)
+                if lockOnIdle && inputActive {
                     // 用户活跃时重置衰减基准，阻止衰减累积
                     self.lock.withLock {
                         self.lastReceiveTime = Date()
@@ -348,6 +349,13 @@ extension FUn {
         let last = lock.withLock { lastProximityEventTime }
         return SignalHysteresisEngine.isWithinLockGracePeriod(
             lastUnlockTime: last, gracePeriod: proximityGracePeriod, now: now)
+    }
+
+    /// 距离解锁冷静期结束的剩余秒数（供冷静期拦截后的补锁复查）。
+    var lockGraceRemaining: TimeInterval {
+        lock.withLock {
+            max(0, proximityGracePeriod - Date().timeIntervalSince(lastProximityEventTime))
+        }
     }
 
     // MARK: - Lock timer (shared by updateMonitoredPeripheral and heartbeat)
@@ -453,11 +461,6 @@ extension FUn {
             return
         }
         AppLog.info(.lock, "deviceAway")
-        // P1: 记录锁定事件
-        SignalDataStore.shared.record(
-            rawRSSI: -100, kalmanEstimate: -100,
-            effectiveRSSI: -100, slope: 0, isAnomalous: false,
-            event: .locked)
         lock.withLock {
             presence = false
             clearProximityTimerLocked(ifMatches: timer)

@@ -717,4 +717,36 @@ class OrchestratorGatesTests: XCTestCase {
         XCTAssertTrue(manager.state.intent.isManualLockActive,
                       "自锁窗口被 onUnlock 清除后，后续锁屏必须按手动锁处理")
     }
+
+    // MARK: - Task 8: 安全 Wi-Fi 拦截后的自动补锁
+
+    func testDeferredLockRetriesAfterLeavingTrustedWiFi() async {
+        snapshotKeys(["enabled", "pauseOnWiFi", "pauseOnWiFiSSID", "sleepDisplay"])
+        ConfigStore.shared.defaults.set(true, forKey: "enabled")
+        ConfigStore.shared.defaults.set(true, forKey: "pauseOnWiFi")
+        ConfigStore.shared.defaults.set("Office", forKey: "pauseOnWiFiSSID")
+        ConfigStore.shared.defaults.set(false, forKey: "sleepDisplay")
+
+        let lockCalls = CancellationTestCounter()
+        SystemInteractionService.lockActionOverride = { lockCalls.increment() }
+        WiFiMonitor.ssidProvider = { "Office" }
+        manager.trustedWiFiRecheckInterval = 0.05
+        defer {
+            WiFiMonitor.ssidProvider = nil
+            SystemInteractionService.lockActionOverride = {}
+            manager.cancelDeferredLockRecheck()
+        }
+
+        manager.state.screen = .unlocked
+        manager.fun.lock.withLock {
+            manager.fun.presence = false
+            manager.fun.effectiveRSSI = -90
+        }
+        manager.onDeviceLeft(reason: "away")
+        XCTAssertEqual(lockCalls.count, 0, "安全 Wi-Fi 命中时不得锁屏")
+
+        WiFiMonitor.ssidProvider = { "Cafe" }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(lockCalls.count, 1, "离开安全 Wi-Fi 且设备仍不在场时应自动补锁")
+    }
 }

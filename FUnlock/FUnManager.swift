@@ -55,6 +55,14 @@ final class FUnManager {
     /// 后台探测任务的取消句柄，纯内部簿记状态，不参与视图渲染，
     /// 且需在非隔离的 `deinit` 中访问，故显式排除在 @Observable 跟踪之外。
     @ObservationIgnored var intrudeCheckTask: Task<Void, Never>?
+    /// 系统唤醒延迟任务：二次睡眠/重复唤醒时必须可取消
+    @ObservationIgnored var systemWakeTask: Task<Void, Never>?
+    @ObservationIgnored var systemWakeGeneration: UInt64 = 0
+    /// 安全 Wi-Fi / 冷静期拦截后的补锁复查任务
+    @ObservationIgnored var deferredLockTask: Task<Void, Never>?
+    @ObservationIgnored var deferredLockGeneration: UInt64 = 0
+    /// 安全 Wi-Fi 补锁复查间隔（测试可注入）
+    var trustedWiFiRecheckInterval: TimeInterval = 10.0
     @ObservationIgnored private var mediaWasPlaying = false
 
     /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
@@ -166,6 +174,8 @@ final class FUnManager {
 
     deinit {
         intrudeCheckTask?.cancel()
+        systemWakeTask?.cancel()
+        deferredLockTask?.cancel()
         // orchestrator 随本类释放，其 deinit 负责取消 wakeTask / unlockTask
     }
 
@@ -236,6 +246,7 @@ final class FUnManager {
     func lockNow() {
         guard !SystemInteractionService.shared.isScreenLocked(screenState: state.screen) else { return }
         // 手动锁定：清空自锁窗口，永久阻止自动解锁，直到用户下次手动解锁（onUnlock 重置 intent）
+        cancelDeferredLockRecheck()
         clearSelfLockWindow()
         markManualLock()
         state.screen = .locked(reason: .manual)
@@ -342,6 +353,9 @@ final class FUnManager {
         }
         orchestrator.cancelPendingTasks()
         lockVerificationGeneration &+= 1
+        systemWakeTask?.cancel()
+        systemWakeGeneration &+= 1
+        cancelDeferredLockRecheck()
         intrudeCheckTask?.cancel()
     }
 
