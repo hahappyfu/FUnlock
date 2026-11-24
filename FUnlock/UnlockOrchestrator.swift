@@ -189,16 +189,21 @@ final class UnlockOrchestrator {
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
         AppLog.info(.unlock, "injectPasswordStart")
-        let posted = await sys.injectPasswordWithPrelude(
-            password,
-            isSecureCheck: {
-                m.state.screen != .unlocked
-                && sys.isSecureToInject(screenState: m.state.screen)
-            },
-            keystrokeSecureCheck: {
-                m.state.screen != .unlocked
-                && sys.isSecureToInject(screenState: m.state.screen, allowScreensaver: false)
-            })
+        let posted: Bool
+        if let override = SystemInteractionService.injectPasswordOverride {
+            posted = await override(password)
+        } else {
+            posted = await sys.injectPasswordWithPrelude(
+                password,
+                isSecureCheck: {
+                    m.state.screen != .unlocked
+                    && sys.isSecureToInject(screenState: m.state.screen)
+                },
+                keystrokeSecureCheck: {
+                    m.state.screen != .unlocked
+                    && sys.isSecureToInject(screenState: m.state.screen, allowScreensaver: false)
+                })
+        }
         AppLog.info(.unlock, "injectPasswordResult", [("posted", "\(posted)")])
         AppLog.debug(.unlock, "fakeKeyStrokesDone", [("posted", "\(posted)")])
         guard posted else {
@@ -231,13 +236,24 @@ final class UnlockOrchestrator {
         let verificationGeneration = beginUnlockTaskGeneration()
         unlockTask = Task { @MainActor [weak self] in
             let sys = SystemInteractionService.shared
-            let verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
+            let verification: SystemInteractionService.UnlockNotification
+            if let override = SystemInteractionService.verifyUnlockOverride {
+                verification = await override(2.0, 1.0)
+            } else {
+                verification = await sys.verifyUnlock(timeout: 2.0, notificationTimeout: 1.0)
+            }
             guard let self else { return }
             timingLog("event=verifyUnlockDone unlock=\(verification.unlock)")
             // 验证完成（无论成败）后恢复自动解锁标记并清理任务代次，defer 覆盖所有出口
             defer {
                 self.finishUnlockTask(generation: verificationGeneration)
                 self.isAutoUnlocking = false
+            }
+            // 取消不是密码失败：回落到 active，不累加失败计数、不进入 degraded/改密弹窗
+            if Task.isCancelled {
+                AppLog.info(.unlock, "verifyCancelledIgnored")
+                self.manager.stateMachine.transition(to: .active)
+                return
             }
             if verification.unlock {
                 // 通知或 CGSession 确认解锁成功

@@ -624,3 +624,69 @@ final class SecureInjectionSessionTests: XCTestCase {
     }
 }
 
+// MARK: - Task 6：取消安全（不得盲打、不得计失败）
+
+/// 线程安全计数盒子：测试钩子可能在非主 executor 触发。
+private final class CancellationTestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func increment() { lock.lock(); value += 1; lock.unlock() }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+@MainActor
+final class CancellationSafetyTests: XCTestCase {
+
+    func testCancelledPreludeReturnsFalseImmediatelyWithoutBlindInjection() async {
+        SystemInteractionService.displayPoweredOnProvider = { true }
+        let keystrokesReached = CancellationTestCounter()
+        SystemInteractionService.fakeKeyStrokesOverride = { _, _ in
+            keystrokesReached.increment()
+            return true
+        }
+        defer {
+            SystemInteractionService.displayPoweredOnProvider = nil
+            SystemInteractionService.fakeKeyStrokesOverride = nil
+        }
+
+        let task = Task { @MainActor in
+            await SystemInteractionService.shared.injectPasswordWithPrelude("secret") { true }
+        }
+        // 让任务进入 loginwindow 就绪等待，再模拟用户干预取消
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+        let posted = await task.value
+        XCTAssertFalse(posted, "取消后注入前奏必须返回 false")
+        XCTAssertEqual(keystrokesReached.count, 0, "取消后绝不能到达按键注入阶段")
+    }
+
+    func testCancelledVerifyUnlockDoesNotIncrementFailureCountOrDegrade() async {
+        SystemInteractionService.sessionDictProvider = { ["CGSSessionScreenIsLocked": 1] }
+        SystemInteractionService.screensaverRunningProvider = { false }
+        SystemInteractionService.displayPoweredOnProvider = { true }
+        SystemInteractionService.injectPasswordOverride = { _ in true }
+        SystemInteractionService.verifyUnlockOverride = { _, _ in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return .init(unlock: false)
+        }
+        defer {
+            SystemInteractionService.sessionDictProvider = nil
+            SystemInteractionService.screensaverRunningProvider = nil
+            SystemInteractionService.displayPoweredOnProvider = nil
+            SystemInteractionService.injectPasswordOverride = nil
+            SystemInteractionService.verifyUnlockOverride = nil
+        }
+
+        let manager = FUnManager(fun: FUn())
+        XCTAssertTrue(manager.stateMachine.attemptUnlock(), "前置：状态机应允许本次尝试")
+        await manager.orchestrator.performInjectionAndVerify(password: "pw")
+        manager.orchestrator.cancelPendingTasks()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(manager.orchestrator.consecutiveUnlockAttempts, 0, "被取消的验证不得计为密码失败")
+        XCTAssertEqual(manager.stateMachine.consecutiveFailures, 0)
+        XCTAssertEqual(manager.stateMachine.currentState, .active)
+        XCTAssertFalse(manager.orchestrator.isAutoUnlocking)
+    }
+}
+

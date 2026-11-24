@@ -42,6 +42,13 @@ final class SystemInteractionService: Sendable {
     /// 测试注入：前台应用 bundle id（nil = 读真实 NSWorkspace.frontmostApplication）
     nonisolated(unsafe) static var frontmostBundleIDProvider: (() -> String?)?
 
+    /// 测试注入：替换整个密码注入前奏（避免真实 CGEvent 注入）
+    nonisolated(unsafe) static var injectPasswordOverride: (@MainActor (String) async -> Bool)?
+    /// 测试注入：替换双保险解锁验证
+    nonisolated(unsafe) static var verifyUnlockOverride: (@MainActor (TimeInterval, TimeInterval) async -> UnlockNotification)?
+    /// 测试注入：替换按键注入（保留前奏等待/门控），用于取消与安全门控测试，避免真实按键
+    nonisolated(unsafe) static var fakeKeyStrokesOverride: ((String, () -> Bool) -> Bool)?
+
     // MARK: - Screen State Detection
 
     /// 屏幕是否处于锁定/屏保态。
@@ -165,10 +172,16 @@ final class SystemInteractionService: Sendable {
     /// P1-4: 原 Thread.sleep(0.2) 在 @MainActor 注入路径同步阻塞主线程；
     /// async 化后 Task.sleep 只挂起当前任务，主线程事件循环继续处理
     @MainActor
-    func wakeDisplay() async {
+    @discardableResult
+    func wakeDisplay() async -> Bool {
         AppLog.info(.unlock, "wakeDisplayBeforeInjection")
         funlock_wakeDisplay()
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        do {
+            try await Task.sleep(nanoseconds: 200_000_000)
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Screen Control (Lock)
@@ -200,6 +213,9 @@ final class SystemInteractionService: Sendable {
     /// isSecureCheck is called before each batch to verify screen is still locked.
     /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
     func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
+        if let override = Self.fakeKeyStrokesOverride {
+            return override(string, isSecureCheck)
+        }
         AppLog.info(.unlock, "keystrokeInjectionStart", [("passwordLength", "\(string.count)")])
 
         // P1-4: display-off 唤醒已上移至 injectPasswordWithPrelude 开头
@@ -392,11 +408,14 @@ final class SystemInteractionService: Sendable {
                                           keystrokeSecureCheck: (() -> Bool)?) async -> Bool {
         AppLog.info(.unlock, "injectPasswordWithPreludeStart", [("passwordLength", "\(string.count)")])
 
+        guard !Task.isCancelled else { return false }
+
         let displayWasOff = !isDisplayPoweredOn()
         if displayWasOff {
             AppLog.info(.unlock, "injectPreludeWakingDisplay")
-            await wakeDisplay()
+            guard await wakeDisplay() else { return false }
         }
+        guard !Task.isCancelled else { return false }
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         var waitedMs = 0
@@ -406,7 +425,17 @@ final class SystemInteractionService: Sendable {
             let maxWaitMs = displayWasOff ? 2500 : 300
             let stepMs = 100
             while waitedMs < maxWaitMs {
-                try? await Task.sleep(nanoseconds: UInt64(stepMs) * 1_000_000)
+                guard !Task.isCancelled else {
+                    AppLog.error(.unlock, "injectPreludeAborted", [("reason", "cancelled")])
+                    return false
+                }
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(stepMs) * 1_000_000)
+                } catch {
+                    // 取消不得坍缩为 0ms 盲打：立即中止前奏
+                    AppLog.error(.unlock, "injectPreludeAborted", [("reason", "cancelled")])
+                    return false
+                }
                 waitedMs += stepMs
                 // 轮询期间若屏幕已不再处于安全锁定状态（例如用户已手动解锁），立即中止
                 guard isSecureCheck() else {
@@ -425,6 +454,7 @@ final class SystemInteractionService: Sendable {
 
         // 关键门控：显示器若仍处于休眠未点亮状态，绝不盲打注入密码，
         // 防止按键丢失并触发改密误报（2026-10-16 误报根因：唤醒失败后仍继续注入）
+        guard !Task.isCancelled else { return false }
         guard isDisplayPoweredOn() else {
             AppLog.error(.unlock, "injectPreludeDisplayStillAsleep", [("waitedMs", "\(waitedMs)"), ("action", "abortInjection")])
             return false
