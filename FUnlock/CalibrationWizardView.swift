@@ -350,15 +350,13 @@ struct CalibrationWizardView: View {
             let totalMs = duration * 10
             for i in 0..<totalMs {
                 guard !Task.isCancelled else { return }
-                // 改采有效判定源 effectiveRSSI（与实际靠近/离开判定同源，避免 displayRSSI 收敛延迟导致均值偏高）
+                // 采样一律使用与实际靠近/离开判定同源的 effectiveRSSI；
+                // 只要仍有信号（presence 或 displayRSSI 非空）就不再退回慢收敛值。
                 let snap = manager.fun.signalSnapshot()
-                if snap.presence {
+                if snap.presence || manager.rssi != nil {
                     let eff = Int(snap.effectiveRSSI.rounded())
                     samples.append(eff)
                     currentRSSI = eff
-                } else if let rssi = manager.rssi {
-                    samples.append(rssi)
-                    currentRSSI = rssi
                 }
                 samplingProgress = Double(i) / Double(totalMs)
                 try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
