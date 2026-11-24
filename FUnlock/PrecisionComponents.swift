@@ -308,6 +308,8 @@ struct ControlRow: View {
 /// 状态徽标：图标 + 文案 + 语义色（颜色之外必须有形与字）
 struct StatusBadge: View {
     let presentation: StatusPresentation
+    /// 放在 sidebar / well 等抬升表面时置 true，浅色下改用更深一档的文字色（≥ 4.5:1）
+    var onElevatedSurface: Bool = false
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -318,7 +320,7 @@ struct StatusBadge: View {
             Text(t(presentation.titleKey))
                 .font(.caption.weight(.semibold))
         }
-        .foregroundStyle(presentation.tone.textColor)
+        .foregroundStyle(onElevatedSurface ? presentation.tone.altTextColor : presentation.tone.textColor)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(
