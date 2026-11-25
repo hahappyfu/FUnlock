@@ -3,26 +3,26 @@
 
 import Foundation
 
-struct RingBuffer<T> {
+public struct RingBuffer<T> {
     private var buffer: [T?]
     private var head: Int = 0      // 下一个写入位置
-    private(set) var count: Int = 0
-    let capacity: Int
+    public private(set) var count: Int = 0
+    public let capacity: Int
 
-    init(capacity: Int) {
+    public init(capacity: Int) {
         self.capacity = capacity
         self.buffer = [T?](repeating: nil, count: capacity)
     }
 
     /// 追加元素；满时自动覆盖最旧的
-    mutating func append(_ element: T) {
+    public mutating func append(_ element: T) {
         buffer[head] = element
         head = (head + 1) % capacity
         if count < capacity { count += 1 }
     }
 
     /// 按时间顺序读取（从最旧到最新）
-    subscript(index: Int) -> T {
+    public subscript(index: Int) -> T {
         precondition(index >= 0 && index < count, "RingBuffer index out of range")
         let start = (head - count + capacity) % capacity
         let actual = (start + index) % capacity
@@ -30,21 +30,21 @@ struct RingBuffer<T> {
     }
 
     /// 替换最后一个元素（为空时无操作）
-    mutating func replaceLast(_ element: T) {
+    public mutating func replaceLast(_ element: T) {
         guard count > 0 else { return }
         let lastIndex = (head - 1 + capacity) % capacity
         buffer[lastIndex] = element
     }
 
     /// 清空
-    mutating func clear() {
+    public mutating func clear() {
         buffer = [T?](repeating: nil, count: capacity)
         head = 0
         count = 0
     }
 
     /// 转为有序数组（最旧在前）
-    func toArray() -> [T] {
+    public func toArray() -> [T] {
         var result = [T]()
         result.reserveCapacity(count)
         let start = (head - count + capacity) % capacity
@@ -54,3 +54,5 @@ struct RingBuffer<T> {
         return result
     }
 }
+
+extension RingBuffer: Sendable where T: Sendable {}

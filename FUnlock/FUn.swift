@@ -34,17 +34,6 @@ enum BLEUUIDs {
     static let exposureNotification = CBUUID(string: "FD6F")
 }
 
-/// 接近阈值窗口（dBm）：有效信号进入 [threshold-window, threshold) 时启用快速轮询
-let proximityPollWindow = 15.0
-/// 解锁 → 锁定 联动迟滞（dB）：调解解锁阈值时锁定自动设为 unlockRSSI - lockUnlockDelayGap
-let lockUnlockDelayGap = 10
-/// 快速锁屏（s）：信号快速下降时的锁屏超时
-let fastLockTimeout = 2.5
-/// 判定「快速下降」的斜率阈值（dBm/s），slope ≤ -8 视为快速离开
-let fastSlopeThreshold = 8.0
-/// 判定「缓降」的斜率阈值（dBm/s），slope ≥ -1 视为接近平稳
-let mildSlopeThreshold = 1.0
-
 /// 蓝牙事件回调协议：所有回调均涉及 UI 更新、通知或主线程状态机
 /// （AppDelegate 的 manager.onDeviceDiscovered 等），故协议层隔离到主 actor。
 /// 设备事件（newDevice/updateDevice/removeDevice）统一携带不可变纯值 `DeviceSnapshot`，

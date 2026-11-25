@@ -1,12 +1,26 @@
 import Foundation
 
+// MARK: - 信号轮询与锁屏超时全局常量（自 FUn.swift 迁入纯逻辑包）
+
+/// 接近阈值窗口（dBm）：有效信号进入 [threshold-window, threshold) 时启用快速轮询
+public let proximityPollWindow = 15.0
+/// 解锁 → 锁定 联动迟滞（dB）：调解解锁阈值时锁定自动设为 unlockRSSI - lockUnlockDelayGap
+public let lockUnlockDelayGap = 10
+/// 快速锁屏（s）：信号快速下降时的锁屏超时
+public let fastLockTimeout = 2.5
+/// 判定「快速下降」的斜率阈值（dBm/s），slope ≤ -8 视为快速离开
+public let fastSlopeThreshold = 8.0
+/// 判定「缓降」的斜率阈值（dBm/s），slope ≥ -1 视为接近平稳
+public let mildSlopeThreshold = 1.0
+
 // MARK: - 线程安全锁
 
-final class UnfairLock: @unchecked Sendable {
+public final class UnfairLock: @unchecked Sendable {
     private var _lock = os_unfair_lock()
-    func lock() { os_unfair_lock_lock(&_lock) }
-    func unlock() { os_unfair_lock_unlock(&_lock) }
-    func withLock<T>(_ body: () -> T) -> T {
+    public init() {}
+    public func lock() { os_unfair_lock_lock(&_lock) }
+    public func unlock() { os_unfair_lock_unlock(&_lock) }
+    public func withLock<T>(_ body: () -> T) -> T {
         lock()
         let result = body()
         unlock()
@@ -16,28 +30,37 @@ final class UnfairLock: @unchecked Sendable {
 
 // MARK: - 信号处理管道类型
 
-struct SignalDecision: Equatable {
-    let kalmanEstimate: Double
-    let effectiveRSSI: Double
-    let slope: Double
-    let isAnomalous: Bool
-    let sourceWeight: Double
+public struct SignalDecision: Equatable, Sendable {
+    public let kalmanEstimate: Double
+    public let effectiveRSSI: Double
+    public let slope: Double
+    public let isAnomalous: Bool
+    public let sourceWeight: Double
+
+    public init(kalmanEstimate: Double, effectiveRSSI: Double, slope: Double,
+                isAnomalous: Bool, sourceWeight: Double) {
+        self.kalmanEstimate = kalmanEstimate
+        self.effectiveRSSI = effectiveRSSI
+        self.slope = slope
+        self.isAnomalous = isAnomalous
+        self.sourceWeight = sourceWeight
+    }
 }
 
-enum SignalSource { case scanning, connected }
+public enum SignalSource: Sendable { case scanning, connected }
 
 // MARK: - 管道状态容器
 
-struct SignalPipeline {
-    var kalmanEstimate: Double = -60.0
-    var kalmanP: Double = 1.0
-    var kalmanSampleCount: Int = 0
-    var smoothedSlope: Double = 0.0
-    var latestRSSIs: [Double] = []
-    var rssiTimestamps: [Date] = []
+public struct SignalPipeline: Sendable {
+    public var kalmanEstimate: Double = -60.0
+    public var kalmanP: Double = 1.0
+    public var kalmanSampleCount: Int = 0
+    public var smoothedSlope: Double = 0.0
+    public var latestRSSIs: [Double] = []
+    public var rssiTimestamps: [Date] = []
     /// 输入活跃时重置衰减基准，防止用户操作期间 effectiveRSSI 因时间衰减跌破阈值
-    var decayBaseline: Date = .distantPast
-    let windowDuration: TimeInterval = 1.5
+    public var decayBaseline: Date = .distantPast
+    public let windowDuration: TimeInterval = 1.5
 
     // Kalman 参数
     private let kalmanQ: Double = 0.008
@@ -57,7 +80,7 @@ struct SignalPipeline {
     // IQR 参数
     private let iqrMultiplier: Double = 2.0
     /// IQR 异常检测的固定样本数 N（调用方时间窗裁剪须保底保留该数量）
-    let iqrSampleCount: Int = 8
+    public let iqrSampleCount: Int = 8
 
     // EWLR 参数
     private let ewlrLambda: Double = 0.4
@@ -66,17 +89,19 @@ struct SignalPipeline {
     /// 信号中断判定阈值（秒）：距上一采样超过该值视为中断恢复，重置 Kalman 状态
     private let interruptionResetThreshold: TimeInterval = 30.0
 
+    public init() {}
+
     /// 斜率/裁剪时间窗：max(1.5s, 2×最近两样本间隔)。
     /// 固定 1.5s 窗口在 2s/8s 慢采样档只剩 1 个样本导致斜率恒 0，窗口须随采样间隔自适应
     /// （调用方在摄入当前样本后调用，rssiTimestamps 倒数两个即最近样本间隔）
-    func effectiveWindowDuration() -> TimeInterval {
+    public func effectiveWindowDuration() -> TimeInterval {
         guard rssiTimestamps.count >= 2 else { return windowDuration }
         let lastInterval = rssiTimestamps[rssiTimestamps.count - 1]
             .timeIntervalSince(rssiTimestamps[rssiTimestamps.count - 2])
         return max(windowDuration, 2 * max(lastInterval, 0))
     }
 
-    mutating func process(rssi: Int, source: SignalSource, now: Date) -> SignalDecision {
+    public mutating func process(rssi: Int, source: SignalSource, now: Date) -> SignalDecision {
         // S-1: 信号中断恢复（距上一采样 >30s）先重置 Kalman 状态再摄入当前样本，
         // 避免恢复后首样本被当「紧邻采样」（陈旧估计 + 稳态小增益缓慢爬向真实值）。
         // 生产路径当前点已由调用方先追加（last 即当前），故取倒数第二个为上一采样；
@@ -221,7 +246,7 @@ struct SignalPipeline {
         return kalmanEstimate
     }
 
-    mutating func reset() {
+    public mutating func reset() {
         kalmanEstimate = -60.0
         kalmanP = 1.0
         kalmanSampleCount = 0
@@ -231,4 +256,3 @@ struct SignalPipeline {
         decayBaseline = .distantPast
     }
 }
-

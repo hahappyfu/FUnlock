@@ -5,29 +5,6 @@ import Foundation
 import Combine
 import Observation
 
-/// 采样点附带的状态跳变事件（强类型，替代裸字符串比较）
-enum SignalSampleEvent: String, Codable, Sendable, Equatable {
-    case unlocked
-    case locked
-    /// 设备信号丢失导致的锁定
-    case lockedLost = "locked: lost"
-}
-
-/// 单个采样点
-struct SignalSample: Identifiable {
-    let id = UUID()
-    let timestamp: Date
-    let rawRSSI: Double
-    let kalmanEstimate: Double
-    let effectiveRSSI: Double
-    let slope: Double
-    let isAnomalous: Bool
-    let event: SignalSampleEvent?
-
-    /// 是否为「解锁」侧事件（供 UI 选择图标/配色，避免视图层再比字符串）
-    var isUnlockEvent: Bool { event == .unlocked }
-}
-
 /// 全局信号数据仓库
 /// @unchecked Sendable 依据：ring 由 NSLock 保护，@Observable 跟踪属性仅主线程读写
 @Observable
