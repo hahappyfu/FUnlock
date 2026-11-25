@@ -329,3 +329,7 @@
 "signal_quality_label" = "Signalstyrke";
 "distance_scenario_label" = "Avstandsscenario";
 "automation_open_folder" = "Åpne skriptmappe";
+"keep_alive_while_present" = "Hold skjermen våken ved tilstedeværelse";
+"keep_alive_while_present_desc" = "Holder skjermen våken mens enheten din er i nærheten og du har vært aktiv de siste 15 minuttene. Slippes automatisk ved tidsavbrudd eller avgang.";
+"prefer_native_watch_unlock" = "Foretrekk Apple Watch-opplåsing";
+"prefer_native_watch_unlock_desc" = "Venter ca. 1,2 sekunder på systemets innebygde Apple Watch-opplåsing før passordet skrives inn.";

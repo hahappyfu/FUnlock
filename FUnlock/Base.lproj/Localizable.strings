@@ -409,3 +409,7 @@
 "signal_quality_label" = "Signal quality";
 "distance_scenario_label" = "Distance scenario";
 "automation_open_folder" = "Open Script Folder";
+"keep_alive_while_present" = "Keep awake while present";
+"keep_alive_while_present_desc" = "Keeps the display awake while your device is nearby and you have been active within the last 15 minutes; released automatically on timeout or departure.";
+"prefer_native_watch_unlock" = "Prefer Apple Watch unlock";
+"prefer_native_watch_unlock_desc" = "Waits about 1.2 seconds for the system's native Apple Watch unlock before injecting the password.";

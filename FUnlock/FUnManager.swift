@@ -74,6 +74,22 @@ final class FUnManager {
     @ObservationIgnored var screenLockVerifyTask: Task<Void, Never>?
     @ObservationIgnored private var mediaWasPlaying = false
 
+    // MARK: - L0 在场保活 / L1 手表原生协同 / 负向快采
+
+    var idleSleepLatched: Bool = false
+    var watchAutoUnlockObserved: Bool {
+        get { ConfigStore.shared.bool(forKey: "watchAutoUnlockObserved", default: false) }
+        set { ConfigStore.shared.set(newValue, forKey: "watchAutoUnlockObserved") }
+    }
+    @ObservationIgnored var l1TimeoutStreak: Int = 0
+    @ObservationIgnored var l1WaitDurationForTesting: TimeInterval? = nil
+    @ObservationIgnored var l1PollIntervalForTesting: TimeInterval? = nil
+    @ObservationIgnored var selfWakeStartedAt: Date? = nil
+    @ObservationIgnored let powerKeepAlive = PowerKeepAliveAdapter()
+    @ObservationIgnored var l0EngineSnapshot = EngineState()
+    @ObservationIgnored var idleSecondsProvider: () -> TimeInterval = { PowerKeepAliveAdapter.currentUserIdleSeconds() }
+    @ObservationIgnored var negativeSignalAdapter: NegativeSignalAdapter?
+
     /// 解锁流水线协调器：密码获取 → 注入 → 双保险验证 → 显示器唤醒重试
     /// （在 init 末尾装配；强持有，orchestrator 以 unowned 反向引用本类）
     private(set) var orchestrator: UnlockOrchestrator!
@@ -172,14 +188,82 @@ final class FUnManager {
     /// 清自锁窗口、对齐 screen/intent、消费锁屏期间暂存的改密与告警。
     func finalizeAutoUnlockSuccess() {
         clearSelfLockWindow()
+        idleSleepLatched = false
+        selfWakeStartedAt = nil
+        l1TimeoutStreak = 0
         state.screen = .unlocked
         state.unlockedAt = now
         state.intent = .autoLock
+        syncL0KeepAlive()
         if SecurityService.shared.hasPendingPasswordChange {
             SecurityService.shared.hasPendingPasswordChange = false
             SecurityService.shared.handlePasswordChanged()
         }
         SystemInteractionService.shared.flushPendingAlerts()
+    }
+
+    func onUserUnlockedClearLatchForTesting() {
+        idleSleepLatched = false
+        selfWakeStartedAt = nil
+        state.screen = .unlocked
+        syncL0KeepAlive()
+    }
+
+    func isKnownIPhoneDevice(_ name: String?) -> Bool {
+        name?.localizedCaseInsensitiveContains("iPhone") == true
+    }
+
+    func currentEngineConfig() -> EngineConfig {
+        EngineConfig(
+            enabled: ConfigStore.shared.bool(forKey: "enabled", default: true),
+            unlockRSSI: unlockRSSI,
+            lockRSSI: lockRSSI,
+            proximityTimeout: fun.proximityTimeout,
+            signalTimeout: fun.signalTimeout,
+            wakeAdvance: SignalHysteresisEngine.offsetSetting("wakeAdvance", default: FUn.defaultWakeAdvance),
+            preUnlockTrigger: SignalHysteresisEngine.offsetSetting("preUnlockTrigger", default: FUn.defaultPreUnlockTrigger),
+            wakeOnProximity: prefs.bool(forKey: "wakeOnProximity"),
+            wakeWithoutUnlocking: prefs.bool(forKey: "wakeWithoutUnlocking"),
+            useScreensaver: prefs.bool(forKey: "screensaver"),
+            sleepDisplay: prefs.bool(forKey: "sleepDisplay"),
+            pauseMedia: prefs.bool(forKey: "pauseItunes"),
+            lockOnIdle: ConfigStore.shared.bool(forKey: "lockOnIdle", default: true),
+            keepAliveWhilePresent: ConfigStore.shared.bool(forKey: "keepAliveWhilePresent", default: true),
+            preferNativeWatchUnlock: ConfigStore.shared.bool(forKey: "preferNativeWatchUnlock", default: true),
+            pauseOnWiFi: prefs.bool(forKey: "pauseOnWiFi"),
+            pauseOnWiFiSSID: prefs.string(forKey: "pauseOnWiFiSSID") ?? "",
+            passiveMode: prefs.bool(forKey: "passiveMode"),
+            isKnownIPhone: isKnownIPhoneDevice(monitoredDeviceName)
+        )
+    }
+
+    func syncL0KeepAlive(forceRenew: Bool = false) {
+        let snap = fun.signalSnapshot()
+        l0EngineSnapshot.monitoredUUID = fun.monitoredUUID
+        l0EngineSnapshot.monitoredDeviceName = monitoredDeviceName
+        l0EngineSnapshot.presence = snap.presence
+        l0EngineSnapshot.effectiveRSSI = snap.effectiveRSSI
+        l0EngineSnapshot.screen = state.screen
+        l0EngineSnapshot.systemPower = state.system
+        l0EngineSnapshot.intent = state.intent
+
+        let active = powerKeepAlive.evaluate(
+            state: &l0EngineSnapshot,
+            idleSeconds: idleSecondsProvider(),
+            config: currentEngineConfig(),
+            now: now,
+            forceRenew: forceRenew
+        )
+        if active, let renewAt = l0EngineSnapshot.deadlines[.keepAliveRenew] {
+            fun.scheduler.schedule(.keepAliveRenew, at: renewAt)
+        } else {
+            fun.scheduler.cancel(.keepAliveRenew)
+        }
+    }
+
+    func startRuntimeAdapters() {
+        negativeSignalAdapter?.start()
+        syncL0KeepAlive()
     }
 
     // MARK: Init
@@ -206,6 +290,15 @@ final class FUnManager {
 
         // 装配解锁流水线协调器（共用同一时间源，保证冷却/缓冲判定一致）
         self.orchestrator = UnlockOrchestrator(manager: self, nowProvider: nowProvider)
+
+        fun.lock.withLock {
+            fun.onKeepAliveRenew = { [weak self] in
+                self?.syncL0KeepAlive(forceRenew: true)
+            }
+        }
+        self.negativeSignalAdapter = NegativeSignalAdapter { [weak self] source in
+            self?.fun.applyNegativeHint(source)
+        }
     }
 
     deinit {
@@ -346,10 +439,13 @@ final class FUnManager {
 
         // 清除 Manager 层状态
         monitoredDeviceName = nil
+        watchAutoUnlockObserved = false
+        l1TimeoutStreak = 0
         prefs.removeObject(forKey: "device")
         prefs.removeObject(forKey: "deviceName")
         rssi = nil
         connected = false
+        syncL0KeepAlive()
     }
 
     // MARK: - Now Playing（委托 SystemInteractionService）
@@ -390,6 +486,8 @@ final class FUnManager {
     // MARK: - 清理（退出时调用，防止 RunLoop Timer 崩溃）
 
     func cleanup() {
+        negativeSignalAdapter?.stop()
+        powerKeepAlive.releaseAll(state: &l0EngineSnapshot)
         // 退出时不要同步 invalidate Timer —— RunLoop 正在销毁 Timer 列表，
         // 同步 invalidate 会导致 __CFRunLoopDeallocateTimers 数组越界崩溃。
         // 延迟到下一个 RunLoop 迭代（退出时不会执行，Timer 随 RunLoop 一起释放）。
@@ -398,6 +496,7 @@ final class FUnManager {
             self.fun.invalidateAllTimers()
             self.fun.invalidateAllDeviceTimers()
             funlock_releaseWakeAssertion()
+            funlock_releasePresenceKeepAlive()
         }
         orchestrator.cancelPendingTasks()
         lockVerificationGeneration &+= 1

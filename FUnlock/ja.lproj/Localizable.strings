@@ -333,3 +333,7 @@
 "signal_quality_label" = "電波品質";
 "distance_scenario_label" = "距離シナリオ";
 "automation_open_folder" = "スクリプトフォルダを開く";
+"keep_alive_while_present" = "在席中はスリープを抑制";
+"keep_alive_while_present_desc" = "デバイスが近くにあり、15 分以内に操作がある間は画面を起動状態に保ちます。タイムアウトまたは離席時に自動で解除されます。";
+"prefer_native_watch_unlock" = "Apple Watch のネイティブ解錠を優先";
+"prefer_native_watch_unlock_desc" = "約 1.2 秒待って Apple Watch のネイティブ解錠を試み、解錠されない場合にパスワードを自動入力します。";

@@ -516,6 +516,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         fun.delegate = self
         manager.inputMonitor = inputMonitor
         fun.inputMonitor = inputMonitor
+        if NSClassFromString("XCTestCase") == nil {
+            manager.startRuntimeAdapters()
+        }
         // InputActivityMonitor 在 setupPermissionsAndPrivileges() 中无条件启动（无 TCC 依赖）
     }
 

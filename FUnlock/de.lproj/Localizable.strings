@@ -329,3 +329,7 @@
 "signal_quality_label" = "Signalqualität";
 "distance_scenario_label" = "Entfernungsszenario";
 "automation_open_folder" = "Skriptordner öffnen";
+"keep_alive_while_present" = "Wach bleiben bei Anwesenheit";
+"keep_alive_while_present_desc" = "Hält das Display wach, solange dein Gerät in der Nähe ist und du in den letzten 15 Minuten aktiv warst. Wird bei Timeout oder Weggang automatisch freigegeben.";
+"prefer_native_watch_unlock" = "Apple-Watch-Entsperrung bevorzugen";
+"prefer_native_watch_unlock_desc" = "Wartet etwa 1,2 Sekunden auf die native Apple-Watch-Entsperrung, bevor das Passwort eingegeben wird.";

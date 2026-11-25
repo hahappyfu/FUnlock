@@ -132,6 +132,8 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     // 单一底层调度器：收编 heartbeat / lockConfirm / signalTimeout / activePoll / connectTimeout / deviceExpiry
     private var _scheduler: LiveDeadlineScheduler?
     var scheduler: LiveDeadlineScheduler { _scheduler! }
+    /// L0 保活续期回调（在 scheduler 触发 `.keepAliveRenew` 时派发至主线程）
+    var onKeepAliveRenew: (@MainActor () -> Void)?
     var lastHeartbeatInterval: TimeInterval = 2.0
     var signalLostCount: Int = 0
     // 冷静期：解锁后短时间内不触发锁定，防止振荡
@@ -240,6 +242,35 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         scanner = BLEScanner(queue: bleQueue, lock: lock, host: self)
     }
 
+    func updateSmoothedRSSIForTesting(_ value: Double) {
+        lock.withLock {
+            smoothedRSSIValue = value
+            effectiveRSSI = value
+        }
+    }
+
+    func applyNegativeHint(_ source: NegativeHintSource) {
+        let state = lock.withLock { () -> (monitored: Bool, present: Bool, peripheral: CBPeripheral?, passive: Bool) in
+            let monitored = scanner.monitoredUUID != nil
+            guard monitored, presence else {
+                return (monitored, presence, scanner.monitoredPeripheral, scanner.passiveMode)
+            }
+            if scanner.handler.activePollInterval > 0.5 {
+                scanner.handler.activePollInterval = 0.5
+                scanner.handler.stableCount = 0
+            }
+            return (true, true, scanner.monitoredPeripheral, scanner.passiveMode)
+        }
+        guard state.monitored, state.present else { return }
+        if (state.peripheral?.state == .connected && !state.passive) || state.peripheral == nil {
+            scheduler.scheduleAfter(.activePoll, interval: 0.5)
+        }
+        if let peripheral = state.peripheral, peripheral.state == .connected {
+            bleQueue.async { peripheral.readRSSI() }
+        }
+        AppLog.debug(.ble, "negativeHintApplied", [("source", source.rawValue)])
+    }
+
     private func handleScheduledDeadline(_ id: DeadlineID, scheduledAt: Date) {
         switch id {
         case .signalTimeout:
@@ -254,6 +285,11 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             scanner.handler.handleConnectionTimeout()
         case .deviceExpiry(let uuid):
             scanner.handleDeviceExpiry(uuid: uuid, scheduledAt: scheduledAt)
+        case .keepAliveRenew:
+            let handler = lock.withLock { onKeepAliveRenew }
+            if let handler {
+                Task { @MainActor in handler() }
+            }
         default:
             break
         }

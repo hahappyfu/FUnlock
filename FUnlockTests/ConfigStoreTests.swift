@@ -147,6 +147,7 @@ final class ConfigStoreTests: XCTestCase {
         "pauseOnWiFi", "pauseItunes", "iMessageNotify", "manualLockNoAutoUnlock",
         "hasCompletedOnboarding", "hasShownGuide", "hasCheckedAccessibility",
         "permissionOnboarded", "barkNotify",
+        "keepAliveWhilePresent", "preferNativeWatchUnlock",
     ]
     private static let intKeys: [String: Int] = [
         "lockRSSI": -75, "unlockRSSI": -62, "wakeAdvance": 12, "preUnlockTrigger": 8,

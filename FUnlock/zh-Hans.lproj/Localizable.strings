@@ -409,3 +409,7 @@
 "signal_quality_label" = "信号质量";
 "distance_scenario_label" = "距离场景";
 "automation_open_folder" = "打开脚本目录";
+"keep_alive_while_present" = "在场时保持唤醒";
+"keep_alive_while_present_desc" = "设备在附近且 15 分钟内有过操作时保持屏幕唤醒；超时或离场自动释放。";
+"prefer_native_watch_unlock" = "优先等待 Apple Watch 原生解锁";
+"prefer_native_watch_unlock_desc" = "先等待约 1.2 秒让手表原生解锁，未解锁再自动注入密码。";

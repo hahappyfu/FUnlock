@@ -20,6 +20,8 @@ enum KeychainError: Error, CustomStringConvertible {
 
 final class SecurityService: Sendable {
     static let shared = SecurityService()
+    /// 测试注入：避免单元测试触碰宿主的生产 Keychain 条目（`com.fuhahah.FUnlock`）
+    nonisolated(unsafe) static var fetchPasswordOverride: (() -> Result<String?, KeychainError>)?
     let serviceName: String
 
     init(serviceName: String = Bundle.main.bundleIdentifier ?? "FUnlock") {
@@ -90,6 +92,17 @@ final class SecurityService: Sendable {
 
     @MainActor
     private func fetchPasswordData(warn: Bool) -> Result<Data?, KeychainError> {
+        if let override = Self.fetchPasswordOverride {
+            switch override() {
+            case .success(let pw?):
+                return .success(Data(pw.utf8))
+            case .success(nil):
+                if warn { SystemInteractionService.shared.enqueueOrPresentAlert(.noPassword) }
+                return .success(nil)
+            case .failure(let err):
+                return .failure(err)
+            }
+        }
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),

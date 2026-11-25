@@ -10,10 +10,16 @@ extension FUnManager {
 
     // MARK: - 系统事件入口
 
-    func onDisplaySleep() {
+    func onDisplaySleep(idleSeconds: TimeInterval? = nil) {
         AppLog.info(.sm, "displaySleep", [("screen", "\(self.state.screen)")])
         recordSystem(.displaySleep)
+        let idle = idleSeconds ?? idleSecondsProvider()
+        if idle >= EngineReducer.keepAliveIdleLimit {
+            idleSleepLatched = true
+            AppLog.info(.sm, "idleSleepLatched", [("idleSeconds", String(format: "%.0f", idle))])
+        }
         state.screen = .displaySleeping
+        syncL0KeepAlive()
     }
 
     func onDisplayWake() {
@@ -25,6 +31,10 @@ extension FUnManager {
         let isSelfWake = orchestrator.displayWakeRequested
         state.wake = .succeeded
         orchestrator.cancelWakeRetry()
+        if !isSelfWake {
+            idleSleepLatched = false
+            selfWakeStartedAt = nil
+        }
         if state.screen == .displaySleeping {
             // 息屏不等于会话已锁：唤醒后按外部真实锁态恢复，避免永久卡在 .locked
             let systemLocked = SystemInteractionService.shared.isSystemSessionLocked()
@@ -34,6 +44,7 @@ extension FUnManager {
                 ("screen", "\(state.screen)")
             ])
         }
+        syncL0KeepAlive()
         if isSelfWake {
             // 程序自唤醒：只调度自动解锁。若再走用户干预（resetToActive + cancelPendingTasks），
             // 会把刚调度的解锁任务取消，唤醒路径的自动解锁被自己杀死（修复 #4）
@@ -53,6 +64,7 @@ extension FUnManager {
         AppLog.info(.sm, "systemSleep")
         recordSystem(.systemSleep)
         state.system = .sleeping
+        syncL0KeepAlive()
         systemWakeTask?.cancel()
         systemWakeTask = nil
         systemWakeGeneration &+= 1
@@ -82,7 +94,9 @@ extension FUnManager {
             // 恢复菜单栏 agent 形态（配对 onSystemSleep 的临时 regular，见该处注释）
             NSApp.setActivationPolicy(.accessory)
             self.state.system = .awake
+            self.idleSleepLatched = false
             self.reconcileUnlockedSessionIfNeeded()
+            self.syncL0KeepAlive()
             self.orchestrator.attemptAutoUnlock()
         }
     }
@@ -124,12 +138,25 @@ extension FUnManager {
     private func completeUnlockNotification() {
         cancelDeferredLockRecheck()
         clearSelfLockWindow()
+        idleSleepLatched = false
+        l1TimeoutStreak = 0
         state.screen = .unlocked
         state.unlockedAt = Date()
         state.intent = .autoLock
+        let wasRecentAutoUnlock = orchestrator.isAutoUnlockingOrRecentlyCompleted
+        if !wasRecentAutoUnlock,
+           let wakeStarted = selfWakeStartedAt,
+           now.timeIntervalSince(wakeStarted) <= EngineReducer.l1SelfLearnWindow,
+           !isKnownIPhoneDevice(monitoredDeviceName),
+           !SystemInteractionService.shared.isPhysicalKeyActive() {
+            watchAutoUnlockObserved = true
+            AppLog.info(.unlock, "watchAutoUnlockLearned", [("elapsed", String(format: "%.2fs", now.timeIntervalSince(wakeStarted)))])
+        }
+        selfWakeStartedAt = nil
         orchestrator.resetAfterUserUnlock()
         lastUnlockTime = now
         fun.refreshProximityGrace()
+        syncL0KeepAlive()
         // 锁屏期间暂存的更新安装确认：解锁后消费
         consumePendingUpdatePromptIfNeeded()
         // 区分解锁来源：FUn 自动解锁的 unlockSuccess 已在 performInjectionAndVerify 记录，
@@ -335,12 +362,14 @@ extension FUnManager {
         // 清除锁屏通知
         SystemInteractionService.shared.clearLockNotification()
 
-        // 阶梯唤醒：平滑信号达到 preWakeThreshold（-60dBm）时唤醒显示器
+        // 阶梯唤醒：平滑信号达到 preWakeThreshold（-60dBm）时唤醒显示器（受 idleSleepLatched 锁存保护）
         if state.screen == .displaySleeping
+            && !idleSleepLatched
             && prefs.bool(forKey: "wakeOnProximity")
             && !orchestrator.displayWakeRequested
             && smoothed >= Double(fun.preWakeThreshold) {
             orchestrator.displayWakeRequested = true
+            selfWakeStartedAt = now
             orchestrator.startWakeRetry()
         }
 
@@ -398,6 +427,7 @@ extension FUnManager {
             ? .displaySleeping
             : .locked(reason: reason == "lost" ? .lost : .away)
         lastLockTime = now
+        syncL0KeepAlive()
         checkAndPauseMedia()
         beginSelfLockWindow()
         let sys = SystemInteractionService.shared
@@ -436,17 +466,20 @@ extension FUnManager {
 
     func onRSSIUpdated(rssi: Int?, active: Bool) {
         self.rssi = rssi
+        syncL0KeepAlive()
 
-        // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值）
+        // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值，受 idleSleepLatched 保护）
         // 门控改读时间归一化 EMA（由 processSignal 单驱动），主线程不持锁直接读 currentSmoothedRSSI
         // rssi 非空守卫：失联派发（nil）不评估门控，避免用冻结 EMA 为已离场的设备误唤醒显示器
         if rssi != nil,
+           !idleSleepLatched,
            !orchestrator.displayWakeRequested,
            state.screen == .displaySleeping,
            prefs.bool(forKey: "wakeOnProximity") {
             let smoothed = fun.currentSmoothedRSSI
             if smoothed >= Double(fun.preWakeThreshold) {
                 orchestrator.displayWakeRequested = true
+                selfWakeStartedAt = now
                 AppLog.info(.sm, "preWakeTriggered", [("smoothedRSSI", String(format: "%.1f", smoothed))])
                 orchestrator.startWakeRetry()
             }

@@ -71,7 +71,7 @@ final class ConfigStore: @unchecked Sendable {
     /// 业务布尔默认值表：统一全项目业务默认值（如 enabled/lockOnIdle 默认 true）
     static func defaultBool(for key: String) -> Bool {
         switch key {
-        case "enabled", "lockOnIdle":
+        case "enabled", "lockOnIdle", "keepAliveWhilePresent", "preferNativeWatchUnlock":
             return true
         default:
             return false
@@ -98,6 +98,8 @@ final class ConfigStore: @unchecked Sendable {
     /// 可导出的业务 key（legacyKeys + 后续新增 key；不含 didMigrate 等内部标记）
     static let exportableKeys = legacyKeys + [
         "permissionOnboarded",
+        "keepAliveWhilePresent",
+        "preferNativeWatchUnlock",
     ]
 
     /// 敏感键：导出时跳过（值与清单均不含），导入时不删除、不覆盖本机已有值。

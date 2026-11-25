@@ -329,3 +329,7 @@
 "signal_quality_label" = "Sinyal kalitesi";
 "distance_scenario_label" = "Mesafe senaryosu";
 "automation_open_folder" = "Betik Klasörünü Aç";
+"keep_alive_while_present" = "Yakınken uyanık tut";
+"keep_alive_while_present_desc" = "Cihazınız yakındayken ve son 15 dakika içinde etkinlik varsa ekranı uyanık tutar. Zaman aşımında veya ayrıldığınızda otomatik olarak bırakılır.";
+"prefer_native_watch_unlock" = "Apple Watch ile açmayı tercih et";
+"prefer_native_watch_unlock_desc" = "Parola girilmeden önce sistemin yerleşik Apple Watch açılışını yaklaşık 1,2 saniye bekler.";

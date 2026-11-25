@@ -14,6 +14,8 @@ struct BehaviorSettingsView: View {
     @AppStorage("pauseItunes", store: ConfigStore.shared.defaults) private var pauseItunes = false
     @AppStorage("sleepDisplay", store: ConfigStore.shared.defaults) private var sleepDisplay = false
     @AppStorage("lockOnIdle", store: ConfigStore.shared.defaults) private var lockOnIdle = true
+    @AppStorage("keepAliveWhilePresent", store: ConfigStore.shared.defaults) private var keepAliveWhilePresent = true
+    @AppStorage("preferNativeWatchUnlock", store: ConfigStore.shared.defaults) private var preferNativeWatchUnlock = true
 
     var body: some View {
         ScrollView {
@@ -41,6 +43,10 @@ struct BehaviorSettingsView: View {
                 PrecisionToggleRow(icon: "arrow.up.circle", tone: .neutral,
                                    title: t("launch_at_login"), subtitle: t("launch_at_login_desc"),
                                    isOn: $launchAtLogin, onChange: syncLaunchAtLogin)
+                Hairline()
+                PrecisionToggleRow(icon: "bolt.shield", tone: .neutral,
+                                   title: t("keep_alive_while_present"), subtitle: t("keep_alive_while_present_desc"),
+                                   isOn: $keepAliveWhilePresent)
             }
         }
     }
@@ -61,6 +67,10 @@ struct BehaviorSettingsView: View {
                 PrecisionToggleRow(icon: "sparkles.tv", tone: .neutral,
                                    title: t("use_screensaver"), subtitle: t("use_screensaver_desc"),
                                    isOn: $useScreensaver)
+                Hairline()
+                PrecisionToggleRow(icon: "applewatch.radiowaves.left.and.right", tone: .neutral,
+                                   title: t("prefer_native_watch_unlock"), subtitle: t("prefer_native_watch_unlock_desc"),
+                                   isOn: $preferNativeWatchUnlock)
             }
         }
     }

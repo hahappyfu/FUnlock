@@ -29,7 +29,7 @@ extension EngineReducer {
         return state.effectiveRSSI >= Double(anchorThreshold)
     }
 
-    static func evaluateKeepAlive(
+    public static func evaluateKeepAlive(
         state: inout EngineState,
         idleSeconds: TimeInterval,
         config: EngineConfig,

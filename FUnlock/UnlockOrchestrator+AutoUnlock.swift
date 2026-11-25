@@ -105,13 +105,15 @@ extension UnlockOrchestrator {
             recordUnlockThrottled(.manualLockActive)
             return
         }
-        // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务
+        // 优化 2: 显示器休眠时，唤醒和解锁并行 — 先唤醒，同时启动延迟解锁任务（受 idleSleepLatched 锁存保护）
         // 注入前奏：系统休眠中不注入密码
         if m.state.screen == .displaySleeping && m.state.system == .awake
+            && !m.idleSleepLatched
             && m.prefs.bool(forKey: "wakeOnProximity")
             && isSystemReadyForUnlock() {
             AppLog.info(.unlock, "parallelWakeUnlockStart")
             timingLog("event=parallelWakeUnlockStart rssi=\(String(format: "%.1f", snap.effectiveRSSI))")
+            m.selfWakeStartedAt = now
             startWakeRetry()
             // 到位解锁：平滑信号达到解锁阈值 unlockRSSI 时才并行解锁
             if snap.effectiveRSSI >= Double(m.fun.unlockRSSI) {

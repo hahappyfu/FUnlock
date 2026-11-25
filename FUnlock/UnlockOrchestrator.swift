@@ -157,6 +157,9 @@ final class UnlockOrchestrator {
     /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
     func tryUnlock() async {
         timingLog("event=tryUnlockEnter")
+        if await attemptL1NativeWatchProbeIfEligible() {
+            return
+        }
         if SystemInteractionService.injectPasswordOverride != nil {
             guard let password = guardFetchPassword() else { return }
             await performInjectionAndVerify(password: password)
@@ -164,6 +167,53 @@ final class UnlockOrchestrator {
         }
         guard let buffer = guardFetchPasswordBuffer() else { return }
         await performInjectionAndVerify(buffer: buffer)
+    }
+
+    /// L1 零注入原生手表协同：优先等待 1.2s 让 Apple Watch 完成系统原生解锁，
+    /// 成功则零注入收尾；连续 3 次超时自动退化自学习标志并平滑回退 L2。
+    private func attemptL1NativeWatchProbeIfEligible() async -> Bool {
+        let m = manager
+        let sys = SystemInteractionService.shared
+        guard ConfigStore.shared.bool(forKey: "preferNativeWatchUnlock", default: true),
+              m.watchAutoUnlockObserved,
+              !m.isKnownIPhoneDevice(m.monitoredDeviceName) else {
+            return false
+        }
+        guard sys.isScreenLocked(screenState: m.state.screen),
+              m.stateMachine.canAttemptUnlock,
+              now.timeIntervalSince(m.state.unlockedAt) > 3 else {
+            return false
+        }
+
+        let timeout = m.l1WaitDurationForTesting ?? EngineReducer.l1TimeoutDuration
+        let pollInterval = max(0.01, m.l1PollIntervalForTesting ?? EngineReducer.l1PollInterval)
+        let deadline = Date().addingTimeInterval(timeout)
+        AppLog.info(.unlock, "l1WatchProbeStart", [("timeout", String(format: "%.2fs", timeout))])
+
+        while Date() < deadline {
+            guard !Task.isCancelled else { return false }
+            try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+            guard !Task.isCancelled else { return false }
+            if sys.isExplicitlyUnlockedSession() {
+                m.l1TimeoutStreak = 0
+                m.lastUnlockTime = now
+                m.fun.refreshProximityGrace()
+                m.stateMachine.handleUnlockSuccess()
+                m.finalizeAutoUnlockSuccess()
+                recordUnlock(.success, reason: .unlockSuccess, detail: "L1 Apple Watch 原生解锁（零密码注入）")
+                AppLog.info(.unlock, "l1WatchProbeSucceeded", [("injections", "0")])
+                return true
+            }
+        }
+
+        m.l1TimeoutStreak += 1
+        if m.l1TimeoutStreak >= EngineReducer.maxConsecutiveFailures {
+            m.watchAutoUnlockObserved = false
+            m.l1TimeoutStreak = 0
+            AppLog.info(.unlock, "watchAutoUnlockDecayed", [("reason", "consecutiveTimeouts")])
+        }
+        AppLog.info(.unlock, "l1WatchProbeTimeout", [("fallback", "L2")])
+        return false
     }
 
     private func evaluateUnlockPreconditions(source: String) -> Bool {
