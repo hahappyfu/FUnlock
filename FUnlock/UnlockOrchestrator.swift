@@ -157,23 +157,31 @@ final class UnlockOrchestrator {
     /// P1-4: async 化——注入路径的等待在 @MainActor 上挂起而非阻塞主线程
     func tryUnlock() async {
         timingLog("event=tryUnlockEnter")
-        guard let password = guardFetchPassword() else { return }
-        await performInjectionAndVerify(password: password)
+        if SystemInteractionService.injectPasswordOverride != nil {
+            guard let password = guardFetchPassword() else { return }
+            await performInjectionAndVerify(password: password)
+            return
+        }
+        guard let buffer = guardFetchPasswordBuffer() else { return }
+        await performInjectionAndVerify(buffer: buffer)
     }
 
-    /// 前置门控 + 密码获取：任一检查失败即记录原因并返回 nil
-    func guardFetchPassword() -> String? {
+    private func evaluateUnlockPreconditions(source: String) -> Bool {
         let m = manager
         let sys = SystemInteractionService.shared
         let locked = sys.isScreenLocked(screenState: m.state.screen)
         timingLog("event=guardFetchPassword locked=\(locked) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil")")
         AppLog.info(.unlock, "unlockStart", [("screen", "\(m.state.screen)"), ("locked", "\(locked)")])
         AppLog.debug(.unlock, "screenLockedCheck", [("locked", "\(locked)")])
-        guard locked else { AppLog.info(.unlock, "unlockSkip", [("reason", "screenNotLocked")]); recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁"); return nil }
+        guard locked else {
+            AppLog.info(.unlock, "unlockSkip", [("reason", "screenNotLocked")])
+            recordUnlock(.info, reason: .screenNotLocked, detail: "屏幕已解锁")
+            return false
+        }
 
         // 状态机门控：通过状态机确认解锁冷却和降级状态
         let smAllowed = m.stateMachine.attemptUnlock()
-        guard smAllowed else { recordStateMachineSkip(source: "guardFetchPassword"); return nil }
+        guard smAllowed else { recordStateMachineSkip(source: source); return false }
 
         let sinceUnlock = now.timeIntervalSince(m.state.unlockedAt)
         guard sinceUnlock > 3 else {
@@ -181,10 +189,15 @@ final class UnlockOrchestrator {
             recordUnlock(reason: .recentlyUnlocked, detail: "\(String(format: "%.1f", sinceUnlock)) 秒前解锁过")
             // attemptUnlock 已置 .unlocking，SKIP 出口回落 active，避免状态卡死
             m.stateMachine.transition(to: .active)
-            return nil
+            return false
         }
-        let fetchResult = SecurityService.shared.fetchPassword(warn: true)
-        guard case .success(let password) = fetchResult, let password = password else {
+        return true
+    }
+
+    private func finalizeFetchedCredential<T>(_ fetchResult: Result<T?, KeychainError>) -> T? {
+        let m = manager
+        let sys = SystemInteractionService.shared
+        guard case .success(let value) = fetchResult, let value = value else {
             if case .failure(let error) = fetchResult {
                 AppLog.info(.unlock, "unlockSkip", [("reason", "keychainError"), ("error", "\(error)")])
                 recordUnlock(reason: .keychainColdBoot, detail: "\(error)")
@@ -200,13 +213,70 @@ final class UnlockOrchestrator {
         // #6: 最后一次检查，防止等待期间指纹/Apple Watch 解锁
         let secure = sys.isSecureToInject(screenState: m.state.screen)
         AppLog.debug(.unlock, "secureToInjectCheck", [("secure", "\(secure)"), ("screen", "\(m.state.screen)")])
-        guard secure else { AppLog.info(.unlock, "unlockSkip", [("reason", "notSecureForInjection")]); recordUnlock(reason: .notSecureForInjection); m.stateMachine.transition(to: .active); return nil }
-        return password
+        guard secure else {
+            AppLog.info(.unlock, "unlockSkip", [("reason", "notSecureForInjection")])
+            recordUnlock(reason: .notSecureForInjection)
+            m.stateMachine.transition(to: .active)
+            return nil
+        }
+        return value
     }
 
-    /// 密码注入 + 乐观确认 + 双保险验证
+    /// 前置门控 + 托管 UTF-16 缓冲密码获取（生产主路径：无 Swift String 驻留）
+    func guardFetchPasswordBuffer() -> SecretUTF16Buffer? {
+        guard evaluateUnlockPreconditions(source: "guardFetchPasswordBuffer") else { return nil }
+        let fetchResult = SecurityService.shared.fetchPasswordBuffer(warn: true)
+        guard let buffer = finalizeFetchedCredential(fetchResult) else {
+            if case .success(let fetched?) = fetchResult {
+                fetched.wipe()
+            }
+            return nil
+        }
+        return buffer
+    }
+
+    /// 前置门控 + 密码获取（保留给测试 override 路径）：任一检查失败即记录原因并返回 nil
+    func guardFetchPassword() -> String? {
+        guard evaluateUnlockPreconditions(source: "guardFetchPassword") else { return nil }
+        return finalizeFetchedCredential(SecurityService.shared.fetchPassword(warn: true))
+    }
+
+    /// 密码注入 + 乐观确认 + 双保险验证（生产主路径：持 SecretUTF16Buffer 并在退出前立即清零）
+    func performInjectionAndVerify(buffer: SecretUTF16Buffer) async {
+        defer { buffer.wipe() }
+        await performInjectionAndVerifyCore {
+            let m = manager
+            let sys = SystemInteractionService.shared
+            return await sys.injectPasswordBufferWithPrelude(
+                buffer,
+                isSecureCheck: {
+                    m.state.screen != .unlocked
+                    && sys.isSecureToInject(screenState: m.state.screen)
+                },
+                keystrokeSecureCheck: {
+                    m.state.screen != .unlocked
+                    && sys.isSecureToInject(screenState: m.state.screen, allowScreensaver: false)
+                }
+            )
+        }
+    }
+
+    /// 密码注入 + 乐观确认 + 双保险验证（保留旧签名供既有单元测试调用）
     /// P1-4: async 化——await injectPasswordWithPrelude 期间主线程不被阻塞
     func performInjectionAndVerify(password: String) async {
+        if let override = SystemInteractionService.injectPasswordOverride {
+            await performInjectionAndVerifyCore { await override(password) }
+            return
+        }
+        var data = Data(password.utf8)
+        guard let buffer = SecretUTF16Buffer(utf8Data: &data) else {
+            manager.stateMachine.transition(to: .active)
+            return
+        }
+        await performInjectionAndVerify(buffer: buffer)
+    }
+
+    private func performInjectionAndVerifyCore(_ injectAction: () async -> Bool) async {
         let m = manager
         let sys = SystemInteractionService.shared
         let snap = m.fun.signalSnapshot()
@@ -216,21 +286,7 @@ final class UnlockOrchestrator {
         // 标记 FUn 正在自动解锁，onUnlock 据此区分手动解锁（入侵）
         isAutoUnlocking = true
         AppLog.info(.unlock, "injectPasswordStart")
-        let posted: Bool
-        if let override = SystemInteractionService.injectPasswordOverride {
-            posted = await override(password)
-        } else {
-            posted = await sys.injectPasswordWithPrelude(
-                password,
-                isSecureCheck: {
-                    m.state.screen != .unlocked
-                    && sys.isSecureToInject(screenState: m.state.screen)
-                },
-                keystrokeSecureCheck: {
-                    m.state.screen != .unlocked
-                    && sys.isSecureToInject(screenState: m.state.screen, allowScreensaver: false)
-                })
-        }
+        let posted = await injectAction()
         AppLog.info(.unlock, "injectPasswordResult", [("posted", "\(posted)")])
         AppLog.debug(.unlock, "fakeKeyStrokesDone", [("posted", "\(posted)")])
         guard posted else {

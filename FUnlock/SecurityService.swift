@@ -49,11 +49,47 @@ final class SecurityService: Sendable {
         return nil
     }
 
+    /// Fetch password from Keychain as managed UTF-16 buffer (zeroes source UTF-8 Data immediately).
+    @MainActor
+    func fetchPasswordBuffer(warn: Bool = false) -> Result<SecretUTF16Buffer?, KeychainError> {
+        switch fetchPasswordData(warn: warn) {
+        case .failure(let err):
+            return .failure(err)
+        case .success(nil):
+            return .success(nil)
+        case .success(var data?):
+            guard let buffer = SecretUTF16Buffer(utf8Data: &data) else {
+                UIHelper.errorModal(t("failed_convert_password"))
+                return .success(nil)
+            }
+            return .success(buffer)
+        }
+    }
+
     /// Fetch password from Keychain.
     /// - Returns: password string on success, nil on not-found (shows modal if warn=true), KeychainError on security error.
     /// 标注 @MainActor：warn=true 时弹模态窗，需主线程。
     @MainActor
     func fetchPassword(warn: Bool = false) -> Result<String?, KeychainError> {
+        switch fetchPasswordData(warn: warn) {
+        case .failure(let err):
+            return .failure(err)
+        case .success(nil):
+            return .success(nil)
+        case .success(var data?):
+            defer {
+                data.withUnsafeMutableBytes { raw in
+                    if let base = raw.baseAddress {
+                        funlock_secureZero(base, raw.count)
+                    }
+                }
+            }
+            return .success(String(data: data, encoding: .utf8))
+        }
+    }
+
+    @MainActor
+    private func fetchPasswordData(warn: Bool) -> Result<Data?, KeychainError> {
         let query: [String: Any] = [
             String(kSecClass): kSecClassGenericPassword,
             String(kSecAttrAccount): NSUserName(),
@@ -78,7 +114,7 @@ final class SecurityService: Sendable {
             UIHelper.errorModal(t("failed_convert_password"))
             return .success(nil)
         }
-        return .success(String(data: data, encoding: .utf8))
+        return .success(data)
     }
 
     /// 便捷方法：从 Result 中提取密码，冷启动时显示提示并返回 nil

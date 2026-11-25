@@ -63,6 +63,36 @@ final class SystemInteractionService: Sendable {
     /// 测试注入：替换唤醒断言释放（nil = 调用 funlock_releaseWakeAssertion）
     nonisolated(unsafe) static var wakeAssertionReleaseOverride: (() -> Void)?
 
+    /// 物理键盘活动探测（nil = 读真实 CGEventSource HID 按键时间；测试可显式注入）
+    nonisolated(unsafe) static var physicalKeyActiveProvider: (() -> Bool)?
+
+    private let syntheticKeyLock = NSLock()
+    nonisolated(unsafe) private var lastSyntheticKeyAt: Date = .distantPast
+
+    func recordSyntheticKeyEvent() {
+        syntheticKeyLock.lock()
+        lastSyntheticKeyAt = Date()
+        syntheticKeyLock.unlock()
+    }
+
+    /// 探测用户是否正在进行物理按键输入（排除 FUnlock 自身刚投递的合成事件，防止与手动输密打架）。
+    func isPhysicalKeyActive() -> Bool {
+        if let provider = Self.physicalKeyActiveProvider {
+            return provider()
+        }
+        if NSClassFromString("XCTestCase") != nil {
+            return false
+        }
+        let elapsed = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
+        guard elapsed < 0.4 else { return false }
+        let lastEventAt = Date().addingTimeInterval(-elapsed)
+        syntheticKeyLock.lock()
+        let syntheticAt = lastSyntheticKeyAt
+        syntheticKeyLock.unlock()
+        // 若最近一次 keyDown 落在 FUnlock 自身合成窗口内（±0.08s），视为己方事件，不误判为物理抢占
+        return abs(lastEventAt.timeIntervalSince(syntheticAt)) > 0.08
+    }
+
     // MARK: - Screen State Detection
 
     /// 屏幕是否处于锁定/屏保态。
@@ -237,20 +267,17 @@ final class SystemInteractionService: Sendable {
     // MARK: - Keyboard Injection
 
     /// Inject password keystrokes via CGEvent. Returns true if at least one event posted.
-    /// isSecureCheck is called before each batch to verify screen is still locked.
-    /// 采用三级降级策略：cgSessionEventTap -> cghidEventTap -> AppleScript
-    func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
-        if let override = Self.fakeKeyStrokesOverride {
-            return override(string, isSecureCheck)
+    /// 使用托管 `SecretUTF16Buffer` 投递密码按键（CGEvent 二级降级：`cgSessionEventTap -> cghidEventTap`）。
+    /// 全程不生成 Swift `String`；每批发送前检查屏幕安全性与物理键盘抢占，检测到手打立即中止。
+    func injectKeyStrokes(_ buffer: SecretUTF16Buffer, isSecureCheck: () -> Bool) -> Bool {
+        guard !isPhysicalKeyActive() else {
+            AppLog.info(.unlock, "keystrokeInjectionAborted", [("reason", "physicalKeyActive")])
+            return false
         }
-        AppLog.info(.unlock, "keystrokeInjectionStart", [("passwordLength", "\(string.count)")])
+        AppLog.info(.unlock, "keystrokeInjectionStart", [("passwordLength", "\(buffer.count)")])
 
-        // P1-4: display-off 唤醒已上移至 injectPasswordWithPrelude 开头
-        // （本方法为同步方法，保留唤醒等待会阻塞主线程）
-
-        // 尝试第1级：cgSessionEventTap + virtualKey 0
         AppLog.info(.unlock, "keystrokeLevelTry", [("level", "1"), ("tap", "cgSessionEventTap"), ("vk", "0")])
-        if injectWithCGEvent(string, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
+        if injectWithCGEvent(buffer, tap: .cgSessionEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
             AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "1")])
             timingLog("event=keystrokeLevelSuccess level=1")
             return true
@@ -258,130 +285,74 @@ final class SystemInteractionService: Sendable {
         AppLog.info(.unlock, "keystrokeLevelFailed", [("level", "1"), ("next", "2")])
         timingLog("event=keystrokeLevelFailed level=1")
 
-        // 尝试第2级：cghidEventTap + virtualKey 0
-        AppLog.info(.unlock, "keystrokeLevelTry", [("level", "2"), ("tap", "cghidEventTap"), ("vk", "0")])
-        if injectWithCGEvent(string, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck) {
-            AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "2")])
-            timingLog("event=keystrokeLevelSuccess level=2")
-            return true
-        }
-        AppLog.info(.unlock, "keystrokeLevelFailed", [("level", "2"), ("next", "3")])
-        timingLog("event=keystrokeLevelFailed level=2")
-
-        // 尝试第3级：AppleScript System Events（仅限 ASCII 密码）
-        guard string.canBeConverted(to: .ascii) else {
-            AppLog.info(.unlock, "keystrokeLevelSkipped", [("level", "3"), ("reason", "nonASCIIPassword")])
+        guard !isPhysicalKeyActive() else {
+            AppLog.info(.unlock, "keystrokeInjectionAborted", [("reason", "physicalKeyActive")])
             return false
         }
-        AppLog.info(.unlock, "keystrokeLevelTry", [("level", "3"), ("method", "appleScript")])
-        let result = injectWithAppleScript(string, isSecureCheck: isSecureCheck)
+        AppLog.info(.unlock, "keystrokeLevelTry", [("level", "2"), ("tap", "cghidEventTap"), ("vk", "0")])
+        let result = injectWithCGEvent(buffer, tap: .cghidEventTap, virtualKey: 0, isSecureCheck: isSecureCheck)
         if result {
-            AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "3")])
-            timingLog("event=keystrokeLevelSuccess level=3")
+            AppLog.info(.unlock, "keystrokeLevelSuccess", [("level", "2")])
+            timingLog("event=keystrokeLevelSuccess level=2")
         } else {
-            AppLog.error(.unlock, "keystrokeLevelFailed", [("level", "3"), ("exhausted", "true")])
-            timingLog("event=keystrokeLevelFailed level=3")
+            AppLog.error(.unlock, "keystrokeLevelFailed", [("level", "2"), ("exhausted", "true")])
+            timingLog("event=keystrokeLevelFailed level=2")
         }
         AppLog.debug(.unlock, "keystrokeInjectionEnd", [("result", "\(result)")])
         return result
     }
 
+    /// 兼容旧签名的按键注入入口（已移除 AppleScript L3 回退，仅走测试 override 或 SecretUTF16Buffer）。
+    func fakeKeyStrokes(_ string: String, isSecureCheck: () -> Bool) -> Bool {
+        guard !isPhysicalKeyActive() else {
+            AppLog.info(.unlock, "keystrokeInjectionAborted", [("reason", "physicalKeyActive")])
+            return false
+        }
+        if let override = Self.fakeKeyStrokesOverride {
+            return override(string, isSecureCheck)
+        }
+        var data = Data(string.utf8)
+        guard let buffer = SecretUTF16Buffer(utf8Data: &data) else { return false }
+        defer { buffer.wipe() }
+        return injectKeyStrokes(buffer, isSecureCheck: isSecureCheck)
+    }
+
     /// Inject password using CGEvent with specified tap type and virtual key.
-    /// Returns true if at least one event posted.
-    private func injectWithCGEvent(_ string: String, tap: CGEventTapLocation, virtualKey: CGKeyCode, isSecureCheck: () -> Bool) -> Bool {
+    /// Returns true if at least one event posted without preemption.
+    private func injectWithCGEvent(_ buffer: SecretUTF16Buffer, tap: CGEventTapLocation, virtualKey: CGKeyCode, isSecureCheck: () -> Bool) -> Bool {
         let src = CGEventSource(stateID: .hidSystemState)
         var anyEventPosted = false
-        let uniCharCount = string.utf16.count
-        var strIndex = string.utf16.startIndex
 
-        for offset in stride(from: 0, to: uniCharCount, by: 20) {
+        let batchesCompleted = buffer.forEachCGEventBatch(maxUnits: 20) { ptr, len in
             guard isSecureCheck() else {
                 AppLog.error(.unlock, "keystrokeInjectionAborted", [("reason", "screenNotSecureDuringInjection")])
-                return anyEventPosted
+                return false
+            }
+            guard !isPhysicalKeyActive() else {
+                AppLog.info(.unlock, "keystrokeInjectionAborted", [("reason", "physicalKeyActiveDuringBatch")])
+                return false
             }
             let pressEvent = CGEvent(keyboardEventSource: src, virtualKey: virtualKey, keyDown: true)
-            let len = offset + 20 < uniCharCount ? 20 : uniCharCount - offset
-            let buffer = UnsafeMutablePointer<UniChar>.allocate(capacity: len)
-            defer { buffer.deallocate() }
-            for i in 0..<len {
-                buffer[i] = string.utf16[strIndex]
-                strIndex = string.utf16.index(after: strIndex)
-            }
-            pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: buffer)
+            pressEvent?.keyboardSetUnicodeString(stringLength: len, unicodeString: ptr)
+            recordSyntheticKeyEvent()
             pressEvent?.post(tap: tap)
             CGEvent(keyboardEventSource: src, virtualKey: virtualKey, keyDown: false)?.post(tap: tap)
             if pressEvent != nil { anyEventPosted = true }
+            return true
         }
+        guard batchesCompleted else { return false }
 
-        guard isSecureCheck() else {
-            AppLog.error(.unlock, "keystrokeInjectionAborted", [("reason", "screenNotSecureBeforeReturn")])
-            return anyEventPosted
+        guard isSecureCheck(), !isPhysicalKeyActive() else {
+            AppLog.error(.unlock, "keystrokeInjectionAborted", [("reason", "screenNotSecureOrKeyActiveBeforeReturn")])
+            return false
         }
         let returnDown = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
         let returnUp = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
+        recordSyntheticKeyEvent()
         returnDown?.post(tap: tap)
         returnUp?.post(tap: tap)
         if returnDown != nil { anyEventPosted = true }
         return anyEventPosted
-    }
-
-    /// Inject password using AppleScript System Events (only for ASCII passwords).
-    /// Returns true if injection was initiated successfully.
-    /// 执行前与结束后均调用 isSecureCheck 确认屏幕仍处于锁定状态（防密码泄露给非锁定会话）
-    /// 使用进程内 NSAppleScript 执行（而非外部 /usr/bin/osascript 进程），
-    /// 避免密码以命令行参数形式暴露给 ps/sysctl 等进程检查工具
-    private func injectWithAppleScript(_ string: String, isSecureCheck: () -> Bool) -> Bool {
-        guard string.canBeConverted(to: .ascii) else {
-            AppLog.debug(.unlock, "appleScriptRejected", [("reason", "nonASCII")])
-            return false
-        }
-
-        // AppleScript 执行前再次确认屏幕仍锁定，防止密码泄露给非锁定会话
-        guard isSecureCheck() else {
-            AppLog.error(.unlock, "appleScriptAborted", [("reason", "screenNotSecureBeforeInjection")])
-            return false
-        }
-
-        // Escape special characters for AppleScript string.
-        // 审计修复 #6：双引号字符串内单引号无需转义，旧代码产生的 `\'` 是非法转义序列，
-        // 含单引号的密码在 L3 必然编译失败，故只处理反斜杠与双引号
-        let escaped = string
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-
-        let script = """
-        tell application "System Events"
-            keystroke "\(escaped)"
-            delay 0.2
-            key code 36
-        end tell
-        """
-
-        AppLog.debug(.unlock, "appleScriptExecuteStart")
-        guard let appleScript = NSAppleScript(source: script) else {
-            AppLog.error(.unlock, "appleScriptCompilationFailed")
-            return false
-        }
-        var errorInfo: NSDictionary?
-        _ = appleScript.executeAndReturnError(&errorInfo)
-        // NSAppleScript 为同步执行，此处检查只能用于结果判定：
-        // 若屏幕已解锁，密码可能已被输入到非锁定会话，调用方不得视为成功
-        if !isSecureCheck() {
-            AppLog.error(.unlock, "appleScriptResultUnreliable", [("reason", "screenUnlockedAfterExecution")])
-            return false
-        }
-        // 注：macOS 27 SDK 下 executeAndReturnError 返回非可选 NSAppleEventDescriptor，
-        // `result != nil` 在 -O 优化下会被折叠为恒真，无法据以判成败；
-        // 故以 errorInfo == nil（无错误信息即成功）为准。
-        if errorInfo == nil {
-            AppLog.info(.unlock, "appleScriptSuccess")
-            return true
-        } else {
-            let number = errorInfo?["NSAppleScriptErrorNumber"] as? Int ?? -1
-            let message = errorInfo?["NSAppleScriptErrorMessage"] as? String ?? "unknown"
-            AppLog.error(.unlock, "appleScriptFailed", [("errorNumber", "\(number)"), ("errorMessage", message)])
-            return false
-        }
     }
 
     // MARK: - Injection Prelude
@@ -402,6 +373,7 @@ final class SystemInteractionService: Sendable {
             }
             let shiftDown = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: true)
             let shiftUp = CGEvent(keyboardEventSource: src, virtualKey: 56, keyDown: false)
+            recordSyntheticKeyEvent()
             shiftDown?.post(tap: tap)
             shiftUp?.post(tap: tap)
             if shiftDown != nil {
@@ -422,6 +394,22 @@ final class SystemInteractionService: Sendable {
     /// 等待改 Task.sleep 挂起不占线程，display-off 唤醒统一移至方法开头。
     /// P1-3: 显示器熄灭唤醒后 loginwindow 就绪需 500ms~1500ms，固定 300ms 会导致
     /// 首次注入丢失；改为自适应轮询——熄屏唤醒最多等 2.5s，亮屏 300ms 不变。
+    /// 托管 SecretUTF16Buffer 版本的注入前奏：无论提前返回、取消还是完成，退出前必调 `buffer.wipe()`。
+    @MainActor
+    func injectPasswordBufferWithPrelude(
+        _ buffer: SecretUTF16Buffer,
+        isSecureCheck: @escaping () -> Bool,
+        keystrokeSecureCheck: (() -> Bool)? = nil
+    ) async -> Bool {
+        defer { buffer.wipe() }
+        let ok = await runPreludeAndWait(lengthHint: buffer.count, isSecureCheck: isSecureCheck)
+        guard ok else { return false }
+        AppLog.info(.unlock, "injectPasswordStart")
+        let result = injectKeyStrokes(buffer, isSecureCheck: keystrokeSecureCheck ?? isSecureCheck)
+        AppLog.info(.unlock, "injectPasswordWithPreludeEnd", [("result", "\(result)")])
+        return result
+    }
+
     @MainActor
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool) async -> Bool {
         await injectPasswordWithPrelude(string, isSecureCheck: isSecureCheck, keystrokeSecureCheck: nil)
@@ -433,9 +421,19 @@ final class SystemInteractionService: Sendable {
     @MainActor
     public func injectPasswordWithPrelude(_ string: String, isSecureCheck: @escaping () -> Bool,
                                           keystrokeSecureCheck: (() -> Bool)?) async -> Bool {
-        AppLog.info(.unlock, "injectPasswordWithPreludeStart", [("passwordLength", "\(string.count)")])
+        let ok = await runPreludeAndWait(lengthHint: string.count, isSecureCheck: isSecureCheck)
+        guard ok else { return false }
+        AppLog.info(.unlock, "injectPasswordStart")
+        let result = fakeKeyStrokes(string, isSecureCheck: keystrokeSecureCheck ?? isSecureCheck)
+        AppLog.info(.unlock, "injectPasswordWithPreludeEnd", [("result", "\(result)")])
+        return result
+    }
 
-        guard !Task.isCancelled else { return false }
+    @MainActor
+    private func runPreludeAndWait(lengthHint: Int, isSecureCheck: @escaping () -> Bool) async -> Bool {
+        AppLog.info(.unlock, "injectPasswordWithPreludeStart", [("passwordLength", "\(lengthHint)")])
+
+        guard !Task.isCancelled, !isPhysicalKeyActive() else { return false }
 
         let displayWasOff = !isDisplayPoweredOn()
         let screensaverWasRunning = isScreenSaverRunning
@@ -454,7 +452,7 @@ final class SystemInteractionService: Sendable {
             AppLog.info(.unlock, "injectPreludeWakingDisplay")
             guard await wakeDisplay() else { return false }
         }
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled, !isPhysicalKeyActive() else { return false }
 
         let shiftSent = sendShiftKey(isSecureCheck: isSecureCheck)
         var waitedMs = 0
@@ -483,9 +481,13 @@ final class SystemInteractionService: Sendable {
                     return false
                 }
                 waitedMs += stepMs
-                // 轮询期间若屏幕已不再处于安全锁定状态（例如用户已手动解锁），立即中止
+                // 轮询期间若屏幕已不再处于安全锁定状态或用户正手打键盘，立即中止
                 guard isSecureCheck() else {
                     AppLog.error(.unlock, "injectPreludeAborted", [("reason", "screenNotSecure")])
+                    return false
+                }
+                guard !isPhysicalKeyActive() else {
+                    AppLog.info(.unlock, "injectPreludeAborted", [("reason", "physicalKeyActive")])
                     return false
                 }
                 if screensaverWasRunning && screensaverClearedAtMs == nil && !isScreenSaverRunning {
@@ -515,18 +517,13 @@ final class SystemInteractionService: Sendable {
             AppLog.error(.unlock, "injectPreludeShiftFailed", [("action", "proceedingWithoutDelay")])
         }
 
-        // 关键门控：显示器若仍处于休眠未点亮状态，绝不盲打注入密码，
-        // 防止按键丢失并触发改密误报（2026-10-16 误报根因：唤醒失败后仍继续注入）
-        guard !Task.isCancelled else { return false }
+        // 关键门控：显示器若仍处于休眠未点亮状态或用户已开始手动键入，绝不盲打注入密码
+        guard !Task.isCancelled, !isPhysicalKeyActive() else { return false }
         guard isDisplayPoweredOn() else {
             AppLog.error(.unlock, "injectPreludeDisplayStillAsleep", [("waitedMs", "\(waitedMs)"), ("action", "abortInjection")])
             return false
         }
-
-        AppLog.info(.unlock, "injectPasswordStart")
-        let result = fakeKeyStrokes(string, isSecureCheck: keystrokeSecureCheck ?? isSecureCheck)
-        AppLog.info(.unlock, "injectPasswordWithPreludeEnd", [("result", "\(result)")])
-        return result
+        return true
     }
 
     // MARK: - Media Control

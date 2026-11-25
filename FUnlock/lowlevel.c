@@ -7,8 +7,48 @@
 
 static IOPMAssertionID wakeAssertionID = 0;
 static IOPMAssertionID preventSleepAssertionID = 0;
+static IOPMAssertionID presenceKeepAliveAssertionID = 0;
 // 两个 assertion ID 会被主线程（注入前奏）与唤醒重试共享，统一保护
 static os_unfair_lock assertionLock = OS_UNFAIR_LOCK_INIT;
+
+#ifndef __STDC_WANT_LIB_EXT1__
+extern int memset_s(void *s, size_t smax, int c, size_t n);
+#endif
+
+void funlock_secureZero(void *ptr, size_t size) {
+    if (ptr != NULL && size > 0) {
+        (void)memset_s(ptr, size, 0, size);
+    }
+}
+
+void funlock_renewPresenceKeepAlive(void) {
+    os_unfair_lock_lock(&assertionLock);
+    if (presenceKeepAliveAssertionID != 0) {
+        os_unfair_lock_unlock(&assertionLock);
+        return;
+    }
+    IOPMAssertionID created = 0;
+    IOReturn ret = IOPMAssertionCreateWithName(
+        kIOPMAssertionTypePreventUserIdleDisplaySleep,
+        kIOPMAssertionLevelOn,
+        CFSTR("FUnlock L0 Presence Keep-Alive"),
+        &created
+    );
+    if (ret == kIOReturnSuccess && created != 0) {
+        presenceKeepAliveAssertionID = created;
+    }
+    os_unfair_lock_unlock(&assertionLock);
+}
+
+void funlock_releasePresenceKeepAlive(void) {
+    os_unfair_lock_lock(&assertionLock);
+    IOPMAssertionID existing = presenceKeepAliveAssertionID;
+    presenceKeepAliveAssertionID = 0;
+    os_unfair_lock_unlock(&assertionLock);
+    if (existing != 0) {
+        IOPMAssertionRelease(existing);
+    }
+}
 
 void funlock_wakeDisplay(void)
 {

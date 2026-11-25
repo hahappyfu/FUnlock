@@ -94,6 +94,8 @@
 		CB0000020000000100000001 /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0000010000000100000001 /* CoreBridge.swift */; };
 		LD0000020000000100000001 /* LiveDeadlineScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD0000010000000100000001 /* LiveDeadlineScheduler.swift */; };
 		LD0000020000000100000002 /* LiveDeadlineSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */; };
+		SB0000020000000100000001 /* SecretUTF16Buffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB0000010000000100000001 /* SecretUTF16Buffer.swift */; };
+		SB0000020000000100000002 /* SecretUTF16BufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB0000010000000100000002 /* SecretUTF16BufferTests.swift */; };
 		PK0000020000000100000001 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000001 /* FUnlockCore */; };
 		PK0000020000000100000002 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000002 /* FUnlockCore */; };
 /* End PBXBuildFile section */
@@ -209,6 +211,8 @@
 		CB0000010000000100000001 /* CoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBridge.swift; sourceTree = "<group>"; };
 		LD0000010000000100000001 /* LiveDeadlineScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/LiveDeadlineScheduler.swift; sourceTree = "<group>"; };
 		LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDeadlineSchedulerTests.swift; sourceTree = "<group>"; };
+		SB0000010000000100000001 /* SecretUTF16Buffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretUTF16Buffer.swift; sourceTree = "<group>"; };
+		SB0000010000000100000002 /* SecretUTF16BufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretUTF16BufferTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -316,6 +320,7 @@
 				UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */,
 				AL0000022026101600000001 /* AppLog.swift */,
 				LD0000010000000100000001 /* LiveDeadlineScheduler.swift */,
+				SB0000010000000100000001 /* SecretUTF16Buffer.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -360,6 +365,7 @@
 				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
 				AL0000022026101600000002 /* AppLogTests.swift */,
 				LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */,
+				SB0000010000000100000002 /* SecretUTF16BufferTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -557,6 +563,7 @@
 				UA0000020000000100000001 /* UnlockOrchestrator+AutoUnlock.swift in Sources */,
 				AL0000012026101600000001 /* AppLog.swift in Sources */,
 				LD0000020000000100000001 /* LiveDeadlineScheduler.swift in Sources */,
+				SB0000020000000100000001 /* SecretUTF16Buffer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -592,6 +599,7 @@
 				7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */,
 				AL0000012026101600000002 /* AppLogTests.swift in Sources */,
 				LD0000020000000100000002 /* LiveDeadlineSchedulerTests.swift in Sources */,
+				SB0000020000000100000002 /* SecretUTF16BufferTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
