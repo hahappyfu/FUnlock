@@ -260,6 +260,7 @@ public struct EngineState: Equatable, Sendable {
     public var keepAliveActive: Bool
     public var negativeBoostSamplesRemaining: Int
     public var isCalibrating: Bool
+    public var pendingIntrudeCheck: Bool
 
     // 统一截止时间表
     public var deadlines: DeadlineTable
@@ -304,6 +305,7 @@ public struct EngineState: Equatable, Sendable {
         keepAliveActive: Bool = false,
         negativeBoostSamplesRemaining: Int = 0,
         isCalibrating: Bool = false,
+        pendingIntrudeCheck: Bool = false,
         deadlines: DeadlineTable = DeadlineTable()
     ) {
         self.monitoredUUID = monitoredUUID
@@ -345,6 +347,7 @@ public struct EngineState: Equatable, Sendable {
         self.keepAliveActive = keepAliveActive
         self.negativeBoostSamplesRemaining = negativeBoostSamplesRemaining
         self.isCalibrating = isCalibrating
+        self.pendingIntrudeCheck = pendingIntrudeCheck
         self.deadlines = deadlines
     }
 }

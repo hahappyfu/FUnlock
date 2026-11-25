@@ -208,11 +208,17 @@ extension EngineReducer {
             event: (flippedClose && unlockEnabled) ? .unlocked : nil
         ))
 
+        if idleSeconds.isFinite, idleSeconds >= 0, idleSeconds < 2.0 {
+            state.idleSleepLatched = false
+        }
+
         if state.presence && config.lockRSSI != SignalHysteresisEngine.lockDisabled {
             ensureHeartbeatScheduled(state: &state, config: config, now: now)
         }
 
         applyLockTimer(state: &state, effectiveRSSI: currentEffectiveRSSI(state: state, config: config, now: now), idleSeconds: idleSeconds, config: config, now: now, effects: &effects)
+        evaluateKeepAlive(state: &state, idleSeconds: idleSeconds, config: config, now: now, effects: &effects)
+        evaluatePreWakeAndApproach(state: &state, config: config, now: now, effects: &effects)
     }
 
     private static func updateAdaptivePolling(
@@ -598,14 +604,18 @@ extension EngineReducer {
         if state.screen == .displaySleeping {
             state.screen = systemLocked ? .locked(reason: .away) : .unlocked
         }
+        if case .wakingDisplay(_, let parallelScheduled) = state.unlockPhase {
+            state.unlockPhase = (parallelScheduled && state.deadlines[.unlockDelay] != nil) ? .waitingDelay : .idle
+        }
         if !systemLocked {
             reconcileUnlockedIfNeeded(state: &state)
         }
         if !isSelfWake {
             reduceUserIntervention(state: &state, effects: &effects)
+        } else if systemLocked {
+            scheduleUnlockIfAllowed(state: &state, config: config, now: now, effects: &effects)
         }
         effects.append(.recordDecision(category: .system, outcome: .info, reason: .displayWake, rssi: state.lastRawRSSI, device: state.monitoredDeviceName, screen: state.screen.description, detail: ""))
-        _ = (config, now)
     }
 
     static func reduceSystemScreenLockedNotification(state: inout EngineState, sessionLocked: Bool, now: Date, effects: inout [EngineEffect]) {
@@ -703,12 +713,18 @@ extension EngineReducer {
         state.lastUnlockAt = now
         state.lastProximityAt = now
         state.consecutiveFailures = 0
+        handleSessionUnlockedLearningAndAccounting(
+            state: &state,
+            idleSeconds: idleSeconds,
+            config: config,
+            now: now,
+            effects: &effects
+        )
         if state.unlockPhase != .injecting {
             state.unlockPhase = .idle
         }
         effects.append(.flushPendingAlertsAndPasswordPrompt)
         effects.append(.checkForUpdates)
-        _ = (idleSeconds, config)
     }
 
     static func reduceLockNowRequested(

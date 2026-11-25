@@ -104,9 +104,32 @@ public enum EngineReducer {
         case .lockNowRequested(let sessionLocked):
             reduceLockNowRequested(state: &state, sessionLocked: sessionLocked, config: config, now: now, effects: &effects)
 
-        case .passwordCheckResult, .injectionFinished, .negativeHintReceived:
-            // Task 3 接管渐进解锁（L0/L1/L2）与负向信号快采分支
-            break
+        case .passwordCheckResult(let availability, let sessionLocked, let isSecureForPrelude):
+            reducePasswordCheckResult(
+                state: &state,
+                availability: availability,
+                sessionLocked: sessionLocked,
+                isSecureForPrelude: isSecureForPrelude,
+                config: config,
+                now: now,
+                effects: &effects
+            )
+
+        case .injectionFinished(let succeeded, let verifiedUnlocked, let displayPoweredOn, let axTrusted, let sessionStillLocked):
+            reduceInjectionFinished(
+                state: &state,
+                succeeded: succeeded,
+                verifiedUnlocked: verifiedUnlocked,
+                displayPoweredOn: displayPoweredOn,
+                axTrusted: axTrusted,
+                sessionStillLocked: sessionStillLocked,
+                config: config,
+                now: now,
+                effects: &effects
+            )
+
+        case .negativeHintReceived(let source):
+            reduceNegativeHint(state: &state, source: source, config: config, now: now, effects: &effects)
 
         case .userIntervention:
             reduceUserIntervention(state: &state, effects: &effects)
@@ -200,9 +223,23 @@ public enum EngineReducer {
         case .deviceExpiry(let uuid):
             effects.append(.expireDiscoveredDevice(uuid))
 
-        case .wakeRetry, .unlockDelay, .l1NativeCheck, .intrudeCheck, .keepAliveRenew:
-            // Task 3 实现 L0/L1/L2 与入侵检查时序
-            break
+        case .wakeRetry:
+            reduceWakeRetryDeadline(state: &state, sessionLocked: sessionLocked, config: config, now: now, effects: &effects)
+
+        case .unlockDelay:
+            reduceUnlockDelayDeadline(state: &state, currentSSID: currentSSID, sessionLocked: sessionLocked, config: config, now: now, effects: &effects)
+
+        case .l1NativeCheck:
+            reduceL1NativeCheckDeadline(state: &state, idleSeconds: idleSeconds, sessionLocked: sessionLocked, config: config, now: now, effects: &effects)
+
+        case .intrudeCheck:
+            if state.pendingIntrudeCheck {
+                state.pendingIntrudeCheck = false
+                effects.append(.runScript(event: "intruded", rssi: state.lastRawRSSI, deviceName: state.monitoredDeviceName))
+            }
+
+        case .keepAliveRenew:
+            evaluateKeepAlive(state: &state, idleSeconds: idleSeconds, config: config, now: now, effects: &effects, forceRenew: true)
         }
     }
 }
