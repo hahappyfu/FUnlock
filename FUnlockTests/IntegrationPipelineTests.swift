@@ -434,8 +434,8 @@ final class ScanSeparationTests: XCTestCase {
         fun.lock.withLock {
             fun.scanner.monitoredUUID = UUID()
             fun.scanner.passiveMode = false
-            fun.scanner.handler.activeModeTimer = nil
         }
+        fun.scheduler.cancel(.activePoll)
         XCTAssertFalse(fun.scanner.shouldStopCentralScanOnStopDiscovery())
     }
 
@@ -445,9 +445,10 @@ final class ScanSeparationTests: XCTestCase {
         fun.lock.withLock {
             fun.scanner.monitoredUUID = UUID()
             fun.scanner.passiveMode = false
-            fun.scanner.handler.activeModeTimer = Timer(timeInterval: 10, repeats: false) { _ in }
         }
+        fun.scheduler.scheduleAfter(.activePoll, interval: 10)
         XCTAssertTrue(fun.scanner.shouldStopCentralScanOnStopDiscovery())
+        fun.scheduler.cancelAll()
     }
 
     func testUnbindDeviceClearsMonitoredUUIDBeforeStoppingScan() {

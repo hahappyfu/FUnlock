@@ -92,6 +92,8 @@
 		AL0000012026101600000001 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AL0000022026101600000001 /* AppLog.swift */; };
 		AL0000012026101600000002 /* AppLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AL0000022026101600000002 /* AppLogTests.swift */; };
 		CB0000020000000100000001 /* CoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0000010000000100000001 /* CoreBridge.swift */; };
+		LD0000020000000100000001 /* LiveDeadlineScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD0000010000000100000001 /* LiveDeadlineScheduler.swift */; };
+		LD0000020000000100000002 /* LiveDeadlineSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */; };
 		PK0000020000000100000001 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000001 /* FUnlockCore */; };
 		PK0000020000000100000002 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000002 /* FUnlockCore */; };
 /* End PBXBuildFile section */
@@ -205,6 +207,8 @@
 		AL0000022026101600000001 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		AL0000022026101600000002 /* AppLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogTests.swift; sourceTree = "<group>"; };
 		CB0000010000000100000001 /* CoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBridge.swift; sourceTree = "<group>"; };
+		LD0000010000000100000001 /* LiveDeadlineScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/LiveDeadlineScheduler.swift; sourceTree = "<group>"; };
+		LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDeadlineSchedulerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -311,6 +315,7 @@
 				UO0000010000000100000001 /* UnlockOrchestrator.swift */,
 				UA0000010000000100000001 /* UnlockOrchestrator+AutoUnlock.swift */,
 				AL0000022026101600000001 /* AppLog.swift */,
+				LD0000010000000100000001 /* LiveDeadlineScheduler.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -354,6 +359,7 @@
 				SW0000030000000100000004 /* OrchestratorGatesTests.swift */,
 				E695C91A38887907EE91F891 /* ConfigStoreTests.swift */,
 				AL0000022026101600000002 /* AppLogTests.swift */,
+				LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -550,6 +556,7 @@
 				UO0000020000000100000001 /* UnlockOrchestrator.swift in Sources */,
 				UA0000020000000100000001 /* UnlockOrchestrator+AutoUnlock.swift in Sources */,
 				AL0000012026101600000001 /* AppLog.swift in Sources */,
+				LD0000020000000100000001 /* LiveDeadlineScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -584,6 +591,7 @@
 				SW0000040000000100000004 /* OrchestratorGatesTests.swift in Sources */,
 				7340FFB65BA27D5CF63F0109 /* ConfigStoreTests.swift in Sources */,
 				AL0000012026101600000002 /* AppLogTests.swift in Sources */,
+				LD0000020000000100000002 /* LiveDeadlineSchedulerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

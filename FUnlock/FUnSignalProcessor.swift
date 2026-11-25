@@ -69,7 +69,7 @@ extension FUn {
                 kalmanEstimate: pipeline.kalmanEstimate,
                 smoothedSlope: pipeline.smoothedSlope,
                 lastSignalAnomalous: lastSignalAnomalous,
-                activeModeActive: scanner.handler.activeModeTimer != nil
+                activeModeActive: scheduler.isScheduled(.activePoll)
             )
         }
     }
@@ -119,8 +119,8 @@ extension FUn {
             AppLog.info(.ble, "scanGap", [("gap", String(format: "%.1fs", gap))])
         }
 
-        // activeModeTimer 锁内快照（修复锁外读 vs 锁内写竞态；source 与下方日志共用一次快照）
-        let isActive = lock.withLock { scanner.handler.activeModeTimer != nil }
+        // activePoll 调度态快照（source 与下方日志共用一次快照）
+        let isActive = scheduler.isScheduled(.activePoll)
         let source: SignalSource = isActive ? .connected : .scanning
 
         // 1. 信号处理（纯计算）
@@ -264,7 +264,7 @@ extension FUn {
             }
             return disp
         }
-        let activeMode = lock.withLock { scanner.handler.activeModeTimer != nil }
+        let activeMode = scheduler.isScheduled(.activePoll)
 
         if decision.isClose {
             if shouldNotifyClose {

@@ -484,8 +484,8 @@ final class LockTimerGuardTests: XCTestCase {
         fun.lock.withLock {
             fun.scanner.monitoredUUID = UUID()
             fun.scanner.passiveMode = false
-            fun.scanner.handler.activeModeTimer = nil
         }
+        fun.scheduler.cancel(.activePoll)
         XCTAssertTrue(fun.scanner.computeAllowDuplicatesLocked())
     }
 }

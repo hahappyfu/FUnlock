@@ -129,15 +129,14 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     var currentSmoothedRSSI: Double { lock.withLock { smoothedRSSIValue } }
     var lastReceiveTime: Date = Date()
     var lastSignalAnomalous: Bool = false
-    // Heartbeat timer (独立状态机，不在管道内)
-    var heartbeatTimer: Timer?
+    // 单一底层调度器：收编 heartbeat / lockConfirm / signalTimeout / activePoll / connectTimeout / deviceExpiry
+    private var _scheduler: LiveDeadlineScheduler?
+    var scheduler: LiveDeadlineScheduler { _scheduler! }
     var lastHeartbeatInterval: TimeInterval = 2.0
     var signalLostCount: Int = 0
     // 冷静期：解锁后短时间内不触发锁定，防止振荡
     var lastProximityEventTime: Date = .distantPast
     let proximityGracePeriod: TimeInterval = 5.0
-    var proximityTimer: Timer?
-    var signalTimer: Timer?
     // 锁屏计时器结算守卫（共享 lock 保护）：启动时间、启动前轮询间隔、是否已延长一次
     var lockTimerStartedAt: Date = .distantPast
     var pollIntervalBeforeLockTimer: TimeInterval = 2.0
@@ -164,11 +163,8 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     }
 
     func startMonitor(uuid: UUID) {
-        // 共享状态复位与 Timer 引用置换在锁内原子完成；需锁外操作的旧引用（peripheral）取出后，
-        // Timer 的 invalidate 派发回主线程（Timer 注册在主 RunLoop，invalidate 必须在其注册线程执行）
-        let oldPeripheral: CBPeripheral?
-        let oldTimers: [Timer]
-        (oldPeripheral, oldTimers) = lock.withLock {
+        // 共享状态复位在锁内原子完成；所有调度器截止时间在锁外统一取消（scheduler 自带锁，零重入）
+        let oldPeripheral: CBPeripheral? = lock.withLock {
             let old = scanner.monitoredUUID != uuid ? scanner.monitoredPeripheral : nil
 
             // 重置所有共享状态
@@ -178,13 +174,6 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             // 避免"设备从未靠近"（如忘带手表）时因 presence 残留触发锁屏
             presence = false
             scanner.monitoredPeripheral = nil
-            var timers: [Timer] = []
-            if let t = scanner.handler.activeModeTimer { timers.append(t) }
-            scanner.handler.activeModeTimer = nil
-            if let t = scanner.handler.connectionTimer { timers.append(t) }
-            scanner.handler.connectionTimer = nil
-            if let t = signalTimer { timers.append(t) }
-            signalTimer = nil
             scanner.handler.stableCount = 0
             scanner.handler.activePollInterval = 2.0
             scanner.handler.lastEstimatedRSSI = 0
@@ -195,20 +184,18 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
             displayRSSI = -60.0
             smoothedRSSIValue = -100.0
             smoothedLastUpdate = nil
-            scanner.monitoredUUIDs = [uuid]
-            return (old, timers)
-        }
-        oldTimers.forEach { $0.invalidateOnMain() }
-
-        // proximityTimer 置换：锁内取引用并清空，invalidate 派发回主线程
-        let oldProximity: Timer? = lock.withLock {
-            let t = proximityTimer
-            proximityTimer = nil
             lockTimerStartedAt = .distantPast
             lockTimerExtended = false
-            return t
+            scanner.monitoredUUIDs = [uuid]
+            return old
         }
-        oldProximity?.invalidateOnMain()
+
+        scheduler.cancel(.activePoll)
+        scheduler.cancel(.peripheralConnectTimeout)
+        scheduler.cancel(.signalTimeout)
+        scheduler.cancel(.lockConfirm)
+        scheduler.cancel(.heartbeat)
+
         resetSignalTimer()
         cancelHeartbeat()
 
@@ -229,16 +216,13 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
     }
 
     func invalidateAllTimers() {
-        // Timer 的 invalidate 必须在其注册线程（主 RunLoop）执行：锁内取引用并清空，
-        // invalidate 派发回主线程（本方法可被 bleQueue 的 scannerDidPowerOff 调用）
-        let timers: [Timer] = lock.withLock {
-            var collected: [Timer] = []
-            if let t = signalTimer { collected.append(t); signalTimer = nil }
-            if let t = proximityTimer { collected.append(t); proximityTimer = nil }
-            if let t = heartbeatTimer { collected.append(t); heartbeatTimer = nil }
-            return collected
+        scheduler.cancel(.signalTimeout)
+        scheduler.cancel(.lockConfirm)
+        scheduler.cancel(.heartbeat)
+        lock.withLock {
+            lockTimerStartedAt = .distantPast
+            lockTimerExtended = false
         }
-        timers.forEach { $0.invalidateOnMain() }
         scanner?.handler.invalidateAllTimers()
     }
 
@@ -250,7 +234,29 @@ class FUn: NSObject, @unchecked Sendable, BLEScannerHost {
         super.init()
         let btAuth = CBManager.authorization
         AppLog.info(.ble, "initBLEScanner", [("btAuth", "\(btAuth.rawValue)")])
+        _scheduler = LiveDeadlineScheduler { [weak self] id, scheduledAt in
+            self?.handleScheduledDeadline(id, scheduledAt: scheduledAt)
+        }
         scanner = BLEScanner(queue: bleQueue, lock: lock, host: self)
+    }
+
+    private func handleScheduledDeadline(_ id: DeadlineID, scheduledAt: Date) {
+        switch id {
+        case .signalTimeout:
+            handleSignalTimeoutTick()
+        case .heartbeat:
+            handleHeartbeatTick()
+        case .lockConfirm:
+            handleLockTimerFire()
+        case .activePoll:
+            scanner.handler.handleActivePollTick()
+        case .peripheralConnectTimeout:
+            scanner.handler.handleConnectionTimeout()
+        case .deviceExpiry(let uuid):
+            scanner.handleDeviceExpiry(uuid: uuid, scheduledAt: scheduledAt)
+        default:
+            break
+        }
     }
 }
 

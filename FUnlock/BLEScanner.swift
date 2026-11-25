@@ -19,6 +19,8 @@ protocol BLEScannerHost: AnyObject {
     func scannerPollingContext(_ scanner: BLEScanner) -> BLEScanner.PollingContext
     /// 设备发现超时（s）：由宿主提供（对外仍由 FUn.signalTimeout 控制）
     func scannerDeviceScanTimeout(_ scanner: BLEScanner) -> TimeInterval
+    /// 单一截止时间调度器（宿主拥有，替代所有散装 Timer）
+    var scheduler: LiveDeadlineScheduler { get }
     /// 设备列表 UI 派发目标（@MainActor 协议，宿主统一以 Task { @MainActor } 派发）
     var bleDelegate: FUnDelegate? { get }
 }
@@ -105,7 +107,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
     func computeAllowDuplicatesLocked() -> Bool {
         guard monitoredUUID != nil else { return false }
         if passiveMode { return true }
-        return handler.activeModeTimer == nil
+        return !(host?.scheduler.isScheduled(.activePoll) ?? false)
     }
 
     func scanForPeripherals() {
@@ -142,9 +144,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
     /// 主动模式在尚未进入轮询（连接/重连期）时也需要广播流兜底；
     /// 只有未绑定、或主动模式已在轮询（连接健康，靠 readRSSI）时才真正停扫。
     func shouldStopCentralScanOnStopDiscovery() -> Bool {
-        lock.withLock {
+        let activeScheduled = host?.scheduler.isScheduled(.activePoll) == true
+        return lock.withLock {
             if monitoredUUID == nil { return true }
-            if !passiveMode && handler.activeModeTimer != nil { return true }
+            if !passiveMode && activeScheduled { return true }
             return false
         }
     }
@@ -170,18 +173,14 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
     }
 
     func setPassiveMode(_ mode: Bool) {
-        let (peripheralToCancel, oldTimer): (CBPeripheral?, Timer?) = lock.withLock {
+        let peripheralToCancel: CBPeripheral? = lock.withLock {
             passiveMode = mode
-            var t: Timer?
-            if passiveMode {
-                t = handler.activeModeTimer
-                handler.activeModeTimer = nil
-            }
-            return (passiveMode ? monitoredPeripheral : nil, t)
+            return passiveMode ? monitoredPeripheral : nil
         }
 
-        // invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        oldTimer?.invalidateOnMain()
+        if mode {
+            host?.scheduler.cancel(.activePoll)
+        }
         if let p = peripheralToCancel {
             centralMgr.cancelPeripheralConnection(p)
         }
@@ -189,18 +188,10 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
     }
 
     func invalidateAllDeviceTimers() {
-        let timers: [Timer] = lock.withLock {
-            var collected: [Timer] = []
-            for (_, device) in devices {
-                if let t = device.scanTimer {
-                    collected.append(t)
-                    device.scanTimer = nil
-                }
-            }
-            return collected
+        host?.scheduler.cancelWhere {
+            if case .deviceExpiry = $0 { return true }
+            return false
         }
-        // invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        timers.forEach { $0.invalidateOnMain() }
     }
 
     /// 锁内按 id 取设备并转为不可变快照，供统一派发点复用
@@ -211,44 +202,31 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         }
     }
 
-    /// 设备发现超时计时器：超时后移除设备并通知宿主 UI
+    /// 设备发现超时计时器：通过单一调度器登记 .deviceExpiry(uuid)
     func resetScanTimer(device: Device, timeout: TimeInterval) {
-        // 旧 scanTimer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        let oldTimer: Timer? = lock.withLock {
-            let t = device.scanTimer
-            device.scanTimer = nil
-            return t
-        }
-        oldTimer?.invalidateOnMain()
-        let uuid = device.uuid
-        // peripheral 在闭包外提前取出（Sendable），避免 @Sendable Timer 闭包捕获非 Sendable 的 device
-        let peripheral = device.peripheral
-        let timer = Timer(timeInterval: timeout, repeats: false, block: { [weak self] timer in
-            // 闭包只捕获 uuid（Sendable）；device 在 lock 保护下原子取出并移除，
-            // 锁内即刻转成不可变快照，杜绝堆引用跨 Actor 共享，再派发主线程
-            guard let self = self else { return }
-            // 过期 fire 丢弃：设备已由新广播换新 scanTimer（防置换后旧 fire 重复移除）
-            let isCurrent = self.lock.withLock { self.devices[uuid]?.scanTimer === timer }
-            guard isCurrent else { return }
+        host?.scheduler.scheduleAfter(.deviceExpiry(device.uuid), interval: timeout)
+    }
+
+    func handleDeviceExpiry(uuid: UUID, scheduledAt: Date) {
+        _ = scheduledAt
+        queue.async { [weak self] in
+            guard let self else { return }
+            // 若在投递排队期间设备刚收到新广播并重新排期，放弃过期移除
+            guard self.host?.scheduler.isScheduled(.deviceExpiry(uuid)) != true else { return }
+            let (peripheral, snapshot): (CBPeripheral?, DeviceSnapshot?) = self.lock.withLock {
+                guard let device = self.devices.removeValue(forKey: uuid) else { return (nil, nil) }
+                return (device.peripheral, device.toSnapshot(isMonitored: self.monitoredUUID == uuid))
+            }
             if let p = peripheral {
                 self.centralMgr.cancelPeripheralConnection(p)
             }
-            let snapshot: DeviceSnapshot? = self.lock.withLock {
-                guard let device = self.devices.removeValue(forKey: uuid) else { return nil }
-                return device.toSnapshot(isMonitored: self.monitoredUUID == uuid)
-            }
+            self.lastUIUpdateTime.removeValue(forKey: uuid)
             if let snapshot {
                 Task { @MainActor [weak self] in
                     self?.host?.bleDelegate?.removeDevice(device: snapshot)
                 }
             }
-            // 防泄漏：设备过期时清理节流记录（派发到 bleQueue 串行队列保证线程安全）
-            self.queue.async { [weak self] in
-                self?.lastUIUpdateTime.removeValue(forKey: uuid)
-            }
-        })
-        RunLoop.main.add(timer, forMode: .common)
-        lock.withLock { device.scanTimer = timer }
+        }
     }
 
     // MARK: - CBCentralManagerDelegate
@@ -261,8 +239,7 @@ final class BLEScanner: NSObject, CBCentralManagerDelegate, @unchecked Sendable 
         switch central.state {
         case .poweredOn:
             AppLog.info(.ble, "bluetoothPoweredOn")
-            // activeModeTimer 锁内快照（修复锁外读 vs 锁内写竞态）
-            if lock.withLock({ handler.activeModeTimer == nil }) {
+            if host?.scheduler.isScheduled(.activePoll) != true {
                 scanForPeripherals()
             }
             host?.scannerDidPowerOn(self)

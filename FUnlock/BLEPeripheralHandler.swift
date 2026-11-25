@@ -21,14 +21,16 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
     private let lock: UnfairLock
     private weak var scanner: BLEScanner?
 
-    // MARK: - 轮询状态（与宿主共用 `lock` 保护）
+    // MARK: - 轮询状态（与宿主共用 `lock` 保护，定时收编进宿主的 LiveDeadlineScheduler）
 
-    var activeModeTimer: Timer?
-    var connectionTimer: Timer?
     var stableCount: Int = 0
     var activePollInterval: TimeInterval = 2.0
     var lastEstimatedRSSI: Int = 0
     var lastReadAt = 0.0
+
+    var isActiveModeActive: Bool {
+        scanner?.host?.scheduler.isScheduled(.activePoll) == true
+    }
 
     /// 快速轮询间隔（s）：信号接近阈值时降低感知延迟
     private static let fastPollInterval: TimeInterval = 0.5
@@ -73,75 +75,53 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         guard p.state == .disconnected else { return }
         AppLog.info(.ble, "connecting", [("id", "\(p.identifier)")])
         scanner.centralMgr.connect(p, options: nil)
-        // 旧 connectionTimer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        let oldTimer: Timer? = lock.withLock {
-            let t = connectionTimer
-            connectionTimer = nil
-            return t
-        }
-        oldTimer?.invalidateOnMain()
-        let connTimer = Timer(timeInterval: 60, repeats: false, block: { [weak self] timer in
-            guard let self = self else { return }
-            // 过期 fire 丢弃：didConnect 已置换/清空计时器（60s 边界防误 cancel 刚建立的连接）
-            let isCurrent = self.lock.withLock { self.connectionTimer === timer }
-            guard isCurrent else { return }
-            if p.state == .connecting {
+        scanner.host?.scheduler.scheduleAfter(.peripheralConnectTimeout, interval: 60.0)
+    }
+
+    func handleConnectionTimeout() {
+        guard let scanner else { return }
+        scanner.queue.async { [weak self] in
+            guard let self, let scanner = self.scanner else { return }
+            let p = self.lock.withLock { scanner.monitoredPeripheral }
+            if let p, p.state == .connecting {
                 AppLog.error(.ble, "connectionTimeout", [("id", "\(p.identifier)")])
-                self.scanner?.centralMgr.cancelPeripheralConnection(p)
+                scanner.centralMgr.cancelPeripheralConnection(p)
             }
-        })
-        RunLoop.main.add(connTimer, forMode: .common)
-        lock.withLock { connectionTimer = connTimer }
+        }
     }
 
     private func restartActiveModeTimer(peripheral: CBPeripheral) {
-        // 置换旧 timer：锁内取引用并清空，invalidate 派发回主线程（Timer 注册在主 RunLoop）
-        let (pollInterval, oldTimer): (TimeInterval, Timer?) = lock.withLock {
-            let t = activeModeTimer
-            activeModeTimer = nil
-            return (activePollInterval, t)
-        }
-        oldTimer?.invalidateOnMain()
+        let pollInterval: TimeInterval = lock.withLock { activePollInterval }
+        scanner?.host?.scheduler.scheduleAfter(.activePoll, interval: pollInterval)
+        _ = peripheral
+    }
 
-        let timer = Timer(timeInterval: pollInterval, repeats: true, block: { [weak self] timer in
-            guard let self = self else {
-                timer.invalidate()
-                return
+    func handleActivePollTick() {
+        guard let scanner else { return }
+        scanner.queue.async { [weak self] in
+            guard let self, let scanner = self.scanner else { return }
+            let snapshot: (peripheral: CBPeripheral?, pollInterval: TimeInterval, lastRead: TimeInterval, passive: Bool) = self.lock.withLock {
+                (scanner.monitoredPeripheral, self.activePollInterval, self.lastReadAt, scanner.passiveMode)
             }
-            // 过期 fire 丢弃：本 timer 已被置换（restartActiveModeTimer）
-            let isCurrent = self.lock.withLock { self.activeModeTimer === timer }
-            guard isCurrent else { return }
-            let lastRead = self.lock.withLock { self.lastReadAt }
-            if Date().timeIntervalSince1970 > lastRead + Self.fallbackTimeout(forPollInterval: pollInterval) {
+            guard let peripheral = snapshot.peripheral, !snapshot.passive else { return }
+            if Date().timeIntervalSince1970 > snapshot.lastRead + Self.fallbackTimeout(forPollInterval: snapshot.pollInterval) {
                 AppLog.info(.ble, "fallbackToPassiveMode", [("id", "\(peripheral.identifier)")])
-                self.scanner?.centralMgr.cancelPeripheralConnection(peripheral)
-                // 自停用 block 参数（主线程 fire 内 invalidate，符合契约）；
-                // 仅当本 timer 仍为当前轮询定时器时才清空引用
-                self.lock.withLock {
-                    if self.activeModeTimer === timer { self.activeModeTimer = nil }
-                }
-                timer.invalidate()
-                self.scanner?.scanForPeripherals()
+                scanner.centralMgr.cancelPeripheralConnection(peripheral)
+                scanner.host?.scheduler.cancel(.activePoll)
+                scanner.scanForPeripherals()
             } else if peripheral.state == .connected {
                 peripheral.readRSSI()
+                scanner.host?.scheduler.scheduleAfter(.activePoll, interval: snapshot.pollInterval)
             } else {
                 self.connectMonitoredPeripheral()
             }
-        })
-        RunLoop.main.add(timer, forMode: .common)
-        lock.withLock { activeModeTimer = timer }
+        }
     }
 
     /// 只取消主动模式与连接计时器，保留心跳和信号超时链用于检测离场
     func invalidateAllTimers() {
-        // 锁内取引用并清空；invalidate 派发回主线程（本方法可被 bleQueue 调用）
-        let timers: [Timer] = lock.withLock {
-            var collected: [Timer] = []
-            if let t = activeModeTimer { collected.append(t); activeModeTimer = nil }
-            if let t = connectionTimer { collected.append(t); connectionTimer = nil }
-            return collected
-        }
-        timers.forEach { $0.invalidateOnMain() }
+        scanner?.host?.scheduler.cancel(.activePoll)
+        scanner?.host?.scheduler.cancel(.peripheralConnectTimeout)
     }
 
     // MARK: - 中央管理器转发
@@ -161,7 +141,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         guard isMonitored else { return }
         // 扫描回调：上报宿主更新 presence 和锁定判断
         scanner.host?.scanner(scanner, didSampleMonitoredRSSI: rssi)
-        let shouldConnect: Bool = lock.withLock { self.activeModeTimer == nil && !scanner.passiveMode }
+        let shouldConnect = lock.withLock { !scanner.passiveMode } && !isActiveModeActive
         if shouldConnect {
             connectMonitoredPeripheral()
         }
@@ -185,13 +165,7 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
         }
         if shouldActivate {
             AppLog.info(.ble, "connected", [("id", "\(peripheral.identifier)")])
-            // didConnect 置换 connectionTimer：锁内取引用并清空，invalidate 派发回主线程
-            let oldTimer: Timer? = lock.withLock {
-                let t = connectionTimer
-                connectionTimer = nil
-                return t
-            }
-            oldTimer?.invalidateOnMain()
+            scanner.host?.scheduler.cancel(.peripheralConnectTimeout)
             // 优化 4：主动模式已连接，停掉全局扫描
             scanner.centralMgr.stopScan()
             peripheral.readRSSI()
@@ -283,9 +257,9 @@ final class BLEPeripheralHandler: NSObject, CBPeripheralDelegate, @unchecked Sen
             restartActiveModeTimer(peripheral: peripheral)
         }
 
-        let (shouldStartActiveMode, scanModeOn) = lock.withLock {
-            (activeModeTimer == nil && !scanner.passiveMode, scanner.scanMode)
-        }
+        let activeOn = isActiveModeActive
+        let scanModeOn = lock.withLock { scanner.scanMode }
+        let shouldStartActiveMode = lock.withLock { !activeOn && !scanner.passiveMode }
         if shouldStartActiveMode {
             AppLog.info(.ble, "enterActiveMode", [("id", "\(peripheral.identifier)")])
             if !scanModeOn {

@@ -10,7 +10,6 @@ class Device: NSObject {
     var model : String?
     var advData: Data?
     var rssi: Int = 0
-    var scanTimer: Timer?
     var macAddr: String?
     var blName: String?
 
