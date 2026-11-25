@@ -1,44 +1,21 @@
 // SignalDataStore.swift
-// 信号采样数据仓库：环形缓冲 + Combine 节流喂给 @Observable 快照属性，驱动 UI
+// 信号采样数据仓库：线程安全环形缓冲（零后台 Timer；按需 snapshot() 供可见视图的 TimelineView 拉取）
 
 import Foundation
-import Combine
-import Observation
 
-/// 全局信号数据仓库
-/// @unchecked Sendable 依据：ring 由 NSLock 保护，@Observable 跟踪属性仅主线程读写
-@Observable
+/// 全局信号数据仓库（CQRS 写侧缓冲：后台只追加 RingBuffer，不派发 UI 定时器）
+/// @unchecked Sendable 依据：ring 仅在 NSLock 保护下读写
 final class SignalDataStore: @unchecked Sendable {
     static let shared = SignalDataStore()
 
     /// 底层环形缓冲（高频写入，不触发 UI）；600 在 0.5s 快轮询档覆盖 5 分钟
-    @ObservationIgnored
     private var ring = RingBuffer<SignalSample>(capacity: 600)
 
-    /// 互斥锁：保护 ring 的跨线程访问（BLE 回调线程写、主线程 Timer 读）
-    @ObservationIgnored
+    /// 互斥锁：保护 ring 的跨线程访问（BLE 回调线程写、主线程按需读）
     private let lock = NSLock()
 
-    /// 节流后暴露给 UI 的快照（~1 秒刷新一次）
-    private(set) var samples: [SignalSample] = []
-
-    @ObservationIgnored
-    private var cancellable: AnyCancellable?
-    @ObservationIgnored
-    private let uiThrottle: TimeInterval = 1.0
-
-    /// 环形缓冲写入计数（record/clear 各自增），供 UI Timer 判定「本 tick 是否有新数据」：
-    /// 值未变则跳过对最多 600 个 SignalSample（每个含 UUID）的全量 ring.toArray() 拷贝，
-    /// 设备离场/无采样的空闲期每秒 tick 近乎零开销。由 lock 保护，与 ring 同生命周期。
-    @ObservationIgnored
-    private var mutationCount: Int = 0
-    @ObservationIgnored
-    private var lastAppliedMutation: Int = 0
-
     /// 图表阈值参考线：实时读用户当前设置，与「设置」页调整后保持同步。
-    /// 命中禁用哨兵（解锁关闭 / 不单独设锁定阈值）时回退到展示默认值，
-    /// 避免参考线画到 1 dBm 或 -100 dBm 这类图表外的位置。
-    /// 计算属性不进入 Observation 追踪，随 samples 的秒级刷新自然更新。
+    /// 命中禁用哨兵（解锁关闭 / 不单独设锁定阈值）时回退到展示默认值。
     var unlockThreshold: Double {
         let value = ConfigStore.shared.get("unlockRSSI", fallback: -60)
         return value == FUn.UNLOCK_DISABLED ? -60 : Double(value)
@@ -48,27 +25,18 @@ final class SignalDataStore: @unchecked Sendable {
         return value == SignalHysteresisEngine.lockDisabled ? -80 : Double(value)
     }
 
-    private init() {
-        // 底层 ring 变化 → 节流 → 批量更新 samples
-        // 用 Timer 驱动而非 subject，因为 ring 是被动写入的
-        cancellable = Timer.publish(every: uiThrottle, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                guard let self = self else { return }
-                self.lock.lock()
-                // 空闲跳帧：本 tick 无 record/clear 写入则直接返回，省掉全量 ring.toArray() 拷贝
-                guard self.mutationCount != self.lastAppliedMutation else {
-                    self.lock.unlock()
-                    return
-                }
-                self.lastAppliedMutation = self.mutationCount
-                let snapshot = self.ring.toArray()
-                self.lock.unlock()
-                if snapshot.count != self.samples.count ||
-                    snapshot.last?.id != self.samples.last?.id {
-                    self.samples = snapshot
-                }
-            }
+    private init() {}
+
+    /// 按需读取当前样本快照（供可见视图 TimelineView 或测试调用）
+    func snapshot() -> [SignalSample] {
+        lock.lock()
+        defer { lock.unlock() }
+        return ring.toArray()
+    }
+
+    /// 兼容既有调用点的只读快照属性
+    var samples: [SignalSample] {
+        snapshot()
     }
 
     // MARK: - 写入接口（BLE 线程安全）
@@ -88,17 +56,13 @@ final class SignalDataStore: @unchecked Sendable {
         )
         lock.lock()
         ring.append(sample)
-        mutationCount += 1
         lock.unlock()
     }
 
-    /// 清空所有数据（UI 快照更新在主线程执行）
-    @MainActor
+    /// 清空所有数据
     func clear() {
         lock.lock()
         ring.clear()
-        mutationCount += 1
         lock.unlock()
-        samples = []
     }
 }

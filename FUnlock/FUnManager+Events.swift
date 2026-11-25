@@ -467,6 +467,8 @@ extension FUnManager {
     func onRSSIUpdated(rssi: Int?, active: Bool) {
         self.rssi = rssi
         syncL0KeepAlive()
+        StatusProjection.shared.sync(from: self)
+        LiveSignalProjection.shared.ingestRSSI(rssi, smoothed: fun.currentSmoothedRSSI, store: nil)
 
         // 预备唤醒：平滑 RSSI >= preWakeThreshold 时唤醒显示器（不等到解锁阈值，受 idleSleepLatched 保护）
         // 门控改读时间归一化 EMA（由 processSignal 单驱动），主线程不持锁直接读 currentSmoothedRSSI

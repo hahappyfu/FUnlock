@@ -4,7 +4,6 @@
 import SwiftUI
 import AppKit
 import CoreBluetooth
-import Combine
 
 // MARK: - Tab 枚举（4 分区 + 旧 key 兼容路由）
 
@@ -58,10 +57,9 @@ struct MainWindowView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// 权限状态（仅 UI 展示，不影响解锁逻辑；缺失期间每 5 秒刷新）
+    /// 权限状态（仅 UI 展示，不影响解锁逻辑；缺失期间通过 .task(id:) 每 5 秒刷新）
     @State private var axGranted = false
     @State private var btGranted = false
-    @State private var permissionPollCancellable: AnyCancellable?
 
     init(manager: FUnManager, fun: FUn, initialTab: MenuTab = .overview) {
         self.manager = manager
@@ -116,17 +114,18 @@ struct MainWindowView: View {
         .onAppear {
             previousConnected = manager.connected
             refreshPermissions()
-            updatePermissionPolling()
             if !ConfigStore.shared.defaults.bool(forKey: "hasCompletedOnboarding") {
                 showOnboarding = true
             }
         }
-        .onDisappear {
-            permissionPollCancellable?.cancel()
-            permissionPollCancellable = nil
+        .task(id: !axGranted || !btGranted) {
+            guard !axGranted || !btGranted else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { break }
+                refreshPermissions()
+            }
         }
-        .onChange(of: axGranted) { _, _ in updatePermissionPolling() }
-        .onChange(of: btGranted) { _, _ in updatePermissionPolling() }
         .onChange(of: manager.connected) { _, connected in
             guard let prev = previousConnected, prev != connected else {
                 previousConnected = connected
@@ -260,19 +259,6 @@ struct MainWindowView: View {
         let btAuth = (CBManager.authorization == .allowedAlways)
         let btPoweredOn = (fun.centralMgr?.state == .poweredOn)
         btGranted = btAuth || btPoweredOn
-    }
-
-    /// 权限轮询生命周期：缺失时启动 5s 轮询，授予后立即停
-    private func updatePermissionPolling() {
-        let needed = !axGranted || !btGranted
-        if needed, permissionPollCancellable == nil {
-            permissionPollCancellable = Timer.publish(every: 5, on: .main, in: .common)
-                .autoconnect()
-                .sink { _ in refreshPermissions() }
-        } else if !needed, let cancellable = permissionPollCancellable {
-            cancellable.cancel()
-            permissionPollCancellable = nil
-        }
     }
 
     private func toggleSidebar() {

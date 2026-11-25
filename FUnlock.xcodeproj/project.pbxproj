@@ -97,8 +97,11 @@
 		SB0000020000000100000001 /* SecretUTF16Buffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB0000010000000100000001 /* SecretUTF16Buffer.swift */; };
 		SB0000020000000100000002 /* SecretUTF16BufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB0000010000000100000002 /* SecretUTF16BufferTests.swift */; };
 		TS0000020000000100000001 /* ThreeStageUnlockIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS0000010000000100000001 /* ThreeStageUnlockIntegrationTests.swift */; };
+		PV0000020000000100000001 /* ProjectionsAndVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PV0000010000000100000001 /* ProjectionsAndVisibilityTests.swift */; };
 		KA0000020000000100000001 /* PowerKeepAliveAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = KA0000010000000100000001 /* PowerKeepAliveAdapter.swift */; };
 		NS0000020000000100000001 /* NegativeSignalAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = NS0000010000000100000001 /* NegativeSignalAdapter.swift */; };
+		SP9900020000000100000001 /* StatusProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP9900010000000100000001 /* StatusProjection.swift */; };
+		LP9900020000000100000001 /* LiveSignalProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = LP9900010000000100000001 /* LiveSignalProjection.swift */; };
 		PK0000020000000100000001 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000001 /* FUnlockCore */; };
 		PK0000020000000100000002 /* FUnlockCore in Frameworks */ = {isa = PBXBuildFile; productRef = PK0000010000000100000002 /* FUnlockCore */; };
 /* End PBXBuildFile section */
@@ -217,8 +220,11 @@
 		SB0000010000000100000001 /* SecretUTF16Buffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretUTF16Buffer.swift; sourceTree = "<group>"; };
 		SB0000010000000100000002 /* SecretUTF16BufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretUTF16BufferTests.swift; sourceTree = "<group>"; };
 		TS0000010000000100000001 /* ThreeStageUnlockIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreeStageUnlockIntegrationTests.swift; sourceTree = "<group>"; };
+		PV0000010000000100000001 /* ProjectionsAndVisibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectionsAndVisibilityTests.swift; sourceTree = "<group>"; };
 		KA0000010000000100000001 /* PowerKeepAliveAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/PowerKeepAliveAdapter.swift; sourceTree = "<group>"; };
 		NS0000010000000100000001 /* NegativeSignalAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/NegativeSignalAdapter.swift; sourceTree = "<group>"; };
+		SP9900010000000100000001 /* StatusProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/StatusProjection.swift; sourceTree = "<group>"; };
+		LP9900010000000100000001 /* LiveSignalProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime/LiveSignalProjection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -329,6 +335,8 @@
 				SB0000010000000100000001 /* SecretUTF16Buffer.swift */,
 				KA0000010000000100000001 /* PowerKeepAliveAdapter.swift */,
 				NS0000010000000100000001 /* NegativeSignalAdapter.swift */,
+				SP9900010000000100000001 /* StatusProjection.swift */,
+				LP9900010000000100000001 /* LiveSignalProjection.swift */,
 			);
 			path = FUnlock;
 			sourceTree = "<group>";
@@ -375,6 +383,7 @@
 				LD0000010000000100000002 /* LiveDeadlineSchedulerTests.swift */,
 				SB0000010000000100000002 /* SecretUTF16BufferTests.swift */,
 				TS0000010000000100000001 /* ThreeStageUnlockIntegrationTests.swift */,
+				PV0000010000000100000001 /* ProjectionsAndVisibilityTests.swift */,
 			);
 			path = FUnlockTests;
 			sourceTree = "<group>";
@@ -575,6 +584,8 @@
 				SB0000020000000100000001 /* SecretUTF16Buffer.swift in Sources */,
 				KA0000020000000100000001 /* PowerKeepAliveAdapter.swift in Sources */,
 				NS0000020000000100000001 /* NegativeSignalAdapter.swift in Sources */,
+				SP9900020000000100000001 /* StatusProjection.swift in Sources */,
+				LP9900020000000100000001 /* LiveSignalProjection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -612,6 +623,7 @@
 				LD0000020000000100000002 /* LiveDeadlineSchedulerTests.swift in Sources */,
 				SB0000020000000100000002 /* SecretUTF16BufferTests.swift in Sources */,
 				TS0000020000000100000001 /* ThreeStageUnlockIntegrationTests.swift in Sources */,
+				PV0000020000000100000001 /* ProjectionsAndVisibilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

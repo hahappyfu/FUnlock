@@ -144,37 +144,27 @@ esac
 
 ```
 FUnlock/
-├── FUnlock/                          # 主应用
-│   ├── AppDelegate.swift             # 应用入口 + 权限检查 + 通知处理 + 输入活动监听
-│   ├── FUnManager.swift              # 核心管理器（@MainActor）：锁屏/解锁决策、手动锁保护
-│   ├── FUn.swift                     # CoreBluetooth 驱动 + 信号滤波 + 心跳检查
-│   ├── SignalPipeline.swift          # 信号处理管线（非对称 Kalman + 丢包惩罚）
-│   ├── FUnlockStateMachine.swift     # Actor 状态机（线程安全）
-│   ├── MainWindowView.swift          # 主窗口（NavigationSplitView 侧边栏导航）
-│   ├── SidebarView.swift             # 侧边栏导航（毛玻璃）
-│   ├── OverviewView.swift            # 总览：信号仪表盘 + 阈值调节 + 校准入口
-│   ├── DiagnosticsView.swift         # 诊断页：决策时间线（时间轴布局）
-│   ├── DecisionLogger.swift          # 决策记录器（结构化事件 + JSONL 持久化）
-│   ├── StatsView.swift               # 统计数据视图
-│   ├── CalibrationWizardView.swift   # 阈值校准向导
-│   ├── OnboardingView.swift          # 首次启动引导页
-│   ├── AutomationView.swift          # 自动化设置视图
-│   ├── ProfileManager.swift          # 多配置文件管理
-│   ├── SystemInteractionService.swift# 锁屏/唤醒/密码输入（与 FUnManager 解耦）
-│   ├── SecurityService.swift         # Keychain 读写 + 密码验证
-│   ├── ScriptRunner.swift            # 脚本事件执行 + 事件日志
-│   ├── iMessageNotifier.swift        # iMessage 通知（解锁/锁屏发到 Apple Watch）
-│   ├── IMMessageComposer.swift       # iMessage 消息组合
-│   ├── IMSettingsCard.swift          # iMessage 通知设置卡片
-│   ├── TelemetryLogger.swift         # 结构化日志 + 关键路径埋点
-│   ├── DebugLog.swift                # 调试日志组件
-│   ├── SignalDataStore.swift         # 信号数据存储
-│   ├── RingBuffer.swift              # 环形缓冲区
-│   ├── UpdateDownloader.swift        # 自动更新下载器
-│   ├── UpdateInstaller.swift         # 自动更新安装器
-│   ├── ToastView.swift               # 轻提示组件
-│   └── ...                           # 各设置视图 + 工具类
-├── FUnlockTests/                     # 单元测试与集成测试（373 用例）
+├── Packages/FUnlockCore/             # 零依赖纯逻辑包（仅 import Foundation）
+│   ├── Domain/                       # ScreenState / LockIntent / DeviceSnapshot
+│   ├── Signal/                       # 非对称 Kalman 管线、迟滞引擎、环形缓冲
+│   ├── Engine/                       # EngineState + EngineReducer（纯函数状态转移）
+│   ├── Scheduler/                    # DeadlineID + DeadlineTable（纯值截止时间表）
+│   └── Tests/                        # 毫秒级虚拟时钟单测（swift test，无需 App 宿主）
+├── FUnlock/                          # 主应用（@_exported import FUnlockCore）
+│   ├── CoreBridge.swift              # 再导出核心包 + ConfigStore 桥接扩展
+│   ├── AppDelegate.swift             # NSStatusItem 壳 + 权限检查 + 通知 + 可见性门控
+│   ├── FUnManager.swift              # @MainActor 命令门面（锁屏/解锁决策入口）
+│   ├── FUn.swift                     # CoreBluetooth 驱动 + 设备/信号采样
+│   ├── Runtime/                      # 系统副作用适配层
+│   │   ├── LiveDeadlineScheduler.swift   # 唯一底层计时器（对齐最近 deadline）
+│   │   ├── PowerKeepAliveAdapter.swift   # L0 有界在场保活（IOPMAssertion）
+│   │   ├── NegativeSignalAdapter.swift   # 音频路由 / 网络负向快采
+│   │   ├── StatusProjection.swift        # 常驻低频 @Observable 投影
+│   │   └── LiveSignalProjection.swift    # 仅窗口可见时更新的高频投影
+│   ├── SignalDataStore.swift         # 无定时器环形缓冲（TimelineView 按需 snapshot）
+│   ├── DiagnosticsView.swift         # 诊断页（TimelineView 驱动图表，关窗零开销）
+│   ├── ...                           # 视图 / Keychain / 注入 / 脚本 / 通知等
+├── FUnlockTests/                     # 单元测试与集成测试（603 用例）
 ├── docs/                             # 开发文档与设计 spec
 └── BUGS.md                           # 问题登记
 ```
@@ -185,44 +175,40 @@ FUnlock/
 
 ```
 ┌─────────────────────────────────────────────┐
-│       MainWindowView (侧边栏导航，7 Tab)      │
-│          总览/基础/解锁/锁定/网络/配置/诊断     │
+│  NSStatusItem / NSPopover / MainWindowView   │
+│  StatusProjection · LiveSignalProjection     │
+│  TimelineView 按需读取 SignalDataStore        │
 └──────────────────┬──────────────────────────┘
-                   │ @Published state/rssi/events
+                   │ @Observable 投影（可见性门控）
 ┌──────────────────▼──────────────────────────┐
-│          FUnManager (@MainActor)             │
-│    状态机：ScreenState + LockIntent           │
-│    决策：锁屏判定 / 手动锁保护 / 输入活动否决    │
+│        FUnManager（@MainActor 命令门面）      │
+│   锁屏/解锁决策 · 手动锁保护 · 事件派发        │
 └──────────────────┬──────────────────────────┘
-                   │ 依赖注入（解耦后）
-    ┌──────────────┼──────────────┐
-    ▼              ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐
-│SystemInt.│ │Security  │ │ Script   │
-│Service   │ │Service   │ │ Runner   │
-│锁屏/唤醒 │ │Keychain  │ │ 脚本事件 │
-└──────────┘ └──────────┘ └──────────┘
-
-                   │ FUnDelegate + 决策事件
+                   │ EngineEvent / DeadlineEvent
 ┌──────────────────▼──────────────────────────┐
-│              FUn (CoreBluetooth)             │
-│    扫描 / 连接 / RSSI 读取                    │
-│    SignalPipeline：非对称 Kalman + 丢包惩罚    │
-│    输入活动否决（IOKit HID）                   │
+│  FUnlockCore（纯函数，零 OS 依赖）            │
+│  EngineReducer.reduce(state:event:) → effects│
+│  SignalPipeline · SignalHysteresisEngine     │
+│  DeadlineTable（所有超时建模为截止时间）       │
 └──────────────────┬──────────────────────────┘
-                   ▼
-┌─────────────────────────────────────────────┐
-│        DecisionLogger → 诊断页时间轴          │
-│    每个决策记录 原因/信号/设备/结果 + 操作建议  │
-└─────────────────────────────────────────────┘
+                   │ 唯一调度器回送 deadlineFired
+┌──────────────────▼──────────────────────────┐
+│  LiveDeadlineScheduler（唯一底层计时器）      │
+│  到期投递前用 matches(id, scheduledAt) 校验   │
+└──────────────────┬──────────────────────────┘
+                   │ 副作用适配器
+   ┌──────────┬────┴─────┬──────────────┐
+   ▼          ▼          ▼              ▼
+ BLE 采样   IOKit/通知  CGEvent 注入   IOPMAssertion
+ FUn        CGSession   SecretUTF16Buffer  L0 保活
 ```
 
 **架构要点**：
-- 从 FUnManager 拆分为 SystemInteractionService（锁屏/唤醒/密码）、SecurityService（Keychain）、ScriptRunner（脚本事件）
-- FUnlockStateMachine 基于 Swift Actor，线程安全的状态管理
-- 决策层用非对称 Kalman，UI 显示用独立对称 EMA（α=0.1）
-- 心跳检查每 2 秒主动轮询，防丢包 100% 时状态机死锁
-- 诊断页把"为什么锁屏/没解锁"沉淀为结构化数据，便于调参与排查
+- 纯函数内核 `Packages/FUnlockCore`：引擎状态与信号数学全部可脱离硬件毫秒级测试
+- 全仓仅一个底层计时器：`LiveDeadlineScheduler` + `DeadlineTable`，不存在散装 `Timer`
+- 三段式渐进解锁 L0（有界在场保活）→ L1（等待系统原生解锁）→ L2（`CGEvent` 注入），负向信号只加速锁屏
+- 密码以 `SecretUTF16Buffer` 持有，注入后 `memset_s` 擦除；不再构造不可变密码 `String`
+- 前端 CQRS：常驻低频投影 + 仅窗口可见的高频投影 + `TimelineView` 按需图表（关窗零拷贝）
 
 ---
 
@@ -281,17 +267,17 @@ codesign -dv /Applications/FUnlock.app 2>&1 | grep -E "Identifier|TeamIdentifier
 
 ### 关键技术
 
-- **Actor 状态机**：`FUnlockStateMachine`（Swift Actor），线程安全的状态管理
-- **非对称卡尔曼滤波**：靠近时快速响应（Q 自适应放大 + 钳位），离开时强阻尼（原始小 Q）
-- **时间衰减丢包惩罚**：`effectiveRSSI = kalmanEstimate - 0.5×elapsed`，丢包自动降级
-- **动态信号判定**：信号渐弱才锁定、渐强才解锁，避免边缘信号反复触发
+- **纯函数状态机**：`EngineReducer` 以 `(State, Event) -> (State, [Effect])` 驱动全部时序与决策，副作用由运行时执行
+- **单一截止时间调度器**：`DeadlineTable` 建模所有超时，`LiveDeadlineScheduler` 是唯一底层计时器；过期投递经 `matches(id, scheduledAt)` 拒绝
+- **非对称卡尔曼滤波**：`SignalPipeline` 靠近时快速响应、离开时强阻尼，丢包自动降级
+- **动态信号判定**：双阈值迟滞 + 斜率自适应锁屏超时，避免边缘信号反复触发
 - **输入活动否决**：IOKit HID 监听键盘/触控板，有活动时否决锁定决策
-- **密码注入安全**：注入前奏（Shift + 300ms）+ 双保险验证（CGSession 兜底）+ 乐观解锁
+- **三段式渐进解锁**：L0 有界在场保活（15 分钟空闲上限）→ L1 等待系统原生解锁 → L2 `CGEvent` 注入；负向信号只加速锁屏
+- **密码零残留**：`SecretUTF16Buffer` + `memset_s` 擦除，全链路无不可变密码字符串
 - **预备唤醒**：信号平滑 + 阶梯唤醒策略，避免边缘信号反复唤醒/休眠
 - **连续失败降级**：密码注入连续失败时自动降级并通知用户
-- **手动锁保护**：手动锁屏进入 24h 保护窗口，期间禁止自动解锁，直到用户手动解锁
-- **心跳检查**：每 2 秒主动轮询，防丢包 100% 时状态机死锁
-- **async/await**：唤醒重试、解锁延迟均使用 `Task` 替代 `Timer`
+- **手动锁保护**：手动锁屏进入保护窗口，期间禁止自动解锁，直到用户手动解锁
+- **结构化并发**：唤醒重试、解锁延迟与 UI 刷新均使用 `Task` / `TimelineView`，全仓零散装 `Timer`
 
 ---
 

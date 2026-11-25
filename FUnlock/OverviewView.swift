@@ -2,7 +2,6 @@
 // 总览仪表：信号仪表盘 + 设备绑定与切换 + 交互式距离标尺 + 校准入口
 
 import SwiftUI
-import Combine
 
 struct OverviewView: View {
     var manager: FUnManager
@@ -14,7 +13,7 @@ struct OverviewView: View {
     // 扫描状态
     @State private var isScanning = false
     @State private var frozenDevices: [DeviceSnapshot] = []
-    @State private var scanTimer: Timer?
+    @State private var scanTask: Task<Void, Never>?
     @State private var showUnbindConfirm = false
     @State private var isDeviceListExpanded = false
 
@@ -42,11 +41,14 @@ struct OverviewView: View {
         }
         .onDisappear { stopScan() }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.stopDeviceDiscoveryNotification)) { _ in
-            // 设置窗口关闭/隐藏：停掉 UI 轮询计时器并收起发现列表
+            // 设置窗口关闭/隐藏：停掉 UI 扫描任务并收起发现列表
             stopScan()
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                 isDeviceListExpanded = false
             }
+        }
+        .onDisappear {
+            stopScan()
         }
         .alert(t("unbind_confirm_title"), isPresented: $showUnbindConfirm) {
             Button(t("ok"), role: .destructive) {
@@ -229,9 +231,11 @@ struct OverviewView: View {
         isScanning = true
         frozenDevices = []
         manager.startScanning()
-        scanTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
-            DispatchQueue.main.async {
-                let boundUUID = self.fun.monitoredUUID
+        scanTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { break }
+                let boundUUID = fun.monitoredUUID
                 let sorted = manager.discoveredDevices
                     .filter { boundUUID == nil || $0.uuid != boundUUID }
                     .sorted { $0.rssi > $1.rssi }
@@ -243,8 +247,8 @@ struct OverviewView: View {
     }
 
     private func stopScan() {
-        scanTimer?.invalidate()
-        scanTimer = nil
+        scanTask?.cancel()
+        scanTask = nil
         isScanning = false
         manager.stopScanning()
     }

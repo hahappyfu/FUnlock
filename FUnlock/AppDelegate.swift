@@ -165,7 +165,7 @@ func openBluetoothSettings() {
     openSystemSettingsPane("com.apple.preference.security?Privacy_Bluetooth")
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, FUnDelegate, NSWindowDelegate, NSPopoverDelegate {
 
     override init() {
         super.init()
@@ -237,6 +237,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// 仅当离散态（unlocked / connected / disconnected）变化时才 lockFocus 重绘位图，
     /// 平稳在场期（每 0.5s 快轮询都会调用）直接跳过，消除无谓的每采样图形合成。
     @MainActor private func updateStatusBarIcon() {
+        StatusProjection.shared.sync(from: manager)
         guard let button = statusItem.button else { return }
         let next: MenuBarIconState
         if manager.state.screen == .unlocked {
@@ -331,16 +332,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationCenter.default.post(name: Self.stopDeviceDiscoveryNotification, object: nil)
     }
 
+    @MainActor private func syncLiveProjectionVisibility() {
+        let visible = (settingsWindow?.isVisible == true) || (popover?.isShown == true)
+        LiveSignalProjection.shared.setVisible(
+            visible,
+            store: .shared,
+            currentRSSI: manager?.rssi,
+            smoothedRSSI: fun.currentSmoothedRSSI
+        )
+    }
+
     @MainActor @objc func toggleSettingsWindow(_ sender: AnyObject?) {
         // 防御：窗口延迟初始化可能尚未完成（macOS Sequoia TCC 兼容）
         if settingsWindow == nil { setupSettingsWindow() }
         if settingsWindow.isVisible {
             settingsWindow.orderOut(nil)
             stopDiscoveryAndBroadcast()
+            syncLiveProjectionVisibility()
         } else {
             // 先前置窗口再激活：确保窗口先可见，再请求焦点
             settingsWindow.center()
             settingsWindow.makeKeyAndOrderFront(nil)
+            syncLiveProjectionVisibility()
             NSApp.activate(ignoringOtherApps: true)
             // macOS Sequoia 上 LSUIElement 应用首次激活可能需要二次请求焦点
             DispatchQueue.main.async {
@@ -356,6 +369,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func windowWillClose(_ notification: Notification) {
         guard (notification.object as? NSWindow) === settingsWindow else { return }
         stopDiscoveryAndBroadcast()
+        Task { @MainActor [weak self] in
+            self?.syncLiveProjectionVisibility()
+        }
     }
 
     @MainActor @objc func lockNow() {
@@ -367,6 +383,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if settingsWindow == nil { setupSettingsWindow() }
         settingsWindow.center()
         settingsWindow.makeKeyAndOrderFront(nil)
+        syncLiveProjectionVisibility()
         NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(name: .menuShowStats, object: nil)
     }
@@ -553,6 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let popover = NSPopover()
         popover.contentViewController = hosting
         popover.behavior = .transient
+        popover.delegate = self
         self.popover = popover
     }
 
@@ -564,11 +582,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard let popover = self.popover else { return }
         if popover.isShown {
             popover.performClose(nil)
+            syncLiveProjectionVisibility()
         } else {
             let fit = popover.contentViewController?.view.fittingSize ?? .zero
             let targetHeight = fit.height > 100 ? fit.height : 360
             popover.contentSize = NSSize(width: 282, height: targetHeight)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            syncLiveProjectionVisibility()
             popover.contentViewController?.view.window?.makeKey()
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -578,6 +598,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @MainActor private func closeMenuBarPopover() {
         guard let popover, popover.isShown else { return }
         popover.performClose(nil)
+        syncLiveProjectionVisibility()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.syncLiveProjectionVisibility()
+        }
     }
 
     @MainActor private func handleMenuBarAction(_ action: MenuBarAction) {

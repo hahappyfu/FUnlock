@@ -150,17 +150,20 @@ struct DiagnosticsView: View {
                     .frame(width: 160)
                 }
 
-                if dataStore.samples.isEmpty {
-                    Text(t("stats_no_data"))
-                        .font(.callout)
-                        .foregroundStyle(FUnlockTheme.Text.secondary.color)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, FUnlockTheme.Space.md)
-                } else {
-                    chartBody
-                    HStack {
-                        Spacer(minLength: 0)
-                        chartLegend
+                TimelineView(.periodic(from: .now, by: 1.0)) { _ in
+                    let currentSamples = dataStore.snapshot()
+                    if currentSamples.isEmpty {
+                        Text(t("stats_no_data"))
+                            .font(.callout)
+                            .foregroundStyle(FUnlockTheme.Text.secondary.color)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, FUnlockTheme.Space.md)
+                    } else {
+                        chartBody(samples: currentSamples)
+                        HStack {
+                            Spacer(minLength: 0)
+                            chartLegend
+                        }
                     }
                 }
             }
@@ -168,14 +171,14 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder
-    private var chartBody: some View {
+    private func chartBody(samples: [SignalSample]) -> some View {
         switch chartMode {
         case .signal:
-            SignalChartView(samples: dataStore.samples,
+            SignalChartView(samples: samples,
                             unlockThreshold: dataStore.unlockThreshold,
                             lockThreshold: dataStore.lockThreshold)
         case .slope:
-            SlopeChartView(samples: dataStore.samples)
+            SlopeChartView(samples: samples)
         }
     }
 
