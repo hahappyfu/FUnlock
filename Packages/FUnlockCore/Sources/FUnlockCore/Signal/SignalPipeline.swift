@@ -47,11 +47,11 @@ public struct SignalDecision: Equatable, Sendable {
     }
 }
 
-public enum SignalSource: Sendable { case scanning, connected }
+public enum SignalSource: Equatable, Sendable { case scanning, connected }
 
 // MARK: - 管道状态容器
 
-public struct SignalPipeline: Sendable {
+public struct SignalPipeline: Equatable, Sendable {
     public var kalmanEstimate: Double = -60.0
     public var kalmanP: Double = 1.0
     public var kalmanSampleCount: Int = 0
